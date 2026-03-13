@@ -1,0 +1,26 @@
+<idea-plugin>
+    <id>com.codex.assistant</id>
+    <name>Codex Assistant</name>
+    <vendor email="support@example.com">Codex Assistant</vendor>
+
+    <description><![CDATA[
+        Unified IDE agent shell for local CLI engines.
+    ]]></description>
+
+    <depends>com.intellij.modules.platform</depends>
+    <depends>com.intellij.modules.java</depends>
+
+    <extensions defaultExtensionNs="com.intellij">
+        <toolWindow
+                id="Codex Chat"
+                factoryClass="com.codex.assistant.toolwindow.AgentToolWindowFactory"
+                anchor="right"
+                canCloseContents="false"/>
+
+        <applicationConfigurable
+                parentId="tools"
+                instance="com.codex.assistant.settings.AgentSettingsConfigurable"
+                id="com.codex.assistant.settings"
+                displayName="Codex Assistant"/>
+    </extensions>
+</idea-plugin>
