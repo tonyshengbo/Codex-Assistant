@@ -1,15 +1,23 @@
 package com.codex.assistant.toolwindow.timeline
 
 import com.codex.assistant.model.ChatMessage
+import com.codex.assistant.toolwindow.AssistantUiTheme
+import com.codex.assistant.toolwindow.ToolWindowUiText
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.ui.JBColor
 import com.intellij.ui.components.JBScrollPane
 import com.intellij.ui.components.JBTextArea
 import java.awt.BorderLayout
 import java.awt.Color
+import java.awt.Container
+import java.awt.Cursor
 import java.awt.Dimension
 import java.awt.FlowLayout
 import java.awt.Font
+import java.awt.Point
+import java.awt.Rectangle
+import java.awt.event.MouseAdapter
+import java.awt.event.MouseEvent
 import javax.swing.BorderFactory
 import javax.swing.Box
 import javax.swing.BoxLayout
@@ -18,8 +26,10 @@ import javax.swing.JComponent
 import javax.swing.JEditorPane
 import javax.swing.JLabel
 import javax.swing.JPanel
+import javax.swing.Scrollable
 import javax.swing.SwingConstants
 import javax.swing.UIManager
+import javax.swing.JViewport
 
 class ConversationTimelinePanel(
     private val onCopyMessage: (String) -> Unit,
@@ -28,7 +38,7 @@ class ConversationTimelinePanel(
     private val onRetryCommand: (String, String) -> Unit,
     private val onCopyCommand: (String) -> Unit,
 ) : JPanel(BorderLayout()) {
-    private val contentPanel = JPanel()
+    private val contentPanel = TimelineContentPanel()
     private val scrollPane = JBScrollPane(contentPanel)
     private val expansionOverrides = mutableMapOf<String, Boolean>()
 
@@ -54,7 +64,7 @@ class ConversationTimelinePanel(
             contentPanel.add(Box.createVerticalGlue())
         } else {
             turns.forEachIndexed { index, turn ->
-                contentPanel.add(buildTurnPanel(turn, showLine = index != turns.lastIndex))
+                contentPanel.add(buildTurnPanel(turn))
                 if (index != turns.lastIndex) {
                     contentPanel.add(Box.createVerticalStrut(8))
                 }
@@ -63,7 +73,12 @@ class ConversationTimelinePanel(
         contentPanel.revalidate()
         contentPanel.repaint()
         if (autoScroll) {
-            ApplicationManager.getApplication().invokeLater { scrollToBottom() }
+            val application = ApplicationManager.getApplication()
+            if (application != null) {
+                application.invokeLater { scrollToBottom() }
+            } else {
+                scrollToBottom()
+            }
         }
     }
 
@@ -77,30 +92,9 @@ class ConversationTimelinePanel(
         bar.value = bar.maximum
     }
 
-    private fun buildTurnPanel(
-        turn: TimelineTurnViewModel,
-        showLine: Boolean,
-    ): JComponent {
-        val panel = JPanel(BorderLayout(12, 0))
+    private fun buildTurnPanel(turn: TimelineTurnViewModel): JComponent {
+        val panel = JPanel(BorderLayout())
         panel.isOpaque = false
-
-        val gutter = JPanel(BorderLayout())
-        gutter.isOpaque = false
-        gutter.preferredSize = Dimension(16, 1)
-        gutter.minimumSize = Dimension(16, 1)
-
-        val dotColor = statusColor(turn.footerStatus)
-        gutter.add(centerWrap(buildDot(dotColor, 9)), BorderLayout.NORTH)
-        if (showLine) {
-            val line = JPanel(BorderLayout())
-            line.isOpaque = false
-            line.border = BorderFactory.createEmptyBorder(0, 7, 0, 7)
-            line.add(JPanel().apply {
-                background = Colors.TIMELINE
-                preferredSize = Dimension(1, 1)
-            }, BorderLayout.CENTER)
-            gutter.add(line, BorderLayout.CENTER)
-        }
 
         val main = JPanel()
         main.layout = BoxLayout(main, BoxLayout.Y_AXIS)
@@ -121,136 +115,65 @@ class ConversationTimelinePanel(
         }
         main.add(buildTurnFooter(turn))
 
-        panel.add(gutter, BorderLayout.WEST)
         panel.add(main, BorderLayout.CENTER)
         return panel
     }
 
     private fun buildUserBubble(message: ChatMessage): JComponent {
-        val wrap = JPanel(BorderLayout())
-        wrap.isOpaque = false
-
-        val right = JPanel()
-        right.layout = BoxLayout(right, BoxLayout.Y_AXIS)
-        right.isOpaque = false
-
-        val meta = JPanel(FlowLayout(FlowLayout.RIGHT, 6, 0))
-        meta.isOpaque = false
-        meta.add(JLabel(formatClockTime(message.timestamp)).apply {
-            foreground = Colors.META
-            font = font.deriveFont(11f)
-        })
-        meta.add(buildActionButton("Copy") { onCopyMessage(message.id) }.apply {
-            foreground = Colors.META
-        })
-
-        val bubble = JPanel(BorderLayout())
-        bubble.background = Colors.USER_BUBBLE
-        bubble.border = BorderFactory.createCompoundBorder(
-            BorderFactory.createLineBorder(Colors.USER_BUBBLE_BORDER, 1, true),
-            BorderFactory.createEmptyBorder(12, 14, 12, 14),
-        )
-        bubble.add(createBodyView(message.content, Colors.USER_TEXT, fontSize = 14f), BorderLayout.CENTER)
-        bubble.maximumSize = Dimension(Int.MAX_VALUE, Int.MAX_VALUE)
-
-        val bubbleWrap = JPanel(FlowLayout(FlowLayout.RIGHT, 0, 0))
-        bubbleWrap.isOpaque = false
-        bubbleWrap.add(bubble)
-
-        right.add(meta)
-        right.add(Box.createVerticalStrut(6))
-        right.add(bubbleWrap)
-        wrap.add(right, BorderLayout.CENTER)
-        return wrap
-    }
-
-    private fun buildNodeCard(node: TimelineNodeViewModel): JComponent {
-        val expanded = effectiveExpanded(node)
-        val card = JPanel(BorderLayout(0, 8))
-        card.background = cardBackground(node)
-        card.border = BorderFactory.createCompoundBorder(
-            BorderFactory.createLineBorder(cardBorder(node), 1, true),
+        val block = JPanel(BorderLayout(0, 8))
+        block.name = "task-block-${message.id}"
+        block.isOpaque = true
+        block.background = Colors.TASK_BG
+        block.alignmentX = LEFT_ALIGNMENT
+        block.maximumSize = Dimension(Int.MAX_VALUE, Int.MAX_VALUE)
+        block.border = BorderFactory.createCompoundBorder(
+            BorderFactory.createLineBorder(Colors.TASK_BORDER, 1, true),
             BorderFactory.createEmptyBorder(10, 12, 10, 12),
         )
 
-        val header = JPanel(BorderLayout(8, 0))
-        header.isOpaque = false
-
-        val titleWrap = JPanel()
-        titleWrap.layout = BoxLayout(titleWrap, BoxLayout.Y_AXIS)
-        titleWrap.isOpaque = false
-        titleWrap.add(JLabel(nodeTitle(node)).apply {
-            foreground = Colors.TEXT_PRIMARY
-            font = font.deriveFont(Font.BOLD, 13f)
+        val header = JPanel(BorderLayout(8, 0)).apply {
+            isOpaque = false
+        }
+        val titleRow = JPanel().apply {
+            layout = BoxLayout(this, BoxLayout.X_AXIS)
+            isOpaque = false
+        }
+        titleRow.add(JLabel("Task").apply {
+            foreground = Colors.TASK_LABEL
+            font = font.deriveFont(Font.BOLD, 11f)
         })
-        val subtitle = nodeSubtitle(node)
-        if (subtitle.isNotBlank()) {
-            titleWrap.add(Box.createVerticalStrut(2))
-            titleWrap.add(JLabel(subtitle).apply {
-                foreground = Colors.TEXT_SECONDARY
-                font = font.deriveFont(11f)
-            })
+        titleRow.add(Box.createHorizontalStrut(8))
+        titleRow.add(JLabel(formatClockTime(message.timestamp)).apply {
+            foreground = Colors.META
+            font = font.deriveFont(11f)
+        })
+
+        val actions = JPanel().apply {
+            layout = BoxLayout(this, BoxLayout.X_AXIS)
+            isOpaque = false
         }
+        actions.add(buildActionButton("Copy") { onCopyMessage(message.id) })
 
-        val actions = JPanel(FlowLayout(FlowLayout.RIGHT, 6, 0))
-        actions.isOpaque = false
-        buildNodeButtons(node, expanded).forEach(actions::add)
-        actions.add(buildDot(statusColor(node.status), 8))
-
-        header.add(titleWrap, BorderLayout.CENTER)
+        header.add(titleRow, BorderLayout.WEST)
         header.add(actions, BorderLayout.EAST)
-        card.add(header, BorderLayout.NORTH)
+        block.add(header, BorderLayout.NORTH)
+        block.add(createBodyView(message.content, Colors.TEXT_PRIMARY, fontSize = 14f), BorderLayout.CENTER)
+        return block
+    }
 
-        val bodyPanel = JPanel()
-        bodyPanel.layout = BoxLayout(bodyPanel, BoxLayout.Y_AXIS)
-        bodyPanel.isOpaque = false
+    private fun buildNodeCard(node: TimelineNodeViewModel): JComponent {
+        val presentation = TimelineNodePresentation.forKind(node.kind)
+        val expandable = isExpandable(node)
+        val expanded = if (expandable) effectiveExpanded(node) else true
 
-        if (expanded) {
-            when (node.kind) {
-                TimelineNodeKind.ASSISTANT_NOTE,
-                TimelineNodeKind.THINKING,
-                TimelineNodeKind.RESULT,
-                TimelineNodeKind.SYSTEM_AUX,
-                TimelineNodeKind.FAILURE,
-                -> if (node.body.isNotBlank()) {
-                    bodyPanel.add(createBodyView(node.body, bodyColor(node), fontSize = 12.5f))
-                }
-
-                TimelineNodeKind.TOOL_STEP -> {
-                    if (!node.toolInput.isNullOrBlank()) {
-                        bodyPanel.add(createMetaLabel("Input"))
-                        bodyPanel.add(createBodyView(node.toolInput, Colors.TEXT_SECONDARY, 12f))
-                    }
-                    if (!node.toolOutput.isNullOrBlank()) {
-                        bodyPanel.add(Box.createVerticalStrut(6))
-                        bodyPanel.add(createMetaLabel("Output"))
-                        bodyPanel.add(createBodyView(node.toolOutput, Colors.TEXT_PRIMARY, 12f))
-                    }
-                }
-
-                TimelineNodeKind.COMMAND_STEP -> {
-                    if (!node.command.isNullOrBlank()) {
-                        bodyPanel.add(createMetaLabel("Command"))
-                        bodyPanel.add(createCodeView("$ ${node.command}"))
-                    }
-                    if (!node.cwd.isNullOrBlank()) {
-                        bodyPanel.add(Box.createVerticalStrut(6))
-                        bodyPanel.add(createMetaLabel("Directory"))
-                        bodyPanel.add(createBodyView(node.cwd, Colors.TEXT_SECONDARY, 12f))
-                    }
-                    if (!node.body.isBlank()) {
-                        bodyPanel.add(Box.createVerticalStrut(6))
-                        bodyPanel.add(createMetaLabel("Output"))
-                        bodyPanel.add(createBodyView(node.body, Colors.TEXT_PRIMARY, 12f))
-                    }
-                }
-            }
-        } else {
-            bodyPanel.add(createBodyView(collapsedSummary(node), bodyColor(node), 12f))
+        return when (presentation.chrome) {
+            TimelineNodeChrome.EXECUTION -> buildExecutionNodeCard(node, expanded, expandable)
+            TimelineNodeChrome.NARRATIVE,
+            TimelineNodeChrome.RESULT,
+            TimelineNodeChrome.ALERT,
+            TimelineNodeChrome.SUPPORTING,
+            -> buildNarrativeNodeCard(node, presentation)
         }
-
-        card.add(bodyPanel, BorderLayout.CENTER)
-        return card
     }
 
     private fun buildTurnFooter(turn: TimelineTurnViewModel): JComponent {
@@ -271,10 +194,7 @@ class ConversationTimelinePanel(
         }
     }
 
-    private fun buildNodeButtons(
-        node: TimelineNodeViewModel,
-        expanded: Boolean,
-    ): List<JComponent> {
+    private fun buildNodeButtons(node: TimelineNodeViewModel): List<JComponent> {
         val buttons = mutableListOf<JComponent>()
         if (node.filePath != null) {
             buttons += buildActionButton("Open") { onOpenFile(node.filePath) }
@@ -288,20 +208,16 @@ class ConversationTimelinePanel(
         if (!node.toolName.isNullOrBlank() && node.status == TimelineNodeStatus.FAILED) {
             buttons += buildActionButton("Retry") { onRetryTool(node.toolName, node.toolInput.orEmpty()) }
         }
-        if (isExpandable(node)) {
-            buttons += buildActionButton(if (expanded) "Collapse" else "Expand") {
-                expansionOverrides[node.id] = !expanded
-                renderTurnsSnapshot()
-            }
-        }
         return buttons
     }
 
     private var lastTurns: List<TimelineTurnViewModel> = emptyList()
     private var lastForceAutoScroll: Boolean = false
 
-    private fun renderTurnsSnapshot() {
-        renderTurns(lastTurns, lastForceAutoScroll)
+    private fun renderTurnsSnapshot(anchorNodeId: String? = null) {
+        val anchor = anchorNodeId?.let(::captureAnchor)
+        renderTurns(lastTurns, forceAutoScroll = false)
+        anchor?.let(::restoreAnchorAfterLayout)
     }
 
     override fun addNotify() {
@@ -324,13 +240,12 @@ class ConversationTimelinePanel(
     }
 
     private fun isExpandable(node: TimelineNodeViewModel): Boolean {
-        if (node.kind == TimelineNodeKind.ASSISTANT_NOTE || node.kind == TimelineNodeKind.SYSTEM_AUX) {
-            return false
-        }
-        if (node.kind == TimelineNodeKind.RESULT) {
-            return node.body.contains('\n') || node.body.length > 180
-        }
-        return node.body.isNotBlank() || !node.command.isNullOrBlank() || !node.toolInput.isNullOrBlank()
+        if (!TimelineNodePresentation.forKind(node.kind).isToggleable) return false
+        return !node.command.isNullOrBlank() ||
+            !node.cwd.isNullOrBlank() ||
+            !node.toolInput.isNullOrBlank() ||
+            !node.toolOutput.isNullOrBlank() ||
+            node.body.isNotBlank()
     }
 
     private fun collapsedSummary(node: TimelineNodeViewModel): String {
@@ -374,34 +289,6 @@ class ConversationTimelinePanel(
         return parts.joinToString(" · ")
     }
 
-    private fun bodyColor(node: TimelineNodeViewModel): Color {
-        return when (node.kind) {
-            TimelineNodeKind.FAILURE -> Colors.FAILURE_TEXT
-            TimelineNodeKind.SYSTEM_AUX -> Colors.TEXT_SECONDARY
-            else -> Colors.TEXT_PRIMARY
-        }
-    }
-
-    private fun cardBackground(node: TimelineNodeViewModel): Color {
-        return when (node.kind) {
-            TimelineNodeKind.FAILURE -> Colors.FAILURE_BG
-            TimelineNodeKind.RESULT -> Colors.RESULT_BG
-            TimelineNodeKind.ASSISTANT_NOTE -> Colors.NOTE_BG
-            TimelineNodeKind.SYSTEM_AUX -> Colors.SYSTEM_BG
-            else -> Colors.CARD_BG
-        }
-    }
-
-    private fun cardBorder(node: TimelineNodeViewModel): Color {
-        return when (node.kind) {
-            TimelineNodeKind.FAILURE -> Colors.FAILURE_BORDER
-            TimelineNodeKind.RESULT -> Colors.RESULT_BORDER
-            TimelineNodeKind.ASSISTANT_NOTE -> Colors.NOTE_BORDER
-            TimelineNodeKind.SYSTEM_AUX -> Colors.SYSTEM_BORDER
-            else -> Colors.CARD_BORDER
-        }
-    }
-
     private fun statusColor(status: TimelineNodeStatus): Color {
         return when (status) {
             TimelineNodeStatus.RUNNING -> Colors.WARNING
@@ -426,6 +313,172 @@ class ConversationTimelinePanel(
             isOpaque = false
             add(component)
         }
+    }
+
+    private fun buildExecutionNodeCard(
+        node: TimelineNodeViewModel,
+        expanded: Boolean,
+        expandable: Boolean,
+    ): JComponent {
+        val card = JPanel(BorderLayout(0, 8))
+        card.name = "node-card-${node.id}"
+        card.isOpaque = true
+        card.background = Colors.EXECUTION_BG
+        card.alignmentX = LEFT_ALIGNMENT
+        card.maximumSize = Dimension(Int.MAX_VALUE, Int.MAX_VALUE)
+        card.border = BorderFactory.createCompoundBorder(
+            BorderFactory.createLineBorder(Colors.EXECUTION_BORDER, 1, true),
+            BorderFactory.createEmptyBorder(9, 10, 9, 10),
+        )
+
+        val header = JPanel(BorderLayout(10, 0)).apply {
+            isOpaque = false
+        }
+        val titleWrap = JPanel().apply {
+            layout = BoxLayout(this, BoxLayout.Y_AXIS)
+            isOpaque = false
+        }
+        val titleLine = JPanel().apply {
+            layout = BoxLayout(this, BoxLayout.X_AXIS)
+            isOpaque = false
+        }
+        if (expandable) {
+            titleLine.add(JLabel(if (expanded) "\u25BE" else "\u25B8").apply {
+                foreground = Colors.TEXT_SECONDARY
+                font = font.deriveFont(12f)
+            })
+            titleLine.add(Box.createHorizontalStrut(6))
+        }
+        titleLine.add(JLabel(executionTitle(node)).apply {
+            foreground = Colors.TEXT_PRIMARY
+            font = font.deriveFont(Font.BOLD, 12.5f)
+        })
+        titleWrap.add(titleLine)
+        val subtitle = executionSubtitle(node)
+        if (subtitle.isNotBlank()) {
+            titleWrap.add(Box.createVerticalStrut(2))
+            titleWrap.add(JLabel(subtitle).apply {
+                foreground = Colors.TEXT_SECONDARY
+                font = font.deriveFont(11f)
+            })
+        }
+
+        val actions = JPanel(FlowLayout(FlowLayout.RIGHT, 6, 0)).apply {
+            isOpaque = false
+        }
+        buildNodeButtons(node).forEach(actions::add)
+        actions.add(buildDot(statusColor(node.status), 8))
+
+        header.add(titleWrap, BorderLayout.CENTER)
+        header.add(actions, BorderLayout.EAST)
+
+        val bodyPanel = JPanel().apply {
+            layout = BoxLayout(this, BoxLayout.Y_AXIS)
+            isOpaque = false
+        }
+
+        if (expanded) {
+            when (node.kind) {
+                TimelineNodeKind.TOOL_STEP -> {
+                    if (!node.toolInput.isNullOrBlank()) {
+                        bodyPanel.add(createMetaLabel("Input"))
+                        bodyPanel.add(createBodyView(node.toolInput, Colors.TEXT_SECONDARY, 12f))
+                    }
+                    if (!node.toolOutput.isNullOrBlank()) {
+                        bodyPanel.add(Box.createVerticalStrut(6))
+                        bodyPanel.add(createMetaLabel("Output"))
+                        bodyPanel.add(createBodyView(node.toolOutput, Colors.TEXT_PRIMARY, 12f))
+                    }
+                    if (node.toolInput.isNullOrBlank() && node.toolOutput.isNullOrBlank() && node.body.isNotBlank()) {
+                        bodyPanel.add(createBodyView(node.body, Colors.TEXT_PRIMARY, 12f))
+                    }
+                }
+
+                TimelineNodeKind.COMMAND_STEP -> {
+                    if (!node.command.isNullOrBlank()) {
+                        bodyPanel.add(createMetaLabel("Command"))
+                        bodyPanel.add(createCodeView("$ ${node.command}"))
+                    }
+                    if (!node.cwd.isNullOrBlank()) {
+                        bodyPanel.add(Box.createVerticalStrut(6))
+                        bodyPanel.add(createMetaLabel("Directory"))
+                        bodyPanel.add(createBodyView(node.cwd, Colors.TEXT_SECONDARY, 12f))
+                    }
+                    if (!node.body.isBlank()) {
+                        bodyPanel.add(Box.createVerticalStrut(6))
+                        bodyPanel.add(createMetaLabel("Output"))
+                        bodyPanel.add(createBodyView(node.body, Colors.TEXT_PRIMARY, 12f))
+                    }
+                }
+
+                else -> Unit
+            }
+        } else {
+            bodyPanel.add(createBodyView(collapsedSummary(node), Colors.TEXT_SECONDARY, 12f))
+        }
+
+        card.add(header, BorderLayout.NORTH)
+        card.add(bodyPanel, BorderLayout.CENTER)
+        if (expandable) {
+            installCardToggle(card) {
+                expansionOverrides[node.id] = !expanded
+                renderTurnsSnapshot(anchorNodeId = node.id)
+            }
+        }
+        return card
+    }
+
+    private fun buildNarrativeNodeCard(
+        node: TimelineNodeViewModel,
+        presentation: TimelineNodePresentation,
+    ): JComponent {
+        val row = JPanel(BorderLayout(12, 0))
+        row.name = "node-card-${node.id}"
+        row.alignmentX = LEFT_ALIGNMENT
+        row.maximumSize = Dimension(Int.MAX_VALUE, Int.MAX_VALUE)
+        row.isOpaque = false
+        row.border = BorderFactory.createEmptyBorder(2, 0, 2, 0)
+
+        val labelColumn = JPanel().apply {
+            layout = BoxLayout(this, BoxLayout.Y_AXIS)
+            isOpaque = false
+            preferredSize = Dimension(92, 1)
+            minimumSize = Dimension(92, 1)
+            maximumSize = Dimension(92, Int.MAX_VALUE)
+        }
+        labelColumn.add(JLabel(inlineLabel(node)).apply {
+            foreground = narrativeTitleColor(presentation)
+            font = font.deriveFont(Font.BOLD, 10.5f)
+        })
+
+        val bodyColumn = JPanel().apply {
+            layout = BoxLayout(this, BoxLayout.Y_AXIS)
+            isOpaque = false
+        }
+        if (node.body.isNotBlank()) {
+            bodyColumn.add(
+                createBodyView(
+                    text = node.body,
+                    foreground = narrativeBodyColor(presentation),
+                    fontSize = if (presentation.chrome == TimelineNodeChrome.NARRATIVE) 13f else 12.5f,
+                ),
+            )
+        }
+        val subtitle = nodeSubtitle(node)
+        if (subtitle.isNotBlank()) {
+            if (node.body.isNotBlank()) {
+                bodyColumn.add(Box.createVerticalStrut(4))
+            }
+            bodyColumn.add(JLabel(subtitle).apply {
+                foreground = Colors.META
+                font = font.deriveFont(11f)
+                alignmentX = LEFT_ALIGNMENT
+            })
+        }
+
+        row.add(labelColumn, BorderLayout.WEST)
+        row.add(bodyColumn, BorderLayout.CENTER)
+        return row
     }
 
     private fun createMetaLabel(text: String): JComponent {
@@ -457,7 +510,7 @@ class ConversationTimelinePanel(
             wrapStyleWord = true
             border = BorderFactory.createCompoundBorder(
                 BorderFactory.createLineBorder(Colors.CODE_BORDER, 1, true),
-                BorderFactory.createEmptyBorder(8, 10, 8, 10),
+                BorderFactory.createEmptyBorder(7, 9, 7, 9),
             )
             background = Colors.CODE_BG
             foreground = Colors.TEXT_PRIMARY
@@ -477,10 +530,142 @@ class ConversationTimelinePanel(
             background = Colors.ACTION_BG
             border = BorderFactory.createCompoundBorder(
                 BorderFactory.createLineBorder(Colors.ACTION_BORDER, 1, true),
-                BorderFactory.createEmptyBorder(2, 8, 2, 8),
+                BorderFactory.createEmptyBorder(2, 7, 2, 7),
             )
-            font = font.deriveFont(11f)
+            font = font.deriveFont(10.5f)
             addActionListener { action() }
+        }
+    }
+
+    private fun installCardToggle(
+        component: JComponent,
+        onToggle: () -> Unit,
+    ) {
+        if (component is JButton) {
+            return
+        }
+        component.cursor = Cursor.getPredefinedCursor(Cursor.HAND_CURSOR)
+        component.addMouseListener(object : MouseAdapter() {
+            override fun mouseClicked(event: MouseEvent) {
+                onToggle()
+            }
+        })
+        component.components
+            .filterIsInstance<JComponent>()
+            .forEach { child -> installCardToggle(child, onToggle) }
+    }
+
+    private fun executionTitle(node: TimelineNodeViewModel): String {
+        val fileName = node.filePath?.let { java.io.File(it).name }.orEmpty()
+        return when {
+            node.kind == TimelineNodeKind.TOOL_STEP && fileName.isNotBlank() && isFileMutationTool(node.toolName) -> "Updated $fileName"
+            node.kind == TimelineNodeKind.TOOL_STEP && fileName.isNotBlank() -> fileName
+            else -> nodeTitle(node)
+        }
+    }
+
+    private fun executionSubtitle(node: TimelineNodeViewModel): String {
+        val parts = mutableListOf<String>()
+        if (node.filePath != null) {
+            parts += node.filePath
+        } else if (node.toolName != null && node.kind == TimelineNodeKind.TOOL_STEP) {
+            parts += node.toolName
+        }
+        val subtitle = nodeSubtitle(node)
+        if (subtitle.isNotBlank()) {
+            parts += subtitle
+        }
+        return parts.joinToString(" · ")
+    }
+
+    private fun isFileMutationTool(toolName: String?): Boolean {
+        val normalized = toolName?.lowercase().orEmpty()
+        return normalized.contains("edit") ||
+            normalized.contains("write") ||
+            normalized.contains("patch") ||
+            normalized.contains("apply")
+    }
+
+    private fun inlineLabel(node: TimelineNodeViewModel): String {
+        return when (node.kind) {
+            TimelineNodeKind.ASSISTANT_NOTE -> "ASSISTANT"
+            TimelineNodeKind.THINKING -> "THINKING"
+            TimelineNodeKind.RESULT -> "RESULT"
+            TimelineNodeKind.FAILURE -> "FAILED"
+            TimelineNodeKind.SYSTEM_AUX -> "SYSTEM"
+            TimelineNodeKind.TOOL_STEP -> "TOOL"
+            TimelineNodeKind.COMMAND_STEP -> "COMMAND"
+        }
+    }
+
+    private fun narrativeTitleColor(presentation: TimelineNodePresentation): Color {
+        return when (presentation.chrome) {
+            TimelineNodeChrome.ALERT -> Colors.FAILURE_TEXT
+            TimelineNodeChrome.RESULT -> Colors.RESULT_TEXT
+            TimelineNodeChrome.SUPPORTING -> Colors.TEXT_SECONDARY
+            else -> Colors.TEXT_SECONDARY
+        }
+    }
+
+    private fun narrativeBodyColor(presentation: TimelineNodePresentation): Color {
+        return when (presentation.chrome) {
+            TimelineNodeChrome.ALERT -> Colors.FAILURE_TEXT
+            TimelineNodeChrome.SUPPORTING -> Colors.TEXT_SECONDARY
+            else -> Colors.TEXT_PRIMARY
+        }
+    }
+
+    private data class ScrollAnchor(
+        val nodeId: String,
+        val relativeTop: Int,
+    )
+
+    private fun captureAnchor(nodeId: String): ScrollAnchor? {
+        val card = findNodeCard(nodeId) ?: return null
+        val relativeTop = card.y - scrollPane.viewport.viewPosition.y
+        return ScrollAnchor(nodeId = nodeId, relativeTop = relativeTop)
+    }
+
+    private fun restoreAnchorAfterLayout(anchor: ScrollAnchor) {
+        val restore = Runnable {
+            layoutHierarchy(this)
+            findNodeCard(anchor.nodeId)?.let { card ->
+                val targetY = (card.y - anchor.relativeTop).coerceAtLeast(0)
+                scrollPane.viewport.viewPosition = Point(0, targetY)
+            }
+        }
+        val application = ApplicationManager.getApplication()
+        if (application != null) {
+            application.invokeLater { restore.run() }
+        } else {
+            restore.run()
+        }
+    }
+
+    private fun findNodeCard(nodeId: String): JPanel? {
+        return findNamedPanel(contentPanel, "node-card-$nodeId")
+    }
+
+    private fun findNamedPanel(component: Container, name: String): JPanel? {
+        component.components.forEach { child ->
+            if (child is JPanel && child.name == name) {
+                return child
+            }
+            if (child is Container) {
+                val nested = findNamedPanel(child, name)
+                if (nested != null) {
+                    return nested
+                }
+            }
+        }
+        return null
+    }
+
+    private fun layoutHierarchy(component: java.awt.Component) {
+        if (component is Container) {
+            component.doLayout()
+            component.validate()
+            component.components.forEach(::layoutHierarchy)
         }
     }
 
@@ -492,10 +677,7 @@ class ConversationTimelinePanel(
     }
 
     private fun formatDuration(durationMs: Long): String {
-        return when {
-            durationMs >= 1000L -> String.format("%.1fs", durationMs / 1000.0)
-            else -> "${durationMs}ms"
-        }
+        return ToolWindowUiText.formatDuration(durationMs)
     }
 
     private fun wrapHtmlBody(
@@ -539,7 +721,7 @@ class ConversationTimelinePanel(
                     padding: 0;
                   }
                   blockquote {
-                    border-left: 3px solid ${toCssColor(Colors.CARD_BORDER)};
+                    border-left: 3px solid ${toCssColor(Colors.EXECUTION_BORDER)};
                     padding-left: 10px;
                     color: ${toCssColor(Colors.TEXT_SECONDARY)};
                   }
@@ -566,44 +748,77 @@ class ConversationTimelinePanel(
         }
 
         override fun getPreferredSize(): Dimension {
-            val availableWidth = (parent?.width ?: 0).takeIf { it > 0 } ?: 520
+            val availableWidth = resolveAvailableWidth()
             setSize(availableWidth, Int.MAX_VALUE / 4)
             val preferred = super.getPreferredSize()
             return Dimension(availableWidth, preferred.height)
         }
 
         override fun getMaximumSize(): Dimension = preferredSize
+
+        private fun resolveAvailableWidth(): Int {
+            val baseWidth = ancestorWidths().minOrNull() ?: 320
+            return (baseWidth - 56).coerceAtLeast(120)
+        }
+
+        private fun ancestorWidths(): List<Int> {
+            val widths = mutableListOf<Int>()
+            var current: Container? = parent
+            while (current != null) {
+                val width = when (current) {
+                    is JViewport -> current.extentSize.width
+                    else -> current.width
+                }
+                if (width > 0) {
+                    widths += width
+                }
+                current = current.parent
+            }
+            return widths
+        }
+    }
+
+    private class TimelineContentPanel : JPanel(), Scrollable {
+        override fun getPreferredScrollableViewportSize(): Dimension = preferredSize
+
+        override fun getScrollableUnitIncrement(
+            visibleRect: Rectangle?,
+            orientation: Int,
+            direction: Int,
+        ): Int = 24
+
+        override fun getScrollableBlockIncrement(
+            visibleRect: Rectangle?,
+            orientation: Int,
+            direction: Int,
+        ): Int = visibleRect?.height ?: 120
+
+        override fun getScrollableTracksViewportWidth(): Boolean = true
+
+        override fun getScrollableTracksViewportHeight(): Boolean = false
     }
 
     private object Colors {
-        val APP_BG = JBColor(0x0B0F14, 0x0B0F14)
-        val CARD_BG = JBColor(0x131922, 0x131922)
-        val CARD_BORDER = JBColor(0x263444, 0x263444)
-        val NOTE_BG = JBColor(0x12161D, 0x12161D)
-        val NOTE_BORDER = JBColor(0x2D3A48, 0x2D3A48)
-        val RESULT_BG = JBColor(0x121C18, 0x121C18)
-        val RESULT_BORDER = JBColor(0x284537, 0x284537)
-        val SYSTEM_BG = JBColor(0x11161D, 0x11161D)
-        val SYSTEM_BORDER = JBColor(0x26303D, 0x26303D)
-        val FAILURE_BG = JBColor(0x221416, 0x221416)
-        val FAILURE_BORDER = JBColor(0x6A3238, 0x6A3238)
-        val USER_BUBBLE = JBColor(0x2759B6, 0x2759B6)
-        val USER_BUBBLE_BORDER = JBColor(0x3C79DD, 0x3C79DD)
-        val USER_TEXT = JBColor(0xEFF5FF, 0xEFF5FF)
-        val CODE_BG = JBColor(0x0F141B, 0x0F141B)
-        val CODE_BORDER = JBColor(0x324154, 0x324154)
-        val ACTION_BG = JBColor(0x1A2230, 0x1A2230)
-        val ACTION_BORDER = JBColor(0x32455E, 0x32455E)
-        val ACTION_TEXT = JBColor(0xC9D9F0, 0xC9D9F0)
-        val TEXT_PRIMARY = JBColor(0xDCE6F4, 0xDCE6F4)
-        val TEXT_SECONDARY = JBColor(0x9DB0C7, 0x9DB0C7)
-        val LINK = JBColor(0x7FB2FF, 0x7FB2FF)
-        val META = JBColor(0x73859C, 0x73859C)
-        val TIMELINE = JBColor(0x2A3A4D, 0x2A3A4D)
-        val SUCCESS = JBColor(0x60C46E, 0x60C46E)
-        val WARNING = JBColor(0xE0B65F, 0xE0B65F)
-        val FAILURE = JBColor(0xE06B73, 0xE06B73)
-        val FAILURE_TEXT = JBColor(0xF2C1C5, 0xF2C1C5)
-        val MUTED = JBColor(0x7C8AA0, 0x7C8AA0)
+        val APP_BG = AssistantUiTheme.APP_BG
+        val TASK_BG = AssistantUiTheme.CHROME_BG
+        val TASK_BORDER = AssistantUiTheme.BORDER
+        val TASK_LABEL = AssistantUiTheme.ACCENT
+        val EXECUTION_BG = AssistantUiTheme.CHROME_BG
+        val EXECUTION_BORDER = AssistantUiTheme.BORDER
+        val RESULT_TEXT = JBColor(0xD8F3E4, 0xD8F3E4)
+        val CODE_BG = AssistantUiTheme.SURFACE_SUBTLE
+        val CODE_BORDER = AssistantUiTheme.BORDER_STRONG
+        val ACTION_BG = AssistantUiTheme.SURFACE_SUBTLE
+        val ACTION_BORDER = AssistantUiTheme.BORDER_SUBTLE
+        val ACTION_TEXT = AssistantUiTheme.TEXT_SECONDARY
+        val TEXT_PRIMARY = AssistantUiTheme.TEXT_PRIMARY
+        val TEXT_SECONDARY = AssistantUiTheme.TEXT_SECONDARY
+        val LINK = AssistantUiTheme.ACCENT
+        val META = AssistantUiTheme.TEXT_MUTED
+        val SUCCESS = AssistantUiTheme.SUCCESS
+        val WARNING = AssistantUiTheme.WARNING
+        val FAILURE = AssistantUiTheme.DANGER
+        val FAILURE_TEXT = JBColor(0xF3C3C7, 0xF3C3C7)
+        val MUTED = AssistantUiTheme.TEXT_MUTED
     }
 }

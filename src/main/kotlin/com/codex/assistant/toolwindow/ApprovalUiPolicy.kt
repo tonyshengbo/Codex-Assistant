@@ -1,7 +1,7 @@
 package com.codex.assistant.toolwindow
 
 class ApprovalUiPolicy {
-    val chipLabel: String = "Approvals: Planned"
+    val chipLabel: String = "Auto"
     val isInteractive: Boolean = false
 
     fun shouldExecuteCommandProposal(): Boolean = true

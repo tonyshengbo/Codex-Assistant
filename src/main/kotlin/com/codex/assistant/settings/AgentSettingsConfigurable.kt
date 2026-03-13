@@ -1,5 +1,6 @@
 package com.codex.assistant.settings
 
+import com.codex.assistant.toolwindow.AssistantUiTheme
 import com.intellij.openapi.options.Configurable
 import com.intellij.ui.JBColor
 import com.intellij.ui.components.JBTextField
@@ -23,14 +24,17 @@ class AgentSettingsConfigurable : Configurable {
     override fun createComponent(): JComponent {
         val p = JPanel(BorderLayout())
         p.border = BorderFactory.createEmptyBorder(16, 16, 16, 16)
+        p.background = AssistantUiTheme.APP_BG
 
         val content = JPanel()
         content.layout = BoxLayout(content, BoxLayout.Y_AXIS)
+        content.isOpaque = false
 
         val header = JLabel("Codex Configuration")
         header.font = header.font.deriveFont(16f)
+        header.foreground = AssistantUiTheme.TEXT_PRIMARY
         val subtitle = JLabel("Configure the local Codex CLI used for chat and native session resume.")
-        subtitle.foreground = JBColor(0x6B7280, 0x9CA3AF)
+        subtitle.foreground = AssistantUiTheme.TEXT_SECONDARY
 
         content.add(header)
         content.add(Box.createVerticalStrut(4))
@@ -49,17 +53,18 @@ class AgentSettingsConfigurable : Configurable {
 
     private fun createFieldBlock(title: String, field: JComponent, hint: JLabel): JPanel {
         val block = JPanel(BorderLayout(0, 6))
+        block.background = AssistantUiTheme.SURFACE
         block.border = BorderFactory.createCompoundBorder(
-            BorderFactory.createLineBorder(JBColor(0xD2D6DC, 0x3B4252), 1, true),
+            BorderFactory.createLineBorder(AssistantUiTheme.BORDER, 1, true),
             BorderFactory.createEmptyBorder(10, 10, 10, 10),
         )
         val top = JPanel(FlowLayout(FlowLayout.LEFT, 0, 0))
         top.isOpaque = false
-        top.add(JLabel(title))
+        top.add(JLabel(title).apply { foreground = AssistantUiTheme.TEXT_PRIMARY })
         block.add(top, BorderLayout.NORTH)
         field.preferredSize = Dimension(field.preferredSize.width, 30)
         block.add(field, BorderLayout.CENTER)
-        hint.foreground = JBColor(0x6B7280, 0x9CA3AF)
+        hint.foreground = AssistantUiTheme.TEXT_SECONDARY
         block.add(hint, BorderLayout.SOUTH)
         return block
     }

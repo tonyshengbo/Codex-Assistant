@@ -60,8 +60,11 @@ class ConversationTimelineBuilderTest {
         assertFalse(turn.nodes.first().expanded)
         assertEquals(TimelineNodeStatus.SUCCESS, turn.nodes[1].status)
         assertEquals("read_file", turn.nodes[1].toolName)
+        assertFalse(turn.nodes[1].expanded)
         assertEquals(TimelineNodeStatus.SUCCESS, turn.nodes[2].status)
         assertEquals("./gradlew test", turn.nodes[2].command)
+        assertFalse(turn.nodes[2].expanded)
+        assertTrue(turn.nodes.last().expanded)
         assertEquals("Reworked the timeline renderer and preserved session controls.", turn.nodes.last().body)
     }
 
@@ -179,7 +182,7 @@ class ConversationTimelineBuilderTest {
             listOf(TimelineNodeKind.FAILURE, TimelineNodeKind.SYSTEM_AUX),
             secondTurn.nodes.map { it.kind },
         )
-        assertFalse(secondTurn.nodes.first().expanded)
+        assertTrue(secondTurn.nodes.first().expanded)
         assertEquals(TimelineNodeStatus.FAILED, secondTurn.nodes.first().status)
         assertEquals("Applied diff to /tmp/Foo.kt", secondTurn.nodes.last().body)
     }

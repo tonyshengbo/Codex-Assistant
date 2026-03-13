@@ -73,12 +73,16 @@ import javax.swing.Timer
 class AgentToolWindowPanel(private val project: Project) : JPanel(BorderLayout()) {
     private val chatService = project.getService(AgentChatService::class.java)
     private val approvalUiPolicy = ApprovalUiPolicy()
+    private val workspaceState = ToolWindowWorkspaceState()
 
     private val sessionTitleLabel = JLabel("New Session")
-    private val settingsButton = JButton("\u2699")
+    private val sessionSubtitleLabel = JLabel("Task Console")
+    private val backButton = JButton("Back")
+    private val historyButton = JButton("History")
+    private val settingsButton = JButton("Settings")
     private val streamLabel = JLabel()
-    private val attachButton = JButton("\uD83D\uDCCE")
-    private val sdkButton = JButton("\u2699")
+    private val attachButton = JButton("Manage Context")
+    private val sdkButton = JButton()
     private val modeChip = JButton()
     private val modelChip = JButton()
     private val usageLeftLabel = JLabel("--")
@@ -97,13 +101,32 @@ class AgentToolWindowPanel(private val project: Project) : JPanel(BorderLayout()
         onRetryCommand = { command, cwd -> retryCommand(command, cwd) },
         onCopyCommand = { copyCommandToClipboard(it) },
     )
+    private val consoleView = JPanel(BorderLayout())
     private val placeholderPanel = JPanel(BorderLayout())
     private val centerCards = JPanel(CardLayout())
+    private val workspaceCards = JPanel(CardLayout())
+    private val runContextBar = JPanel(BorderLayout())
+    private val composerContainer = JPanel(BorderLayout())
+    private val sessionHistoryView = SessionHistoryView(
+        onOpenSession = { openSessionFromWorkspace(it) },
+        onCreateSession = { createSessionFromWorkspace() },
+        onDeleteSession = { deleteSessionFromWorkspace(it) },
+    )
+    private val settingsWorkspaceView = ToolWindowSettingsView(
+        onSaved = {
+            setStatusMessage("Saved")
+            refreshHeaderState()
+        },
+    )
+    private val contextFilesView = ContextFilesView(
+        onAddFile = { chooseContextFile() },
+        onFilesChanged = { updateAttachedFiles(it) },
+    )
 
     private val inputArea = JBTextArea()
     private val inputScroll = JBScrollPane(inputArea)
-    private val actionButton = JButton("\u27A4")
-    private val newChatButton = JButton("New")
+    private val actionButton = JButton("Run")
+    private val newChatButton = JButton("New Session")
 
     private val attachedFiles = linkedSetOf<String>()
     private var currentAssistantContentBuffer = StringBuilder()
@@ -136,7 +159,7 @@ class AgentToolWindowPanel(private val project: Project) : JPanel(BorderLayout()
     }
     private val loadingTimer = Timer(1000) {
         if (isRunning) {
-            renderPreviewBuffer()
+            refreshRunningStatusLabel()
         }
     }
 
@@ -145,21 +168,28 @@ class AgentToolWindowPanel(private val project: Project) : JPanel(BorderLayout()
         if (selectedModel !in initialModels) {
             selectedModel = initialModels.firstOrNull() ?: CodexModelCatalog.defaultModel
         }
-        border = BorderFactory.createEmptyBorder(8, 8, 8, 8)
+        border = BorderFactory.createEmptyBorder()
+        background = AssistantUiTheme.APP_BG
 
         add(buildHeader(), BorderLayout.NORTH)
         add(buildCenter(), BorderLayout.CENTER)
         add(buildBottom(), BorderLayout.SOUTH)
 
         actionButton.addActionListener { onPrimaryAction() }
-        attachButton.addActionListener { openContextDialog() }
+        attachButton.addActionListener { showWorkspace(ToolWindowView.CONTEXT_FILES) }
         sdkButton.addActionListener { showSdkMenu(sdkButton) }
         modelChip.addActionListener { showModelMenu(modelChip) }
         newChatButton.addActionListener { startNewSession() }
-        settingsButton.addActionListener { showSettingsMenu(settingsButton) }
+        settingsButton.addActionListener { showWorkspace(ToolWindowView.SETTINGS) }
+        historyButton.addActionListener { showWorkspace(ToolWindowView.SESSION_HISTORY) }
+        backButton.addActionListener { showWorkspace(ToolWindowView.CONSOLE) }
         installInputKeyBindings()
+        styleHeaderButton(backButton)
+        styleHeaderButton(historyButton)
         styleSettingsButton(settingsButton)
+        AssistantUiTheme.toolbarButton(newChatButton)
         styleAttachButton(attachButton)
+        styleStatusLabel(streamLabel)
         styleEditorContextPanel(editorContextPanel, editorContextLabel, editorContextCloseButton)
         styleSdkButton(sdkButton)
         styleChip(modeChip)
@@ -171,84 +201,131 @@ class AgentToolWindowPanel(private val project: Project) : JPanel(BorderLayout()
         refreshMessages()
         setRunningState(false)
         installEditorContextListener()
+        refreshHeaderState()
     }
 
     private fun buildHeader(): JComponent {
         val root = JPanel(BorderLayout())
-        root.border = BorderFactory.createEmptyBorder(0, 0, 10, 0)
+        root.isOpaque = true
+        root.background = AssistantUiTheme.CHROME_BG
+        root.border = BorderFactory.createCompoundBorder(
+            BorderFactory.createMatteBorder(0, 0, 1, 0, AssistantUiTheme.BORDER_SUBTLE),
+            BorderFactory.createEmptyBorder(8, 10, 8, 10),
+        )
 
-        val topRow = JPanel(BorderLayout())
-        topRow.isOpaque = false
-        sessionTitleLabel.font = sessionTitleLabel.font.deriveFont(Font.BOLD, 14f)
+        val titleStack = JPanel().apply {
+            layout = javax.swing.BoxLayout(this, javax.swing.BoxLayout.Y_AXIS)
+            isOpaque = false
+            AssistantUiTheme.title(sessionTitleLabel)
+            AssistantUiTheme.subtitle(sessionSubtitleLabel)
+            add(sessionTitleLabel)
+            add(javax.swing.Box.createVerticalStrut(1))
+            add(sessionSubtitleLabel)
+        }
 
-        val right = JPanel(FlowLayout(FlowLayout.RIGHT, 8, 0))
-        right.isOpaque = false
-        right.add(newChatButton)
-        right.add(settingsButton)
-        right.add(streamLabel)
-        topRow.add(sessionTitleLabel, BorderLayout.WEST)
-        topRow.add(right, BorderLayout.EAST)
+        val left = JPanel(FlowLayout(FlowLayout.LEFT, 6, 0)).apply {
+            isOpaque = false
+            add(backButton)
+            add(titleStack)
+        }
 
-        val controlRow = JPanel(FlowLayout(FlowLayout.LEFT, 6, 0))
-        controlRow.isOpaque = false
-        controlRow.border = BorderFactory.createEmptyBorder(8, 0, 0, 0)
-        controlRow.add(sdkButton)
-        controlRow.add(modeChip)
-        controlRow.add(modelChip)
-        usageLeftLabel.foreground = JBColor(0x8FA8C7, 0x8FA8C7)
-        usageLeftLabel.font = usageLeftLabel.font.deriveFont(12f)
-        controlRow.add(usageLeftLabel)
+        val right = JPanel(FlowLayout(FlowLayout.RIGHT, 4, 0)).apply {
+            isOpaque = false
+            add(historyButton)
+            add(newChatButton)
+            add(settingsButton)
+        }
 
-        root.add(topRow, BorderLayout.NORTH)
-        root.add(controlRow, BorderLayout.SOUTH)
+        val topRow = JPanel(BorderLayout()).apply {
+            isOpaque = false
+            add(left, BorderLayout.WEST)
+            add(right, BorderLayout.EAST)
+        }
+
+        runContextBar.isOpaque = false
+        runContextBar.border = BorderFactory.createEmptyBorder(8, 0, 0, 0)
+
+        val controlRow = JPanel(FlowLayout(FlowLayout.LEFT, 4, 0)).apply {
+            isOpaque = false
+            add(sdkButton)
+            add(modeChip)
+            add(modelChip)
+        }
+        AssistantUiTheme.meta(usageLeftLabel, AssistantUiTheme.TEXT_SECONDARY)
+        val rightStatus = JPanel(FlowLayout(FlowLayout.RIGHT, 8, 0)).apply {
+            isOpaque = false
+            add(usageLeftLabel)
+        }
+
+        val stack = JPanel().apply {
+            layout = javax.swing.BoxLayout(this, javax.swing.BoxLayout.Y_AXIS)
+            isOpaque = false
+            add(topRow)
+            add(runContextBar)
+        }
+        runContextBar.add(controlRow, BorderLayout.WEST)
+        runContextBar.add(rightStatus, BorderLayout.EAST)
+
+        root.add(stack, BorderLayout.CENTER)
         return root
     }
 
     private fun buildCenter(): JComponent {
         val placeholderContainer = JPanel(BorderLayout())
-        placeholderContainer.background = JBColor(0x0B0F14, 0x0B0F14)
+        placeholderContainer.background = AssistantUiTheme.APP_BG
         val inner = JPanel()
         inner.layout = javax.swing.BoxLayout(inner, javax.swing.BoxLayout.Y_AXIS)
-        inner.border = BorderFactory.createEmptyBorder(120, 0, 0, 0)
+        inner.border = BorderFactory.createEmptyBorder(72, 28, 0, 28)
         inner.isOpaque = false
 
-        val icon = JLabel("◎")
-        icon.font = icon.font.deriveFont(Font.BOLD, 30f)
-        icon.foreground = JBColor(0xD6E0ED, 0xD6E0ED)
-        icon.alignmentX = 0.5f
+        val main = JLabel("Execution Workspace")
+        main.font = main.font.deriveFont(Font.BOLD, 20f)
+        main.foreground = AssistantUiTheme.TEXT_PRIMARY
+        main.alignmentX = 0f
 
-        val main = JLabel("Codex Assistant")
-        main.font = main.font.deriveFont(Font.BOLD, 18f)
-        main.foreground = JBColor(0xDCE5F2, 0xDCE5F2)
-        main.alignmentX = 0.5f
+        val sub = JLabel("Run a task, inspect commands and file changes, and keep history, settings, and context inside the same plugin workspace.")
+        sub.foreground = AssistantUiTheme.TEXT_MUTED
+        sub.alignmentX = 0f
 
-        val sub = JLabel("Run a task to start the execution timeline")
-        sub.foreground = JBColor(0x7E8EA4, 0x7E8EA4)
-        sub.alignmentX = 0.5f
-
-        inner.add(icon)
-        inner.add(javax.swing.Box.createVerticalStrut(10))
         inner.add(main)
         inner.add(javax.swing.Box.createVerticalStrut(6))
         inner.add(sub)
 
         placeholderContainer.add(inner, BorderLayout.NORTH)
+        placeholderPanel.isOpaque = true
+        placeholderPanel.background = AssistantUiTheme.APP_BG
         placeholderPanel.add(placeholderContainer, BorderLayout.CENTER)
 
+        centerCards.isOpaque = true
+        centerCards.background = AssistantUiTheme.APP_BG
         centerCards.add(placeholderPanel, CARD_PLACEHOLDER)
         centerCards.add(timelinePanel, CARD_MESSAGES)
-        return centerCards
+        consoleView.isOpaque = true
+        consoleView.background = AssistantUiTheme.APP_BG
+        consoleView.add(centerCards, BorderLayout.CENTER)
+
+        workspaceCards.isOpaque = true
+        workspaceCards.background = AssistantUiTheme.APP_BG
+        workspaceCards.add(consoleView, WORKSPACE_CONSOLE)
+        workspaceCards.add(sessionHistoryView, WORKSPACE_HISTORY)
+        workspaceCards.add(settingsWorkspaceView, WORKSPACE_SETTINGS)
+        workspaceCards.add(contextFilesView, WORKSPACE_CONTEXT)
+        return workspaceCards
     }
 
     private fun buildBottom(): JComponent {
-        val root = JPanel(BorderLayout())
-        root.border = BorderFactory.createEmptyBorder(8, 0, 0, 0)
+        composerContainer.border = BorderFactory.createCompoundBorder(
+            BorderFactory.createMatteBorder(1, 0, 0, 0, AssistantUiTheme.BORDER_SUBTLE),
+            BorderFactory.createEmptyBorder(8, 10, 10, 10),
+        )
+        composerContainer.isOpaque = true
+        composerContainer.background = AssistantUiTheme.CHROME_BG
 
         val compose = JPanel(BorderLayout(8, 8))
-        compose.background = JBColor(0x18202B, 0x18202B)
+        compose.background = AssistantUiTheme.CHROME_BG
         compose.border = BorderFactory.createCompoundBorder(
-            BorderFactory.createLineBorder(JBColor(0x2D3A4D, 0x2D3A4D), 1, true),
-            BorderFactory.createEmptyBorder(10, 12, 10, 12),
+            BorderFactory.createLineBorder(AssistantUiTheme.BORDER_SUBTLE, 1, true),
+            BorderFactory.createEmptyBorder(8, 8, 8, 8),
         )
 
         val metaRow = JPanel(BorderLayout(8, 0))
@@ -260,24 +337,23 @@ class AgentToolWindowPanel(private val project: Project) : JPanel(BorderLayout()
         attachWrap.add(JLabel(" "))
         attachWrap.add(editorContextPanel)
 
-        attachStatusLabel.foreground = JBColor.GRAY
-        attachStatusLabel.font = attachStatusLabel.font.deriveFont(12f)
-
         metaRow.add(attachWrap, BorderLayout.WEST)
+        AssistantUiTheme.meta(attachStatusLabel, AssistantUiTheme.TEXT_SECONDARY)
+        metaRow.add(attachStatusLabel, BorderLayout.EAST)
 
         val inputRow = JPanel(BorderLayout(8, 0))
         inputRow.isOpaque = false
-        inputArea.toolTipText = "Enter to send, Shift+Enter for newline"
+        inputArea.toolTipText = "Describe a task, ask for code changes, or explain a file. Enter runs, Shift+Enter adds a newline."
         inputArea.lineWrap = true
         inputArea.wrapStyleWord = true
-        inputArea.rows = 3
-        inputArea.background = JBColor(0x111821, 0x111821)
-        inputArea.foreground = JBColor(0xE3EAF5, 0xE3EAF5)
-        inputArea.caretColor = JBColor(0xE3EAF5, 0xE3EAF5)
-        inputArea.border = BorderFactory.createEmptyBorder(6, 6, 6, 6)
-        inputScroll.border = BorderFactory.createLineBorder(JBColor(0x2F4056, 0x2F4056), 1, true)
+        inputArea.rows = 4
+        inputArea.background = AssistantUiTheme.SURFACE_SUBTLE
+        inputArea.foreground = AssistantUiTheme.TEXT_PRIMARY
+        inputArea.caretColor = AssistantUiTheme.TEXT_PRIMARY
+        inputArea.border = BorderFactory.createEmptyBorder(8, 8, 8, 8)
+        inputScroll.border = BorderFactory.createLineBorder(AssistantUiTheme.BORDER_SUBTLE, 1, true)
         inputScroll.background = inputArea.background
-        inputScroll.preferredSize = Dimension(300, 82)
+        inputScroll.preferredSize = Dimension(300, 104)
 
         val bottomRow = JPanel(BorderLayout(8, 0))
         bottomRow.isOpaque = false
@@ -287,15 +363,15 @@ class AgentToolWindowPanel(private val project: Project) : JPanel(BorderLayout()
         actions.add(actionButton)
 
         inputRow.add(inputScroll, BorderLayout.CENTER)
-        bottomRow.add(attachStatusLabel, BorderLayout.WEST)
+        bottomRow.add(streamLabel, BorderLayout.WEST)
         bottomRow.add(actions, BorderLayout.EAST)
 
         compose.add(metaRow, BorderLayout.NORTH)
         compose.add(inputRow, BorderLayout.CENTER)
         compose.add(bottomRow, BorderLayout.SOUTH)
 
-        root.add(compose, BorderLayout.CENTER)
-        return root
+        composerContainer.add(compose, BorderLayout.CENTER)
+        return composerContainer
     }
 
     private fun openContextDialog() {
@@ -325,8 +401,6 @@ class AgentToolWindowPanel(private val project: Project) : JPanel(BorderLayout()
         chatService.addMessage(userMessage)
         refreshMessages()
 
-        streamLabel.icon = AnimatedIcon.Default()
-        streamLabel.text = "Running"
         currentAssistantContentBuffer = StringBuilder()
         currentThinkingBuffer = StringBuilder()
         currentTimelineActionsBuffer.clear()
@@ -341,6 +415,7 @@ class AgentToolWindowPanel(private val project: Project) : JPanel(BorderLayout()
         requestStartedAtMs = System.currentTimeMillis()
         loadingTimer.start()
         setRunningState(true)
+        refreshRunningStatusLabel()
 
         chatService.runAgent(
             engineId = selectedEngineId,
@@ -453,7 +528,7 @@ class AgentToolWindowPanel(private val project: Project) : JPanel(BorderLayout()
         if (messageId.isBlank()) return
         val message = chatService.messages.firstOrNull { it.id == messageId } ?: return
         CopyPasteManager.getInstance().setContents(StringSelection(message.content))
-        streamLabel.text = "Copied"
+        setStatusMessage("Copied")
     }
 
     private fun openFileInEditor(path: String) {
@@ -475,7 +550,7 @@ class AgentToolWindowPanel(private val project: Project) : JPanel(BorderLayout()
     private fun copyCommandToClipboard(command: String) {
         if (command.isBlank()) return
         CopyPasteManager.getInstance().setContents(StringSelection(command))
-        streamLabel.text = "命令已复制"
+        setStatusMessage("Command copied")
     }
 
     private fun cancelRequest() {
@@ -595,11 +670,120 @@ class AgentToolWindowPanel(private val project: Project) : JPanel(BorderLayout()
     }
 
     private fun refreshMessages() {
-        sessionTitleLabel.text = chatService.currentSessionTitle()
+        refreshHeaderState()
         refreshUsageSnapshotLabel()
         renderMessages(streamingText = null, forceAutoScroll = false)
         showMessagesCardIfNeeded()
         refreshNewButtonState()
+        if (workspaceState.currentView == ToolWindowView.SESSION_HISTORY) {
+            sessionHistoryView.updateSessions(chatService.listSessions(), chatService.getCurrentSessionId())
+        }
+    }
+
+    private fun refreshHeaderState() {
+        if (workspaceState.currentView == ToolWindowView.CONSOLE) {
+            sessionTitleLabel.text = chatService.currentSessionTitle()
+            sessionSubtitleLabel.text = if (chatService.isCurrentSessionEmpty()) {
+                "Task Console"
+            } else {
+                "Structured execution workspace"
+            }
+        } else {
+            sessionTitleLabel.text = workspaceState.currentTitle
+            sessionSubtitleLabel.text = "Inside Codex Assistant"
+        }
+        backButton.isVisible = workspaceState.showBackAction
+        runContextBar.isVisible = workspaceState.showRunContextBar
+        composerContainer.isVisible = workspaceState.showComposerDock
+        historyButton.isEnabled = workspaceState.currentView != ToolWindowView.SESSION_HISTORY
+        settingsButton.isEnabled = workspaceState.currentView != ToolWindowView.SETTINGS
+        attachButton.isEnabled = workspaceState.currentView == ToolWindowView.CONSOLE
+    }
+
+    private fun showWorkspace(view: ToolWindowView) {
+        when (view) {
+            ToolWindowView.CONSOLE -> workspaceState.navigateBack()
+            ToolWindowView.SESSION_HISTORY -> {
+                sessionHistoryView.updateSessions(chatService.listSessions(), chatService.getCurrentSessionId())
+                workspaceState.navigateTo(view)
+            }
+            ToolWindowView.SETTINGS -> {
+                settingsWorkspaceView.reload()
+                workspaceState.navigateTo(view)
+            }
+            ToolWindowView.CONTEXT_FILES -> {
+                contextFilesView.replaceFiles(attachedFiles)
+                workspaceState.navigateTo(view)
+            }
+        }
+        val layout = workspaceCards.layout as CardLayout
+        layout.show(
+            workspaceCards,
+            when (workspaceState.currentView) {
+                ToolWindowView.CONSOLE -> WORKSPACE_CONSOLE
+                ToolWindowView.SESSION_HISTORY -> WORKSPACE_HISTORY
+                ToolWindowView.SETTINGS -> WORKSPACE_SETTINGS
+                ToolWindowView.CONTEXT_FILES -> WORKSPACE_CONTEXT
+            },
+        )
+        refreshHeaderState()
+    }
+
+    private fun updateAttachedFiles(files: Set<String>) {
+        attachedFiles.clear()
+        attachedFiles.addAll(files)
+        refreshChipLabels()
+    }
+
+    private fun chooseContextFile(): String? {
+        val descriptor = FileChooserDescriptorFactory.createSingleFileDescriptor()
+        val file = FileChooser.chooseFile(descriptor, project, null) ?: return null
+        return file.path
+    }
+
+    private fun openSessionFromWorkspace(sessionId: String) {
+        if (!chatService.switchSession(sessionId)) {
+            return
+        }
+        resetConversationUi()
+        refreshMessages()
+        showWorkspace(ToolWindowView.CONSOLE)
+    }
+
+    private fun createSessionFromWorkspace() {
+        chatService.createSession()
+        resetConversationUi()
+        refreshMessages()
+        showWorkspace(ToolWindowView.CONSOLE)
+    }
+
+    private fun deleteSessionFromWorkspace(sessionId: String) {
+        if (!chatService.deleteSession(sessionId)) {
+            return
+        }
+        resetConversationUi()
+        refreshMessages()
+        sessionHistoryView.updateSessions(chatService.listSessions(), chatService.getCurrentSessionId())
+    }
+
+    private fun resetConversationUi() {
+        currentAssistantContentBuffer = StringBuilder()
+        currentThinkingBuffer = StringBuilder()
+        currentToolEventsBuffer.clear()
+        currentCommandEventsBuffer.clear()
+        currentNarrativeEventsBuffer.clear()
+        activeContentNarrativeId = null
+        currentFlowSequence = 0
+        expandedToolMessageIds.clear()
+        expandedThinkingMessageIds.clear()
+        expandedCommandMessageIds.clear()
+        currentStatusText = ""
+        requestStartedAtMs = 0L
+        loadingTimer.stop()
+        previewRenderTimer.stop()
+        streamLabel.icon = null
+        setStatusMessage("Ready")
+        setRunningState(false)
     }
 
     private fun refreshUsageSnapshotLabel() {
@@ -617,7 +801,7 @@ class AgentToolWindowPanel(private val project: Project) : JPanel(BorderLayout()
     }
 
     private fun renderPreviewBufferNow() {
-        renderMessages(streamingText = buildStreamingPreviewMessage(), forceAutoScroll = true)
+        renderMessages(streamingText = null, forceAutoScroll = false)
         showMessagesCard(forceMessages = true)
     }
 
@@ -662,90 +846,97 @@ class AgentToolWindowPanel(private val project: Project) : JPanel(BorderLayout()
 
     private fun refreshChipLabels() {
         val sdkName = chatService.engineDescriptor(selectedEngineId)?.displayName ?: "Codex"
-        sdkButton.toolTipText = "SDK: $sdkName"
-        modelChip.text = "Model: $selectedModel \u25BE"
-        modeChip.text = approvalUiPolicy.chipLabel
+        sdkButton.text = "${ToolWindowUiText.selectionChipLabel(sdkName)} \u25BE"
+        sdkButton.toolTipText = "Switch provider"
+        modelChip.text = "${ToolWindowUiText.selectionChipLabel(selectedModel)} \u25BE"
+        modeChip.text = ToolWindowUiText.selectionChipLabel(approvalUiPolicy.chipLabel)
         modeChip.isEnabled = approvalUiPolicy.isInteractive
         modeChip.toolTipText = "Approval flow will be redesigned later"
         syncEditorContextIndicator()
-        attachStatusLabel.text = if (attachedFiles.isEmpty()) "Attach files or current editor context" else "${attachedFiles.size} file(s) attached"
+        val editorContextVisible = editorContextPanel.isVisible
+        attachStatusLabel.text = when {
+            attachedFiles.isNotEmpty() && editorContextVisible -> "${attachedFiles.size} attached · current file included"
+            attachedFiles.isNotEmpty() -> "${attachedFiles.size} file(s) attached"
+            editorContextVisible -> "Current file included"
+            else -> "Attach files or use the current editor context"
+        }
+        contextFilesView.replaceFiles(attachedFiles)
     }
 
     private fun styleChip(button: JButton) {
-        button.isFocusable = false
-        button.border = BorderFactory.createCompoundBorder(
-            BorderFactory.createLineBorder(JBColor(0x3A4C64, 0x3A4C64), 1, true),
-            BorderFactory.createEmptyBorder(2, 8, 2, 8),
-        )
-        button.background = JBColor(0x1A2432, 0x1A2432)
-        button.foreground = JBColor(0xCEDAEA, 0xCEDAEA)
+        AssistantUiTheme.toolbarChip(button)
     }
 
     private fun styleAttachButton(button: JButton) {
-        button.isFocusable = false
-        button.toolTipText = "Attach files"
-        button.border = BorderFactory.createCompoundBorder(
-            BorderFactory.createLineBorder(JBColor(0x3A4C64, 0x3A4C64), 1, true),
-            BorderFactory.createEmptyBorder(2, 6, 2, 6),
-        )
-        button.background = JBColor(0x1A2432, 0x1A2432)
-        button.foreground = JBColor(0xCEDAEA, 0xCEDAEA)
+        button.toolTipText = "Manage attached files inside the workspace"
+        AssistantUiTheme.toolbarChip(button)
+    }
+
+    private fun styleHeaderButton(button: JButton) {
+        AssistantUiTheme.toolbarButton(button)
     }
 
     private fun styleSettingsButton(button: JButton) {
-        button.isFocusable = false
         button.horizontalAlignment = SwingConstants.CENTER
-        button.border = BorderFactory.createCompoundBorder(
-            BorderFactory.createLineBorder(JBColor(0x3A4C64, 0x3A4C64), 1, true),
-            BorderFactory.createEmptyBorder(2, 8, 2, 8),
-        )
-        button.background = JBColor(0x1A2432, 0x1A2432)
-        button.foreground = JBColor(0xCEDAEA, 0xCEDAEA)
-        button.toolTipText = "Settings"
+        button.toolTipText = "Open workspace settings"
+        AssistantUiTheme.toolbarButton(button)
     }
 
     private fun styleEditorContextPanel(panel: JPanel, label: JLabel, closeButton: JButton) {
         panel.isOpaque = true
-        panel.background = JBColor(0x1A2432, 0x1A2432)
+        panel.background = AssistantUiTheme.SURFACE_SUBTLE
         panel.border = BorderFactory.createCompoundBorder(
-            BorderFactory.createLineBorder(JBColor(0x3A4C64, 0x3A4C64), 1, true),
-            BorderFactory.createEmptyBorder(2, 8, 2, 8),
+            BorderFactory.createLineBorder(AssistantUiTheme.BORDER_SUBTLE, 1, true),
+            BorderFactory.createEmptyBorder(2, 7, 2, 7),
         )
-        label.foreground = JBColor(0xCEDAEA, 0xCEDAEA)
+        label.foreground = AssistantUiTheme.TEXT_PRIMARY
         closeButton.isFocusable = false
         closeButton.border = BorderFactory.createEmptyBorder(0, 2, 0, 0)
         closeButton.background = panel.background
-        closeButton.foreground = JBColor(0x95A9C4, 0x95A9C4)
+        closeButton.foreground = AssistantUiTheme.TEXT_SECONDARY
         closeButton.toolTipText = "Remove current file context"
         panel.add(label)
         panel.add(closeButton)
     }
 
     private fun styleSdkButton(button: JButton) {
-        button.isFocusable = false
-        button.toolTipText = "Switch SDK"
-        button.border = BorderFactory.createCompoundBorder(
-            BorderFactory.createLineBorder(JBColor(0x3A4C64, 0x3A4C64), 1, true),
-            BorderFactory.createEmptyBorder(2, 8, 2, 8),
-        )
-        button.background = JBColor(0x1A2432, 0x1A2432)
-        button.foreground = JBColor(0xCEDAEA, 0xCEDAEA)
+        button.toolTipText = "Switch provider"
+        AssistantUiTheme.toolbarChip(button)
     }
 
     private fun stylePrimaryActionButton(button: JButton) {
-        button.isFocusable = false
-        button.border = BorderFactory.createCompoundBorder(
-            BorderFactory.createLineBorder(JBColor(0x2C5B98, 0x2C5B98), 1, true),
-            BorderFactory.createEmptyBorder(2, 10, 2, 10),
-        )
-        button.background = JBColor(0x244A7B, 0x244A7B)
-        button.foreground = JBColor(0xEAF2FF, 0xEAF2FF)
+        AssistantUiTheme.compactPrimaryButton(button)
+    }
+
+    private fun styleStatusLabel(label: JLabel) {
+        label.foreground = AssistantUiTheme.TEXT_SECONDARY
+        label.font = label.font.deriveFont(11.5f)
+        label.iconTextGap = 6
     }
 
     private fun setRunningState(running: Boolean) {
         isRunning = running
-        actionButton.text = if (running) "\u25A0" else "\u27A4"
-        actionButton.toolTipText = if (running) "Stop" else "Send"
+        actionButton.text = if (running) "Stop" else "Run"
+        actionButton.toolTipText = if (running) "Stop the active run" else "Run the task"
+        if (running) {
+            refreshRunningStatusLabel()
+        } else if (streamLabel.text.isBlank()) {
+            setStatusMessage("Ready")
+        }
+    }
+
+    private fun refreshRunningStatusLabel() {
+        if (!isRunning) return
+        val elapsedMs = requestStartedAtMs.takeIf { it > 0L }?.let { System.currentTimeMillis() - it } ?: 0L
+        streamLabel.icon = AnimatedIcon.Default()
+        streamLabel.text = ToolWindowUiText.runningStatus(elapsedMs)
+        streamLabel.toolTipText = "Current run is still in progress"
+    }
+
+    private fun setStatusMessage(message: String) {
+        streamLabel.icon = null
+        streamLabel.text = message
+        streamLabel.toolTipText = message
     }
 
     private fun onPrimaryAction() {
@@ -1829,10 +2020,7 @@ class AgentToolWindowPanel(private val project: Project) : JPanel(BorderLayout()
     }
 
     private fun formatDuration(durationMs: Long): String {
-        return when {
-            durationMs >= 1000L -> String.format("%.1fs", durationMs / 1000.0)
-            else -> "${durationMs}ms"
-        }
+        return ToolWindowUiText.formatDuration(durationMs)
     }
 
     private fun renderToolCard(toolLine: String, showDetails: Boolean, stepIndex: Int): String {
@@ -2194,6 +2382,7 @@ class AgentToolWindowPanel(private val project: Project) : JPanel(BorderLayout()
 
     private fun finishTurn(doneText: String, persistIfNeeded: Boolean) {
         val shouldRefreshFiles = hasLikelyFileMutationInTurn()
+        val totalDurationMs = requestStartedAtMs.takeIf { it > 0L }?.let { System.currentTimeMillis() - it }
         if (persistIfNeeded && !turnFinalized) {
             closeActiveContentNarrative()
             val content = currentAssistantContentBuffer.toString().trim()
@@ -2225,8 +2414,7 @@ class AgentToolWindowPanel(private val project: Project) : JPanel(BorderLayout()
         currentFlowSequence = 0
         currentStatusText = ""
         requestStartedAtMs = 0L
-        streamLabel.icon = null
-        streamLabel.text = doneText
+        setStatusMessage(ToolWindowUiText.finishedStatus(doneText, totalDurationMs))
         setRunningState(false)
         renderMessages(streamingText = null, forceAutoScroll = false)
         maybeRefreshProjectFiles(force = shouldRefreshFiles)
@@ -2513,6 +2701,10 @@ class AgentToolWindowPanel(private val project: Project) : JPanel(BorderLayout()
     companion object {
         private const val CARD_PLACEHOLDER = "placeholder"
         private const val CARD_MESSAGES = "messages"
+        private const val WORKSPACE_CONSOLE = "workspace-console"
+        private const val WORKSPACE_HISTORY = "workspace-history"
+        private const val WORKSPACE_SETTINGS = "workspace-settings"
+        private const val WORKSPACE_CONTEXT = "workspace-context"
         private const val maxContextChars = 120_000
         private const val maxContextFileBytes = 200_000L
         private val mutationKeywords: Set<String> = setOf(
@@ -2619,22 +2811,9 @@ class AgentToolWindowPanel(private val project: Project) : JPanel(BorderLayout()
 
     private fun clearConversation() {
         chatService.clearMessages()
-        currentAssistantContentBuffer = StringBuilder()
-        currentThinkingBuffer = StringBuilder()
-        currentToolEventsBuffer.clear()
-        currentCommandEventsBuffer.clear()
-        currentNarrativeEventsBuffer.clear()
-        activeContentNarrativeId = null
-        currentFlowSequence = 0
-        expandedToolMessageIds.clear()
-        expandedThinkingMessageIds.clear()
-        expandedCommandMessageIds.clear()
-        currentStatusText = ""
-        requestStartedAtMs = 0L
-        loadingTimer.stop()
+        resetConversationUi()
         refreshMessages()
-        streamLabel.icon = null
-        streamLabel.text = ""
+        showWorkspace(ToolWindowView.CONSOLE)
     }
 
     private fun startNewSession() {
@@ -2653,23 +2832,10 @@ class AgentToolWindowPanel(private val project: Project) : JPanel(BorderLayout()
             return
         }
         chatService.createSession()
-        currentAssistantContentBuffer = StringBuilder()
-        currentThinkingBuffer = StringBuilder()
-        currentToolEventsBuffer.clear()
-        currentCommandEventsBuffer.clear()
-        currentNarrativeEventsBuffer.clear()
-        activeContentNarrativeId = null
-        currentFlowSequence = 0
-        expandedToolMessageIds.clear()
-        expandedThinkingMessageIds.clear()
-        expandedCommandMessageIds.clear()
-        currentStatusText = ""
-        requestStartedAtMs = 0L
-        loadingTimer.stop()
+        resetConversationUi()
         refreshMessages()
-        streamLabel.icon = null
-        streamLabel.text = ""
         refreshNewButtonState()
+        showWorkspace(ToolWindowView.CONSOLE)
     }
 
     private fun refreshNewButtonState() {
@@ -2699,19 +2865,7 @@ class AgentToolWindowPanel(private val project: Project) : JPanel(BorderLayout()
         } else {
             dialog.selectedSessionId()?.let { chatService.switchSession(it) }
         }
-        currentAssistantContentBuffer = StringBuilder()
-        currentThinkingBuffer = StringBuilder()
-        currentToolEventsBuffer.clear()
-        currentCommandEventsBuffer.clear()
-        currentNarrativeEventsBuffer.clear()
-        activeContentNarrativeId = null
-        currentFlowSequence = 0
-        expandedToolMessageIds.clear()
-        expandedThinkingMessageIds.clear()
-        expandedCommandMessageIds.clear()
-        currentStatusText = ""
-        requestStartedAtMs = 0L
-        loadingTimer.stop()
+        resetConversationUi()
         refreshMessages()
     }
 

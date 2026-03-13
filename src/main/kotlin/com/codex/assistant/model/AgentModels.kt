@@ -83,7 +83,7 @@ data class TurnUsageSnapshot(
         return (remainingRatio * 100).roundToInt().coerceIn(0, 100)
     }
 
-    fun headerLabel(): String = leftPercent()?.let { "$it% left" } ?: "--"
+    fun headerLabel(): String = leftPercent()?.let { "Est. $it% left" } ?: "Usage"
 
     fun tooltipText(): String {
         return buildString {
@@ -91,6 +91,7 @@ data class TurnUsageSnapshot(
             append(" · Output ").append(formatTokenCount(outputTokens))
             if (cachedInputTokens > 0) {
                 append("\nCached ").append(formatTokenCount(cachedInputTokens))
+                append(" (included in input)")
             }
             if (model.isNotBlank() || contextWindow > 0) {
                 append("\n")
@@ -102,7 +103,10 @@ data class TurnUsageSnapshot(
                     append("Context ").append(formatTokenCount(contextWindow))
                 }
             }
-            append("\nCaptured from latest completed turn")
+            append("\nEstimated from the latest completed turn")
+            if (contextWindow > 0) {
+                append("\n0% left is not a hard stop; older context may be truncated automatically")
+            }
         }
     }
 

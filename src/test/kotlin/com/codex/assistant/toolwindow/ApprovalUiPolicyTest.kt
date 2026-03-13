@@ -24,7 +24,7 @@ class ApprovalUiPolicyTest {
     fun `approval chip remains as placeholder ui only`() {
         val policy = ApprovalUiPolicy()
 
-        assertEquals("Approvals: Planned", policy.chipLabel)
+        assertEquals("Auto", policy.chipLabel)
         assertFalse(policy.isInteractive)
     }
 }

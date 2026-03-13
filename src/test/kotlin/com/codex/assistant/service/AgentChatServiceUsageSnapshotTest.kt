@@ -43,7 +43,7 @@ class AgentChatServiceUsageSnapshotTest {
         assertEquals(116_986, snapshot.inputTokens)
         assertEquals(93_440, snapshot.cachedInputTokens)
         assertEquals(3_202, snapshot.outputTokens)
-        assertEquals("70% left", snapshot.headerLabel())
+        assertEquals("Est. 70% left", snapshot.headerLabel())
 
         val persisted = store.readState()
         val persistedSnapshot = assertNotNull(persisted.sessions.single().usageSnapshot)
@@ -55,7 +55,7 @@ class AgentChatServiceUsageSnapshotTest {
 
         val reloaded = createService(store, provider = UsageReportingProvider())
         val reloadedSnapshot = assertNotNull(reloaded.currentUsageSnapshot())
-        assertEquals("70% left", reloadedSnapshot.headerLabel())
+        assertEquals("Est. 70% left", reloadedSnapshot.headerLabel())
 
         reloaded.dispose()
         service.dispose()
