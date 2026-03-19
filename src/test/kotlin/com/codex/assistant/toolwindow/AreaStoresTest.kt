@@ -17,6 +17,7 @@ import com.codex.assistant.toolwindow.eventing.ComposerMode
 import com.codex.assistant.toolwindow.eventing.ComposerReasoning
 import com.codex.assistant.toolwindow.eventing.UiIntent
 import com.codex.assistant.toolwindow.header.HeaderAreaStore
+import com.codex.assistant.toolwindow.status.StatusAreaStore
 import com.codex.assistant.toolwindow.timeline.TimelineActivityKind
 import com.codex.assistant.toolwindow.timeline.TimelineAreaStore
 import com.codex.assistant.toolwindow.timeline.TimelineMutation
@@ -157,9 +158,8 @@ class AreaStoresTest {
         )
         store.onEvent(
             AppEvent.TimelineMutationApplied(
-                TimelineMutation.UpsertActivity(
+                TimelineMutation.UpsertCommand(
                     sourceId = "cmd_1",
-                    kind = TimelineActivityKind.COMMAND,
                     title = "Exec Command",
                     body = "ls",
                     status = ItemStatus.RUNNING,
@@ -170,10 +170,40 @@ class AreaStoresTest {
         store.onEvent(AppEvent.UiIntentPublished(UiIntent.ToggleNodeExpanded("cmd_1")))
 
         assertEquals(1, store.state.value.nodes.size)
-        assertIs<TimelineNode.ActivityNode>(store.state.value.nodes.single())
+        assertIs<TimelineNode.CommandNode>(store.state.value.nodes.single())
         assertTrue(store.state.value.expandedNodeIds.contains("cmd_1"))
         assertTrue(store.state.value.renderVersion > 0L)
         assertTrue(store.state.value.isRunning)
+    }
+
+    @Test
+    fun `status store shows turn status only while a turn is active`() {
+        val store = StatusAreaStore()
+
+        store.onEvent(AppEvent.PromptAccepted(prompt = "hello"))
+        assertEquals("status.running", (store.state.value.turnStatus?.label as com.codex.assistant.toolwindow.shared.UiText.Bundle).key)
+
+        store.onEvent(
+            AppEvent.UnifiedEventPublished(
+                com.codex.assistant.protocol.UnifiedEvent.TurnCompleted(
+                    turnId = "turn_1",
+                    outcome = com.codex.assistant.protocol.TurnOutcome.SUCCESS,
+                    usage = null,
+                ),
+            ),
+        )
+
+        assertEquals(null, store.state.value.turnStatus)
+    }
+
+    @Test
+    fun `status store routes global messages into toast`() {
+        val store = StatusAreaStore()
+
+        store.onEvent(AppEvent.StatusTextUpdated(com.codex.assistant.toolwindow.shared.UiText.raw("Cannot switch tabs while running.")))
+
+        assertEquals("Cannot switch tabs while running.", (store.state.value.toast?.text as com.codex.assistant.toolwindow.shared.UiText.Raw).value)
+        assertEquals(null, store.state.value.turnStatus)
     }
 
     @Test

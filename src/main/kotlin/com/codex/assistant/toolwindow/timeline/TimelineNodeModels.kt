@@ -32,35 +32,103 @@ internal data class TimelineMessageAttachment(
     val status: ItemStatus,
 )
 
+internal enum class TimelineFileChangeKind {
+    UPDATE,
+    CREATE,
+    DELETE,
+    UNKNOWN,
+}
+
+internal data class TimelineFileChange(
+    val path: String,
+    val displayName: String,
+    val kind: TimelineFileChangeKind,
+    val addedLines: Int? = null,
+    val deletedLines: Int? = null,
+    val oldContent: String? = null,
+    val newContent: String? = null,
+)
+
 internal sealed interface TimelineNode {
     val id: String
+    val sourceId: String?
+    val status: ItemStatus?
+    val turnId: String?
 
     data class MessageNode(
         override val id: String,
-        val sourceId: String,
+        override val sourceId: String,
         val role: MessageRole,
         val text: String,
-        val status: ItemStatus,
+        override val status: ItemStatus,
         val timestamp: Long?,
-        val turnId: String?,
+        override val turnId: String?,
         val cursor: Long?,
         val attachments: List<TimelineMessageAttachment> = emptyList(),
     ) : TimelineNode
 
-    data class ActivityNode(
+    data class ToolCallNode(
         override val id: String,
-        val sourceId: String,
-        val kind: TimelineActivityKind,
+        override val sourceId: String,
         val title: String,
         val body: String,
-        val status: ItemStatus,
-        val turnId: String?,
+        override val status: ItemStatus,
+        override val turnId: String?,
+    ) : TimelineNode
+
+    data class CommandNode(
+        override val id: String,
+        override val sourceId: String,
+        val title: String,
+        val body: String,
+        override val status: ItemStatus,
+        override val turnId: String?,
+    ) : TimelineNode
+
+    data class FileChangeNode(
+        override val id: String,
+        override val sourceId: String,
+        val title: String,
+        val changes: List<TimelineFileChange>,
+        override val status: ItemStatus,
+        override val turnId: String?,
+    ) : TimelineNode
+
+    data class ApprovalNode(
+        override val id: String,
+        override val sourceId: String,
+        val title: String,
+        val body: String,
+        override val status: ItemStatus,
+        override val turnId: String?,
+    ) : TimelineNode
+
+    data class PlanNode(
+        override val id: String,
+        override val sourceId: String,
+        val title: String,
+        val body: String,
+        override val status: ItemStatus,
+        override val turnId: String?,
+    ) : TimelineNode
+
+    data class UnknownActivityNode(
+        override val id: String,
+        override val sourceId: String,
+        val title: String,
+        val body: String,
+        override val status: ItemStatus,
+        override val turnId: String?,
     ) : TimelineNode
 
     data class LoadMoreNode(
         override val id: String = LOAD_MORE_NODE_ID,
         val isLoading: Boolean,
-    ) : TimelineNode
+    ) : TimelineNode {
+        override val sourceId: String? = null
+        override val status: ItemStatus? = null
+        override val turnId: String? = null
+    }
 
     companion object {
         const val LOAD_MORE_NODE_ID: String = "timeline-load-more"
@@ -96,9 +164,48 @@ internal sealed interface TimelineMutation {
         val attachments: List<TimelineMessageAttachment> = emptyList(),
     ) : TimelineMutation
 
-    data class UpsertActivity(
+    data class UpsertToolCall(
         val sourceId: String,
-        val kind: TimelineActivityKind,
+        val title: String,
+        val body: String,
+        val status: ItemStatus,
+        val turnId: String? = null,
+    ) : TimelineMutation
+
+    data class UpsertCommand(
+        val sourceId: String,
+        val title: String,
+        val body: String,
+        val status: ItemStatus,
+        val turnId: String? = null,
+    ) : TimelineMutation
+
+    data class UpsertFileChange(
+        val sourceId: String,
+        val title: String,
+        val changes: List<TimelineFileChange>,
+        val status: ItemStatus,
+        val turnId: String? = null,
+    ) : TimelineMutation
+
+    data class UpsertApproval(
+        val sourceId: String,
+        val title: String,
+        val body: String,
+        val status: ItemStatus,
+        val turnId: String? = null,
+    ) : TimelineMutation
+
+    data class UpsertPlan(
+        val sourceId: String,
+        val title: String,
+        val body: String,
+        val status: ItemStatus,
+        val turnId: String? = null,
+    ) : TimelineMutation
+
+    data class UpsertUnknownActivity(
+        val sourceId: String,
         val title: String,
         val body: String,
         val status: ItemStatus,

@@ -22,6 +22,7 @@ import com.codex.assistant.toolwindow.drawer.RightDrawerAreaStore
 import com.codex.assistant.toolwindow.header.HeaderAreaStore
 import com.codex.assistant.toolwindow.status.StatusAreaStore
 import com.codex.assistant.toolwindow.timeline.TimelineAreaStore
+import com.codex.assistant.toolwindow.timeline.TimelineFileChange
 import com.codex.assistant.toolwindow.timeline.TimelineMutation
 import com.codex.assistant.toolwindow.timeline.TimelineNodeMapper
 import com.intellij.codeInsight.navigation.LOG
@@ -59,6 +60,7 @@ internal class ToolWindowCoordinator(
     private val searchProjectFiles: (String, Int) -> List<String> = { _, _ -> emptyList() },
     private val isMentionCandidateFile: (String) -> Boolean = { path -> MentionFileWhitelist.allowPath(path) },
     private val readFileContent: (String) -> String? = { path -> readFileContentDefault(path) },
+    private val openTimelineFileChange: (TimelineFileChange) -> Unit = {},
     private val onSessionSnapshotPublished: () -> Unit = {},
     private val historyPageSize: Int = 40,
 ) : Disposable {
@@ -103,6 +105,7 @@ internal class ToolWindowCoordinator(
             UiIntent.SendPrompt -> submitPromptIfAllowed()
             UiIntent.CancelRun -> cancelPromptRun()
             is UiIntent.DeleteSession -> deleteSession(intent.sessionId)
+            is UiIntent.OpenTimelineFileChange -> openTimelineFileChange(intent.change)
             UiIntent.LoadOlderMessages -> loadOlderMessages()
             UiIntent.OpenAttachmentPicker -> {
                 val selected = pickAttachments()
@@ -143,11 +146,27 @@ internal class ToolWindowCoordinator(
                 )
             }
             is UiIntent.UpdateFocusedContextFile -> recordFocusedFile(intent.path)
+            is UiIntent.EditSettingsLanguageMode -> applyLanguagePreview(intent.mode)
+            is UiIntent.EditSettingsThemeMode -> applyThemePreview(intent.mode)
             UiIntent.SaveAgentDraft -> saveAgentDraft()
             is UiIntent.DeleteSavedAgent -> deleteSavedAgent(intent.id)
             UiIntent.SaveSettings -> saveSettings()
             else -> Unit
         }
+    }
+
+    private fun applyLanguagePreview(mode: com.codex.assistant.settings.UiLanguageMode) {
+        if (settingsService.uiLanguageMode() == mode) return
+        settingsService.setUiLanguageMode(mode)
+        settingsService.notifyLanguageChanged()
+        publishSettingsSnapshot()
+    }
+
+    private fun applyThemePreview(mode: com.codex.assistant.settings.UiThemeMode) {
+        if (settingsService.uiThemeMode() == mode) return
+        settingsService.setUiThemeMode(mode)
+        settingsService.notifyAppearanceChanged()
+        publishSettingsSnapshot()
     }
 
     private fun saveSettings() {

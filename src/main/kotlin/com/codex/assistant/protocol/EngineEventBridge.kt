@@ -64,11 +64,20 @@ object EngineEventBridge {
             )
             is EngineEvent.DiffProposal -> UnifiedEvent.ItemUpdated(
                 UnifiedItem(
-                    id = scopedId(requestId, "diff:${event.filePath.hashCode()}"),
+                    id = scopedId(requestId, event.itemId),
                     kind = ItemKind.DIFF_APPLY,
                     status = ItemStatus.RUNNING,
-                    filePath = event.filePath,
-                    text = event.newContent,
+                    name = "File Changes (${event.changes.size})",
+                    text = event.changes.joinToString("\n") { change ->
+                        "${change.kind} ${change.path}"
+                    },
+                    fileChanges = event.changes.map { change ->
+                        UnifiedFileChange(
+                            path = change.path,
+                            kind = change.kind,
+                            newContent = change.newContent,
+                        )
+                    },
                 ),
             )
             is EngineEvent.TurnUsage -> UnifiedEvent.TurnCompleted(

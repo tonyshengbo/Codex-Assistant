@@ -21,6 +21,14 @@ internal class ProposalAccumulator(
     }
 
     private fun diffKey(event: EngineEvent.DiffProposal): String {
-        return "${event.filePath.trim()}::${event.newContent.hashCode()}"
+        return buildString {
+            append(event.itemId.trim())
+            append("::")
+            append(
+                event.changes.joinToString("|") { change ->
+                    "${change.kind.trim()}:${change.path.trim()}:${change.newContent.orEmpty().hashCode()}"
+                },
+            )
+        }
     }
 }

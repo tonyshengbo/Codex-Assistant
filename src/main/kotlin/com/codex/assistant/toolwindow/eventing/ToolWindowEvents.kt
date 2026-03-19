@@ -10,6 +10,7 @@ import com.codex.assistant.toolwindow.composer.ContextEntry
 import com.codex.assistant.i18n.CodexBundle
 import com.codex.assistant.toolwindow.drawer.SettingsSection
 import com.codex.assistant.toolwindow.shared.UiText
+import com.codex.assistant.toolwindow.timeline.TimelineFileChange
 import com.codex.assistant.toolwindow.timeline.TimelineMutation
 import com.codex.assistant.toolwindow.timeline.TimelineNode
 import androidx.compose.ui.text.input.TextFieldValue
@@ -24,6 +25,7 @@ internal sealed interface UiIntent {
     data class SwitchSession(val sessionId: String) : UiIntent
     data object LoadOlderMessages : UiIntent
     data class ToggleNodeExpanded(val nodeId: String) : UiIntent
+    data class OpenTimelineFileChange(val change: TimelineFileChange) : UiIntent
     data class UpdateDocument(val value: TextFieldValue) : UiIntent
     data class InputChanged(val value: String) : UiIntent
     data object SendPrompt : UiIntent

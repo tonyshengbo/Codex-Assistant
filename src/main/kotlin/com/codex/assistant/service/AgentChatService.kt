@@ -19,6 +19,7 @@ import com.codex.assistant.persistence.chat.PersistedChatSession
 import com.codex.assistant.persistence.chat.SQLiteChatSessionRepository
 import com.codex.assistant.persistence.chat.TimelineHistoryPage
 import com.codex.assistant.protocol.EngineEventBridge
+import com.codex.assistant.protocol.ActivityTitleFormatter
 import com.codex.assistant.protocol.ItemKind
 import com.codex.assistant.protocol.ItemStatus
 import com.codex.assistant.protocol.UnifiedEvent
@@ -683,14 +684,26 @@ class AgentChatService private constructor(
     }
 
     private fun UnifiedItem.activityTitle(): String {
-        val candidate = name?.trim().orEmpty()
-        if (candidate.isNotBlank()) {
-            return candidate
-        }
         return when (kind.toPersistedActivityKind()) {
-            PersistedActivityKind.TOOL -> "Tool Call"
-            PersistedActivityKind.COMMAND -> "Exec Command"
-            PersistedActivityKind.DIFF -> "Apply Diff"
+            PersistedActivityKind.TOOL -> ActivityTitleFormatter.toolTitle(
+                explicitName = name,
+                body = activityBody(),
+            )
+            PersistedActivityKind.COMMAND -> ActivityTitleFormatter.commandTitle(
+                explicitName = name,
+                command = command,
+                body = activityBody(),
+            )
+            PersistedActivityKind.DIFF -> ActivityTitleFormatter.fileChangeTitle(
+                explicitName = name,
+                changes = fileChanges.map { change ->
+                    ActivityTitleFormatter.FileChangeSummary(
+                        path = change.path,
+                        kind = change.kind,
+                    )
+                },
+                body = activityBody(),
+            )
             PersistedActivityKind.APPROVAL -> "Approval"
             PersistedActivityKind.PLAN -> "Plan Update"
             PersistedActivityKind.UNKNOWN -> "Activity"
@@ -702,7 +715,6 @@ class AgentChatService private constructor(
             text?.takeIf { it.isNotBlank() },
             command?.takeIf { it.isNotBlank() },
             filePath?.takeIf { it.isNotBlank() },
-            name?.takeIf { it.isNotBlank() },
         ).joinToString("\n").ifBlank { id }
     }
 

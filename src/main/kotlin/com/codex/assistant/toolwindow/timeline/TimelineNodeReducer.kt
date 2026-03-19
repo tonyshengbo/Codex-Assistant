@@ -20,7 +20,12 @@ internal class TimelineNodeReducer {
 
             is TimelineMutation.TurnStarted -> acceptTurnStarted(mutation)
             is TimelineMutation.UpsertMessage -> acceptMessage(mutation)
-            is TimelineMutation.UpsertActivity -> acceptActivity(mutation)
+            is TimelineMutation.UpsertToolCall -> acceptToolCall(mutation)
+            is TimelineMutation.UpsertCommand -> acceptCommand(mutation)
+            is TimelineMutation.UpsertFileChange -> acceptFileChange(mutation)
+            is TimelineMutation.UpsertApproval -> acceptApproval(mutation)
+            is TimelineMutation.UpsertPlan -> acceptPlan(mutation)
+            is TimelineMutation.UpsertUnknownActivity -> acceptUnknownActivity(mutation)
             is TimelineMutation.TurnCompleted -> acceptTurnCompleted(mutation)
             is TimelineMutation.Error -> acceptError(mutation)
         }.withLiveRender()
@@ -115,29 +120,101 @@ internal class TimelineNodeReducer {
             cursor = mutation.cursor,
             attachments = if (mutation.attachments.isNotEmpty()) mutation.attachments else existing?.attachments.orEmpty(),
         )
-        val nextNodes = upsertNode(state.nodes, node, turnId)
         return state.copy(
-            nodes = nextNodes,
+            nodes = upsertNode(state.nodes, node, turnId),
             isRunning = shouldKeepRunning(mutation.status, turnId),
             latestError = null,
         )
     }
 
-    private fun acceptActivity(mutation: TimelineMutation.UpsertActivity): TimelineAreaState {
-        val turnId = resolveTurnId(mutation.turnId)
-        val node = TimelineNode.ActivityNode(
-            id = activityNodeId(turnId, mutation.sourceId),
-            sourceId = mutation.sourceId,
-            kind = mutation.kind,
-            title = mutation.title,
-            body = mutation.body,
-            status = mutation.status,
-            turnId = turnId,
-        )
-        val nextNodes = upsertNode(state.nodes, node, turnId)
+    private fun acceptToolCall(mutation: TimelineMutation.UpsertToolCall): TimelineAreaState {
+        return acceptTypedActivity(mutation.turnId, mutation.status) { turnId ->
+            TimelineNode.ToolCallNode(
+                id = activityNodeId("tool", turnId, mutation.sourceId),
+                sourceId = mutation.sourceId,
+                title = mutation.title,
+                body = mutation.body,
+                status = mutation.status,
+                turnId = turnId,
+            )
+        }
+    }
+
+    private fun acceptCommand(mutation: TimelineMutation.UpsertCommand): TimelineAreaState {
+        return acceptTypedActivity(mutation.turnId, mutation.status) { turnId ->
+            TimelineNode.CommandNode(
+                id = activityNodeId("command", turnId, mutation.sourceId),
+                sourceId = mutation.sourceId,
+                title = mutation.title,
+                body = mutation.body,
+                status = mutation.status,
+                turnId = turnId,
+            )
+        }
+    }
+
+    private fun acceptFileChange(mutation: TimelineMutation.UpsertFileChange): TimelineAreaState {
+        return acceptTypedActivity(mutation.turnId, mutation.status) { turnId ->
+            TimelineNode.FileChangeNode(
+                id = activityNodeId("diff", turnId, mutation.sourceId),
+                sourceId = mutation.sourceId,
+                title = mutation.title,
+                changes = mutation.changes,
+                status = mutation.status,
+                turnId = turnId,
+            )
+        }
+    }
+
+    private fun acceptApproval(mutation: TimelineMutation.UpsertApproval): TimelineAreaState {
+        return acceptTypedActivity(mutation.turnId, mutation.status) { turnId ->
+            TimelineNode.ApprovalNode(
+                id = activityNodeId("approval", turnId, mutation.sourceId),
+                sourceId = mutation.sourceId,
+                title = mutation.title,
+                body = mutation.body,
+                status = mutation.status,
+                turnId = turnId,
+            )
+        }
+    }
+
+    private fun acceptPlan(mutation: TimelineMutation.UpsertPlan): TimelineAreaState {
+        return acceptTypedActivity(mutation.turnId, mutation.status) { turnId ->
+            TimelineNode.PlanNode(
+                id = activityNodeId("plan", turnId, mutation.sourceId),
+                sourceId = mutation.sourceId,
+                title = mutation.title,
+                body = mutation.body,
+                status = mutation.status,
+                turnId = turnId,
+            )
+        }
+    }
+
+    private fun acceptUnknownActivity(mutation: TimelineMutation.UpsertUnknownActivity): TimelineAreaState {
+        return acceptTypedActivity(mutation.turnId, mutation.status) { turnId ->
+            TimelineNode.UnknownActivityNode(
+                id = activityNodeId("unknown", turnId, mutation.sourceId),
+                sourceId = mutation.sourceId,
+                title = mutation.title,
+                body = mutation.body,
+                status = mutation.status,
+                turnId = turnId,
+            )
+        }
+    }
+
+    private fun acceptTypedActivity(
+        explicitTurnId: String?,
+        status: ItemStatus,
+        create: (String?) -> TimelineNode,
+    ): TimelineAreaState {
+        val turnId = resolveTurnId(explicitTurnId)
+        val node = create(turnId)
         return state.copy(
-            nodes = nextNodes,
-            isRunning = shouldKeepRunning(mutation.status, turnId),
+            nodes = upsertNode(state.nodes, node, turnId),
+            isRunning = shouldKeepRunning(status, turnId),
             latestError = null,
         )
     }
@@ -147,13 +224,12 @@ internal class TimelineNodeReducer {
         if (targetTurnId != null && activeTurnId == targetTurnId) {
             activeTurnId = null
         }
-        val nextNodes = finalizeRunningNodes(
-            nodes = state.nodes,
-            turnId = targetTurnId,
-            status = mutation.outcome.toItemStatus(),
-        )
         return state.copy(
-            nodes = nextNodes,
+            nodes = finalizeRunningNodes(
+                nodes = state.nodes,
+                turnId = targetTurnId,
+                status = mutation.outcome.toItemStatus(),
+            ),
             isRunning = false,
         )
     }
@@ -191,10 +267,8 @@ internal class TimelineNodeReducer {
         if (normalized.isNotBlank()) return normalized
         if (!activeTurnId.isNullOrBlank()) return activeTurnId
         return state.nodes.asReversed().firstNotNullOfOrNull { node ->
-            when (node) {
-                is TimelineNode.MessageNode -> node.turnId?.takeIf { node.status == ItemStatus.RUNNING }
-                is TimelineNode.ActivityNode -> node.turnId?.takeIf { node.status == ItemStatus.RUNNING }
-                is TimelineNode.LoadMoreNode -> null
+            node.turnId?.takeIf { currentTurnId ->
+                node.status == ItemStatus.RUNNING && currentTurnId.isNotBlank()
             }
         }
     }
@@ -205,24 +279,10 @@ internal class TimelineNodeReducer {
         status: ItemStatus,
     ): List<TimelineNode> {
         return nodes.map { node ->
-            when (node) {
-                is TimelineNode.MessageNode -> {
-                    if (node.status == ItemStatus.RUNNING && (turnId == null || node.turnId == turnId)) {
-                        node.copy(status = status)
-                    } else {
-                        node
-                    }
-                }
-
-                is TimelineNode.ActivityNode -> {
-                    if (node.status == ItemStatus.RUNNING && (turnId == null || node.turnId == turnId)) {
-                        node.copy(status = status)
-                    } else {
-                        node
-                    }
-                }
-
-                is TimelineNode.LoadMoreNode -> node
+            when {
+                node is TimelineNode.LoadMoreNode -> node
+                node.status == ItemStatus.RUNNING && (turnId == null || node.turnId == turnId) -> node.withStatus(status)
+                else -> node
             }
         }
     }
@@ -234,15 +294,10 @@ internal class TimelineNodeReducer {
     ): List<TimelineNode> {
         val next = nodes.toMutableList()
         val existingIndex = next.indexOfFirst { candidate ->
-            when {
-                candidate is TimelineNode.MessageNode && node is TimelineNode.MessageNode ->
-                    candidate.sourceId == node.sourceId && candidate.turnId == turnId
-
-                candidate is TimelineNode.ActivityNode && node is TimelineNode.ActivityNode ->
-                    candidate.sourceId == node.sourceId && candidate.turnId == turnId
-
-                else -> false
-            }
+            candidate::class == node::class &&
+                candidate.sourceId != null &&
+                candidate.sourceId == node.sourceId &&
+                candidate.turnId == turnId
         }
         if (existingIndex >= 0) {
             next[existingIndex] = node
@@ -282,20 +337,33 @@ internal class TimelineNodeReducer {
         toTurnId: String,
     ): TimelineNode {
         return when (this) {
-            is TimelineNode.MessageNode -> {
-                if (turnId != fromTurnId) this else copy(
-                    id = messageNodeId(toTurnId, sourceId),
-                    turnId = toTurnId,
-                )
-            }
+            is TimelineNode.MessageNode ->
+                if (turnId != fromTurnId) this else copy(id = messageNodeId(toTurnId, sourceId), turnId = toTurnId)
+            is TimelineNode.ToolCallNode ->
+                if (turnId != fromTurnId) this else copy(id = activityNodeId("tool", toTurnId, sourceId), turnId = toTurnId)
+            is TimelineNode.CommandNode ->
+                if (turnId != fromTurnId) this else copy(id = activityNodeId("command", toTurnId, sourceId), turnId = toTurnId)
+            is TimelineNode.FileChangeNode ->
+                if (turnId != fromTurnId) this else copy(id = activityNodeId("diff", toTurnId, sourceId), turnId = toTurnId)
+            is TimelineNode.ApprovalNode ->
+                if (turnId != fromTurnId) this else copy(id = activityNodeId("approval", toTurnId, sourceId), turnId = toTurnId)
+            is TimelineNode.PlanNode ->
+                if (turnId != fromTurnId) this else copy(id = activityNodeId("plan", toTurnId, sourceId), turnId = toTurnId)
+            is TimelineNode.UnknownActivityNode ->
+                if (turnId != fromTurnId) this else copy(id = activityNodeId("unknown", toTurnId, sourceId), turnId = toTurnId)
+            is TimelineNode.LoadMoreNode -> this
+        }
+    }
 
-            is TimelineNode.ActivityNode -> {
-                if (turnId != fromTurnId) this else copy(
-                    id = activityNodeId(toTurnId, sourceId),
-                    turnId = toTurnId,
-                )
-            }
-
+    private fun TimelineNode.withStatus(status: ItemStatus): TimelineNode {
+        return when (this) {
+            is TimelineNode.MessageNode -> copy(status = status)
+            is TimelineNode.ToolCallNode -> copy(status = status)
+            is TimelineNode.CommandNode -> copy(status = status)
+            is TimelineNode.FileChangeNode -> copy(status = status)
+            is TimelineNode.ApprovalNode -> copy(status = status)
+            is TimelineNode.PlanNode -> copy(status = status)
+            is TimelineNode.UnknownActivityNode -> copy(status = status)
             is TimelineNode.LoadMoreNode -> this
         }
     }
@@ -321,6 +389,6 @@ internal class TimelineNodeReducer {
     private fun messageNodeId(turnId: String?, sourceId: String): String =
         listOfNotNull("message", turnId?.takeIf { it.isNotBlank() }, sourceId).joinToString(":")
 
-    private fun activityNodeId(turnId: String?, sourceId: String): String =
-        listOfNotNull("activity", turnId?.takeIf { it.isNotBlank() }, sourceId).joinToString(":")
+    private fun activityNodeId(prefix: String, turnId: String?, sourceId: String): String =
+        TimelineNodeMapper.activityNodeId(prefix = prefix, turnId = turnId, sourceId = sourceId)
 }

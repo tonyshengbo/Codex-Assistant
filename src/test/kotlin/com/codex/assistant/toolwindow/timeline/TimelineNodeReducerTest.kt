@@ -124,18 +124,16 @@ class TimelineNodeReducerTest {
 
         reducer.accept(TimelineMutation.TurnStarted(turnId = "turn_2", threadId = "thread_1"))
         reducer.accept(
-            TimelineMutation.UpsertActivity(
+            TimelineMutation.UpsertToolCall(
                 sourceId = "tool-1",
-                kind = TimelineActivityKind.TOOL,
                 title = "shell",
                 body = "ls",
                 status = ItemStatus.RUNNING,
             ),
         )
         reducer.accept(
-            TimelineMutation.UpsertActivity(
+            TimelineMutation.UpsertToolCall(
                 sourceId = "tool-1",
-                kind = TimelineActivityKind.TOOL,
                 title = "shell",
                 body = "ls\nBUILD FAILED",
                 status = ItemStatus.RUNNING,
@@ -143,11 +141,53 @@ class TimelineNodeReducerTest {
         )
         reducer.accept(TimelineMutation.Error(message = "boom"))
 
-        val activity = assertIs<TimelineNode.ActivityNode>(reducer.state.nodes.single())
+        val activity = assertIs<TimelineNode.ToolCallNode>(reducer.state.nodes.single())
         assertEquals("ls\nBUILD FAILED", activity.body)
         assertEquals(ItemStatus.FAILED, activity.status)
         assertEquals("boom", reducer.state.latestError)
         assertFalse(reducer.state.isRunning)
+    }
+
+    @Test
+    fun `different file change items in same turn append separate activity nodes`() {
+        val reducer = TimelineNodeReducer()
+
+        reducer.accept(TimelineMutation.TurnStarted(turnId = "turn_diff_1", threadId = "thread_1"))
+        reducer.accept(
+            TimelineMutation.UpsertFileChange(
+                sourceId = "request-1:item_5",
+                title = "File Changes",
+                changes = listOf(
+                    TimelineFileChange(
+                        path = "/tmp/hello.java",
+                        displayName = "hello.java",
+                        kind = TimelineFileChangeKind.UPDATE,
+                    ),
+                ),
+                status = ItemStatus.RUNNING,
+            ),
+        )
+        reducer.accept(
+            TimelineMutation.UpsertFileChange(
+                sourceId = "request-1:item_6",
+                title = "File Changes",
+                changes = listOf(
+                    TimelineFileChange(
+                        path = "/tmp/Util.kt",
+                        displayName = "Util.kt",
+                        kind = TimelineFileChangeKind.CREATE,
+                    ),
+                ),
+                status = ItemStatus.RUNNING,
+            ),
+        )
+
+        val activities = reducer.state.nodes.filterIsInstance<TimelineNode.FileChangeNode>()
+        assertEquals(2, activities.size)
+        assertEquals(
+            listOf("hello.java", "Util.kt"),
+            activities.map { it.changes.single().displayName },
+        )
     }
 
     @Test

@@ -6,6 +6,8 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.awt.ComposePanel
 import com.codex.assistant.service.AgentChatService
@@ -23,6 +25,7 @@ import com.codex.assistant.toolwindow.header.HeaderAreaStore
 import com.codex.assistant.toolwindow.session.SessionTabCoordinator
 import com.codex.assistant.toolwindow.status.StatusAreaStore
 import com.codex.assistant.toolwindow.timeline.TimelineAreaStore
+import com.codex.assistant.toolwindow.timeline.TimelineFileChange
 import com.codex.assistant.toolwindow.shared.assistantMaterialColors
 import com.codex.assistant.toolwindow.shared.assistantPalette
 import com.codex.assistant.toolwindow.shared.assistantTypography
@@ -35,9 +38,15 @@ import com.intellij.openapi.fileChooser.FileChooser
 import com.intellij.openapi.fileChooser.FileChooserDescriptorFactory
 import com.intellij.openapi.fileEditor.FileEditorManagerEvent
 import com.intellij.openapi.fileEditor.FileEditorManagerListener
+import com.intellij.openapi.fileEditor.OpenFileDescriptor
+import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.wm.ToolWindow
+import com.intellij.openapi.wm.ToolWindowAnchor
 import com.intellij.openapi.wm.ex.ToolWindowEx
+import com.intellij.diff.DiffContentFactory
+import com.intellij.diff.DiffManager
+import com.intellij.diff.requests.SimpleDiffRequest
 import java.awt.BorderLayout
 import javax.swing.JPanel
 
@@ -46,6 +55,7 @@ class ComposeToolWindowPanel(
     toolWindow: ToolWindow,
 ) : JPanel(BorderLayout()), Disposable {
     private val hostToolWindow = toolWindow
+    private var toolWindowAnchor by mutableStateOf(hostToolWindow.anchor ?: ToolWindowAnchor.RIGHT)
     private val chatService = project.getService(AgentChatService::class.java)
     private val editorContextProvider = EditorContextProvider.getInstance(project)
     private val smartFileSearchService = SmartFileSearchService.getInstance(project)
@@ -85,6 +95,9 @@ class ComposeToolWindowPanel(
         },
         searchProjectFiles = { query, limit ->
             smartFileSearchService.searchByName(query = query, limit = limit)
+        },
+        openTimelineFileChange = { change ->
+            openTimelineFileChange(project, change)
         },
         onSessionSnapshotPublished = {
             if (::sessionTabCoordinator.isInitialized) {
@@ -131,7 +144,7 @@ class ComposeToolWindowPanel(
             val rightDrawerState by rightDrawerStore.state.collectAsState()
             val languageVersion by settingsService.languageVersion.collectAsState()
             val appearanceVersion by settingsService.appearanceVersion.collectAsState()
-            val themeMode = settingsService.uiThemeMode()
+            val themeMode = rightDrawerState.themeMode
             val effectiveTheme = resolveEffectiveTheme(themeMode, currentIdeDarkTheme())
             val palette = assistantPalette(effectiveTheme)
 
@@ -140,10 +153,8 @@ class ComposeToolWindowPanel(
                 typography = assistantTypography(),
             ) {
                 LaunchedEffect(languageVersion, appearanceVersion) {
-                    updateToolWindowText()
-                    sessionTabCoordinator.refresh()
+                    refreshWindowChrome()
                 }
-
                 key(languageVersion, appearanceVersion) {
                     Surface(modifier = Modifier) {
                         ToolWindowScreen(
@@ -152,12 +163,31 @@ class ComposeToolWindowPanel(
                             timelineState = timelineState,
                             composerState = composerState,
                             rightDrawerState = rightDrawerState,
+                            anchor = toolWindowAnchor,
                             themeMode = themeMode,
                             onIntent = ::dispatchIntent,
                         )
                     }
                 }
             }
+        }
+    }
+
+    private fun refreshWindowChrome() {
+        val app = ApplicationManager.getApplication()
+        val action = Runnable {
+            updateToolWindowText()
+            sessionTabCoordinator.refresh()
+            toolWindowAnchor = hostToolWindow.anchor ?: ToolWindowAnchor.RIGHT
+            revalidate()
+            repaint()
+            composePanel.revalidate()
+            composePanel.repaint()
+        }
+        if (app.isDispatchThread) {
+            action.run()
+        } else {
+            app.invokeLater(action)
         }
     }
 
@@ -198,5 +228,37 @@ class ComposeToolWindowPanel(
 
     override fun dispose() {
         coordinator.dispose()
+    }
+
+    private fun openTimelineFileChange(
+        project: Project,
+        change: TimelineFileChange,
+    ) {
+        val app = ApplicationManager.getApplication()
+        val action = Runnable {
+            val vFile = LocalFileSystem.getInstance().findFileByPath(change.path)
+            val oldContent = change.oldContent
+            val newContent = change.newContent
+            if (!oldContent.isNullOrBlank() || !newContent.isNullOrBlank()) {
+                val contentFactory = DiffContentFactory.getInstance()
+                val left = contentFactory.create(project, oldContent.orEmpty(), vFile?.fileType)
+                val right = contentFactory.create(project, newContent.orEmpty(), vFile?.fileType)
+                val request = SimpleDiffRequest(
+                    change.displayName,
+                    left,
+                    right,
+                    "Current",
+                    "Proposed",
+                )
+                DiffManager.getInstance().showDiff(project, request)
+                return@Runnable
+            }
+            vFile?.let { OpenFileDescriptor(project, it).navigate(true) }
+        }
+        if (app.isDispatchThread) {
+            action.run()
+        } else {
+            app.invokeLater(action)
+        }
     }
 }

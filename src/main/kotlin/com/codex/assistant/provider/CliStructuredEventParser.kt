@@ -2,6 +2,7 @@ package com.codex.assistant.provider
 
 import com.codex.assistant.model.EngineEvent
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -141,11 +142,11 @@ internal object CliStructuredEventParser {
         parseProposalEvent(itemType, item)?.let { return it }
 
         if (itemType.contains("file_change") || itemType.contains("diff") || itemType.contains("patch")) {
-            val filePath = findDiffPath(item)
-            if (!filePath.isNullOrBlank()) {
+            val changes = findDiffChanges(item)
+            if (changes.isNotEmpty()) {
                 return EngineEvent.DiffProposal(
-                    filePath = filePath,
-                    newContent = findDiffContent(item).orEmpty(),
+                    itemId = item.string("id") ?: "diff-${changes.hashCode()}",
+                    changes = changes,
                 )
             }
         }
@@ -235,15 +236,14 @@ internal object CliStructuredEventParser {
             return EngineEvent.CommandProposal(command = command, cwd = cwd)
         }
 
-        val filePath = findDiffPath(obj)
-        val newContent = findDiffContent(obj)
-        if (!filePath.isNullOrBlank() && type.contains("file_change")) {
-            return EngineEvent.DiffProposal(filePath = filePath, newContent = newContent.orEmpty())
-        }
-        if (!filePath.isNullOrBlank() && !newContent.isNullOrBlank() &&
-            (type.contains("diff") || type.contains("patch") || type.contains("proposal"))
+        val changes = findDiffChanges(obj)
+        if (changes.isNotEmpty() &&
+            (type.contains("file_change") || type.contains("diff") || type.contains("patch") || type.contains("proposal"))
         ) {
-            return EngineEvent.DiffProposal(filePath = filePath, newContent = newContent)
+            return EngineEvent.DiffProposal(
+                itemId = obj.string("id") ?: "diff-${changes.hashCode()}",
+                changes = changes,
+            )
         }
 
         return null
@@ -336,28 +336,27 @@ internal object CliStructuredEventParser {
             ?: obj.objectValue("item")?.string("cwd")
     }
 
-    private fun findDiffPath(obj: JsonObject): String? {
-        return obj.string("file_path")
-            ?: obj.string("filePath")
-            ?: obj.string("path")
-            ?: obj.objectValue("proposal")?.string("file_path")
-            ?: obj.objectValue("proposal")?.string("filePath")
-            ?: obj.objectValue("payload")?.string("file_path")
-            ?: obj.objectValue("payload")?.string("filePath")
-            ?: obj.objectValue("item")?.string("file_path")
-            ?: obj.objectValue("item")?.string("filePath")
-    }
-
-    private fun findDiffContent(obj: JsonObject): String? {
-        return obj.string("new_content")
-            ?: obj.string("newContent")
-            ?: obj.string("content")
-            ?: obj.objectValue("proposal")?.string("new_content")
-            ?: obj.objectValue("proposal")?.string("newContent")
-            ?: obj.objectValue("payload")?.string("new_content")
-            ?: obj.objectValue("payload")?.string("newContent")
-            ?: obj.objectValue("item")?.string("new_content")
-            ?: obj.objectValue("item")?.string("newContent")
+    private fun findDiffChanges(obj: JsonObject): List<EngineEvent.FileChange> {
+        val roots = listOfNotNull(
+            obj.arrayValue("changes"),
+            obj.objectValue("proposal")?.arrayValue("changes"),
+            obj.objectValue("payload")?.arrayValue("changes"),
+            obj.objectValue("item")?.arrayValue("changes"),
+        )
+        for (changes in roots) {
+            val parsed = changes.mapNotNull { change ->
+                val value = runCatching { change.jsonObject }.getOrNull() ?: return@mapNotNull null
+                val path = value.string("path") ?: value.string("file_path") ?: value.string("filePath")
+                if (path.isNullOrBlank()) return@mapNotNull null
+                EngineEvent.FileChange(
+                    path = path,
+                    kind = value.string("kind").orEmpty().ifBlank { "update" },
+                    newContent = value.string("new_content") ?: value.string("newContent") ?: value.string("content"),
+                )
+            }
+            if (parsed.isNotEmpty()) return parsed
+        }
+        return emptyList()
     }
 
     private fun findCallId(obj: JsonObject): String? {
@@ -449,6 +448,11 @@ internal object CliStructuredEventParser {
 
     private fun JsonObject.objectValue(key: String): JsonObject? {
         return this[key]?.let { runCatching { it.jsonObject }.getOrNull() }
+    }
+
+    private fun JsonObject.arrayValue(key: String): JsonArray? {
+        val value = this[key] ?: return null
+        return value as? JsonArray
     }
 
     private fun JsonObject.int(key: String): Int {

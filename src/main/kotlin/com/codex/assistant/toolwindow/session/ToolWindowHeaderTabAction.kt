@@ -7,11 +7,10 @@ import com.intellij.openapi.actionSystem.Presentation
 import com.intellij.openapi.actionSystem.ex.CustomComponentAction
 import com.intellij.openapi.util.IconLoader
 import com.intellij.openapi.project.DumbAwareAction
-import com.codex.assistant.settings.AgentSettingsService
 import com.codex.assistant.toolwindow.shared.AssistantUiTheme
 import com.codex.assistant.toolwindow.shared.assistantUiTokens
 import com.codex.assistant.toolwindow.shared.currentIdeDarkTheme
-import com.codex.assistant.toolwindow.shared.resolveEffectiveTheme
+import com.codex.assistant.toolwindow.shared.EffectiveTheme
 import java.awt.FlowLayout
 import java.awt.Font
 import javax.swing.BorderFactory
@@ -76,7 +75,7 @@ internal class ToolWindowHeaderTabAction(
 
     private fun applyStyle(panel: JPanel, titleLabel: JLabel, closeButton: JButton) {
         val tokens = assistantUiTokens()
-        val theme = resolveEffectiveTheme(AgentSettingsService.getInstance().uiThemeMode(), currentIdeDarkTheme())
+        val theme = if (currentIdeDarkTheme()) EffectiveTheme.DARK else EffectiveTheme.LIGHT
         val palette = AssistantUiTheme.palette(theme)
         panel.background = if (tab.active) palette.chromeRaised else palette.chromeBg
         panel.border = BorderFactory.createCompoundBorder(

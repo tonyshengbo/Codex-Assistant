@@ -1,7 +1,5 @@
 package com.codex.assistant.toolwindow.status
 
-import com.codex.assistant.i18n.CodexBundle
-import com.codex.assistant.protocol.TurnOutcome
 import com.codex.assistant.protocol.UnifiedEvent
 import com.codex.assistant.toolwindow.eventing.AppEvent
 import com.codex.assistant.toolwindow.shared.UiText
@@ -9,8 +7,20 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
+internal data class TurnStatusUiState(
+    val label: UiText,
+    val startedAtMs: Long,
+)
+
+internal data class ToastUiState(
+    val id: Long,
+    val text: UiText,
+    val createdAtMs: Long,
+)
+
 internal data class StatusAreaState(
-    val text: UiText = UiText.Bundle("status.ready"),
+    val turnStatus: TurnStatusUiState? = null,
+    val toast: ToastUiState? = null,
 )
 
 internal class StatusAreaStore {
@@ -20,7 +30,7 @@ internal class StatusAreaStore {
     fun onEvent(event: AppEvent) {
         when (event) {
             is AppEvent.PromptAccepted -> {
-                _state.value = StatusAreaState(UiText.Bundle("status.running"))
+                startTurnStatus()
             }
 
             AppEvent.ConversationReset -> {
@@ -28,30 +38,56 @@ internal class StatusAreaStore {
             }
 
             is AppEvent.UnifiedEventPublished -> {
-                _state.value = StatusAreaState(text = mapUnifiedText(event.event, _state.value.text))
+                _state.value = mapUnifiedState(event.event, _state.value)
             }
 
             is AppEvent.StatusTextUpdated -> {
-                _state.value = StatusAreaState(text = event.text)
+                _state.value = _state.value.copy(
+                    toast = ToastUiState(
+                        id = System.currentTimeMillis(),
+                        text = event.text,
+                        createdAtMs = System.currentTimeMillis(),
+                    ),
+                )
             }
 
             else -> Unit
         }
     }
 
-    private fun mapUnifiedText(event: UnifiedEvent, current: UiText): UiText {
-        return when (event) {
-            is UnifiedEvent.Error -> UiText.Raw(event.message)
-            is UnifiedEvent.TurnStarted -> UiText.Bundle("status.running")
-            is UnifiedEvent.TurnCompleted -> when (event.outcome) {
-                TurnOutcome.SUCCESS,
-                TurnOutcome.CANCELLED,
-                -> UiText.Bundle("status.ready")
+    private fun startTurnStatus() {
+        if (_state.value.turnStatus != null) return
+        _state.value = _state.value.copy(
+            turnStatus = TurnStatusUiState(
+                label = UiText.Bundle("status.running"),
+                startedAtMs = System.currentTimeMillis(),
+            ),
+        )
+    }
 
-                TurnOutcome.FAILED -> UiText.Bundle("status.failed")
-                TurnOutcome.RUNNING -> current
+    private fun mapUnifiedState(event: UnifiedEvent, current: StatusAreaState): StatusAreaState {
+        return when (event) {
+            is UnifiedEvent.Error -> current.copy(
+                turnStatus = null,
+                toast = ToastUiState(
+                    id = System.currentTimeMillis(),
+                    text = UiText.Raw(event.message),
+                    createdAtMs = System.currentTimeMillis(),
+                ),
+            )
+
+            is UnifiedEvent.TurnStarted -> {
+                if (current.turnStatus != null) current else {
+                    current.copy(
+                        turnStatus = TurnStatusUiState(
+                            label = UiText.Bundle("status.running"),
+                            startedAtMs = System.currentTimeMillis(),
+                        ),
+                    )
+                }
             }
 
+            is UnifiedEvent.TurnCompleted -> current.copy(turnStatus = null)
             else -> current
         }
     }

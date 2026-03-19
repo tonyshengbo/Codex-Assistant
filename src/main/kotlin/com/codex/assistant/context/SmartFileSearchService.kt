@@ -2,7 +2,6 @@ package com.codex.assistant.context
 
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.project.Project
-import com.intellij.openapi.roots.ProjectFileIndex
 import com.intellij.openapi.application.ReadAction
 import com.intellij.psi.search.FilenameIndex
 import com.intellij.psi.search.GlobalSearchScope
@@ -15,7 +14,6 @@ class SmartFileSearchService(private val project: Project) {
         if (normalized.isBlank()) return emptyList()
         return ReadAction.compute<List<String>, RuntimeException> {
             val scope = GlobalSearchScope.projectScope(project)
-            val index = ProjectFileIndex.getInstance(project)
             val q = normalized.lowercase()
 
             val candidates = FilenameIndex.getAllFilenames(project).asSequence()
@@ -23,9 +21,7 @@ class SmartFileSearchService(private val project: Project) {
                 .flatMap { name ->
                     FilenameIndex.getVirtualFilesByName(project, name, scope).asSequence()
                 }
-                .filter { file ->
-                    !file.isDirectory && (index.isInSourceContent(file) || index.isInTestSourceContent(file))
-                }
+                .filter { file -> !file.isDirectory }
                 .filter { file -> MentionFileWhitelist.allowPath(file.path) }
                 .distinctBy { it.path }
                 .toList()

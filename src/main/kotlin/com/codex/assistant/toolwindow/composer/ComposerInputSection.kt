@@ -1,0 +1,311 @@
+package com.codex.assistant.toolwindow.composer
+
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.DropdownMenu
+import androidx.compose.material.DropdownMenuItem
+import androidx.compose.material.Icon
+import androidx.compose.material.OutlinedTextField
+import androidx.compose.material.Text
+import androidx.compose.material.TextFieldDefaults
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.isCtrlPressed
+import androidx.compose.ui.input.key.isMetaPressed
+import androidx.compose.ui.input.key.isShiftPressed
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.input.TransformedText
+import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.PopupProperties
+import com.codex.assistant.i18n.CodexBundle
+import com.codex.assistant.toolwindow.eventing.UiIntent
+import com.codex.assistant.toolwindow.shared.DesignPalette
+import com.codex.assistant.toolwindow.shared.FileTypeIcon
+import com.codex.assistant.toolwindow.shared.ToolWindowUiText
+import com.codex.assistant.toolwindow.shared.assistantUiTokens
+
+@Composable
+internal fun ComposerInputSection(
+    p: DesignPalette,
+    state: ComposerAreaState,
+    running: Boolean,
+    onIntent: (UiIntent) -> Unit,
+) {
+    val t = assistantUiTokens()
+    val selectedMention = state.mentionSuggestions.getOrNull(state.activeMentionIndex)
+    val selectedAgent = state.agentSuggestions.getOrNull(state.activeAgentIndex)
+    val composing = state.document.composition != null
+
+    Box(modifier = Modifier.fillMaxWidth()) {
+        val mentionVisualTransformation = remember(state.mentionEntries, p) {
+            MentionVisualTransformation(state.mentionEntries, p)
+        }
+        OutlinedTextField(
+            modifier = Modifier
+                .fillMaxWidth()
+                .onPreviewKeyEvent {
+                    if (it.type != KeyEventType.KeyDown) {
+                        return@onPreviewKeyEvent false
+                    }
+                    if (!composing && state.mentionPopupVisible) {
+                        when (it.key) {
+                            Key.DirectionDown -> {
+                                onIntent(UiIntent.MoveMentionSelectionNext)
+                                return@onPreviewKeyEvent true
+                            }
+                            Key.DirectionUp -> {
+                                onIntent(UiIntent.MoveMentionSelectionPrevious)
+                                return@onPreviewKeyEvent true
+                            }
+                            Key.Escape -> {
+                                onIntent(UiIntent.DismissMentionPopup)
+                                return@onPreviewKeyEvent true
+                            }
+                            Key.Enter -> {
+                                if (!it.isShiftPressed && selectedMention != null) {
+                                    onIntent(UiIntent.SelectMentionFile(selectedMention.path))
+                                    return@onPreviewKeyEvent true
+                                }
+                            }
+                            else -> Unit
+                        }
+                    }
+                    if (!composing && state.agentPopupVisible) {
+                        when (it.key) {
+                            Key.DirectionDown -> {
+                                onIntent(UiIntent.MoveAgentSelectionNext)
+                                return@onPreviewKeyEvent true
+                            }
+                            Key.DirectionUp -> {
+                                onIntent(UiIntent.MoveAgentSelectionPrevious)
+                                return@onPreviewKeyEvent true
+                            }
+                            Key.Escape -> {
+                                onIntent(UiIntent.DismissAgentPopup)
+                                return@onPreviewKeyEvent true
+                            }
+                            Key.Enter -> {
+                                if (!it.isShiftPressed && selectedAgent != null) {
+                                    onIntent(UiIntent.SelectAgent(selectedAgent))
+                                    return@onPreviewKeyEvent true
+                                }
+                            }
+                            else -> Unit
+                        }
+                    }
+                    if (!composing && !it.isShiftPressed && !it.isMetaPressed && !it.isCtrlPressed) {
+                        when (it.key) {
+                            Key.DirectionLeft -> {
+                                moveCursorLeftAcrossMention(state.document, state.mentionEntries)?.let { next ->
+                                    onIntent(UiIntent.UpdateDocument(next))
+                                    return@onPreviewKeyEvent true
+                                }
+                            }
+                            Key.DirectionRight -> {
+                                moveCursorRightAcrossMention(state.document, state.mentionEntries)?.let { next ->
+                                    onIntent(UiIntent.UpdateDocument(next))
+                                    return@onPreviewKeyEvent true
+                                }
+                            }
+                            Key.Backspace -> {
+                                val next = if (state.document.selection.collapsed) {
+                                    removeMentionByBackspace(state.document, state.mentionEntries)
+                                } else {
+                                    removeMentionSelection(state.document, state.mentionEntries)
+                                }
+                                next?.let { removed ->
+                                    onIntent(UiIntent.UpdateDocument(removed.first))
+                                    return@onPreviewKeyEvent true
+                                }
+                            }
+                            Key.Delete -> {
+                                val next = if (state.document.selection.collapsed) {
+                                    removeMentionByDelete(state.document, state.mentionEntries)
+                                } else {
+                                    removeMentionSelection(state.document, state.mentionEntries)
+                                }
+                                next?.let { removed ->
+                                    onIntent(UiIntent.UpdateDocument(removed.first))
+                                    return@onPreviewKeyEvent true
+                                }
+                            }
+                            else -> Unit
+                        }
+                    }
+                    if (it.key == Key.V && (it.isMetaPressed || it.isCtrlPressed)) {
+                        onIntent(UiIntent.PasteImageFromClipboard)
+                        return@onPreviewKeyEvent false
+                    }
+                    if (!composing && !running && it.key == Key.Enter && !it.isShiftPressed) {
+                        onIntent(UiIntent.SendPrompt)
+                        true
+                    } else {
+                        false
+                    }
+                },
+            value = state.document,
+            onValueChange = { onIntent(UiIntent.UpdateDocument(it)) },
+            textStyle = TextStyle(color = p.textPrimary, fontSize = t.type.body, lineHeight = 19.sp),
+            label = {
+                Text(
+                    text = ToolWindowUiText.COMPOSER_HINT,
+                    color = p.textMuted,
+                    style = androidx.compose.material.MaterialTheme.typography.body2,
+                )
+            },
+            visualTransformation = mentionVisualTransformation,
+            singleLine = false,
+            maxLines = 6,
+            shape = RoundedCornerShape(t.spacing.sm),
+            colors = TextFieldDefaults.outlinedTextFieldColors(
+                textColor = p.textPrimary,
+                backgroundColor = p.timelineCardBg,
+                cursorColor = p.textPrimary,
+                focusedBorderColor = p.accent,
+                unfocusedBorderColor = p.markdownDivider.copy(alpha = 0.55f),
+                focusedLabelColor = p.textSecondary,
+                unfocusedLabelColor = p.textMuted,
+            ),
+        )
+        DropdownMenu(
+            expanded = state.mentionPopupVisible || state.agentPopupVisible,
+            onDismissRequest = {
+                if (state.agentPopupVisible) {
+                    onIntent(UiIntent.DismissAgentPopup)
+                } else {
+                    onIntent(UiIntent.DismissMentionPopup)
+                }
+            },
+            properties = PopupProperties(focusable = false),
+        ) {
+            if (state.agentPopupVisible) {
+                state.agentSuggestions.forEachIndexed { index, agent ->
+                    DropdownMenuItem(onClick = { onIntent(UiIntent.SelectAgent(agent)) }) {
+                        AgentSuggestionRow(
+                            name = agent.name,
+                            selected = index == state.activeAgentIndex,
+                            p = p,
+                        )
+                    }
+                }
+            } else {
+                state.mentionSuggestions.forEachIndexed { index, entry ->
+                    DropdownMenuItem(onClick = { onIntent(UiIntent.SelectMentionFile(entry.path)) }) {
+                        MentionSuggestionRow(
+                            entry = entry,
+                            selected = index == state.activeMentionIndex,
+                            p = p,
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+private class MentionVisualTransformation(
+    mentions: List<MentionEntry>,
+    private val palette: DesignPalette,
+) : VisualTransformation {
+    private val spans = mentions.map { MentionTransformSpan(start = it.start, endExclusive = it.endExclusive) }
+
+    override fun filter(text: AnnotatedString): TransformedText {
+        return buildMentionTransformedText(
+            text = text.text,
+            spans = spans,
+        ) { builder, start, endExclusive ->
+            builder.addStyle(
+                SpanStyle(
+                    color = palette.textPrimary,
+                    background = palette.topStripBg,
+                ),
+                start,
+                endExclusive,
+            )
+        }
+    }
+}
+
+@Composable
+private fun MentionSuggestionRow(
+    entry: ContextEntry,
+    selected: Boolean,
+    p: DesignPalette,
+) {
+    val t = assistantUiTokens()
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(if (selected) p.topStripBg else Color.Transparent, RoundedCornerShape(t.spacing.sm))
+            .padding(horizontal = t.spacing.sm, vertical = t.spacing.xs),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.Start,
+    ) {
+        FileTypeIcon(fileName = entry.displayName, tint = p.textSecondary)
+        Spacer(Modifier.width(t.spacing.sm))
+        Text(
+            text = entry.displayName,
+            color = if (selected) p.textPrimary else p.textSecondary,
+            maxLines = 1,
+        )
+        if (entry.tailPath.isNotBlank()) {
+            Spacer(Modifier.width(t.spacing.sm))
+            Text(
+                text = entry.tailPath,
+                color = p.textMuted,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+    }
+}
+
+@Composable
+private fun AgentSuggestionRow(
+    name: String,
+    selected: Boolean,
+    p: DesignPalette,
+) {
+    val t = assistantUiTokens()
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(if (selected) p.topStripBg else Color.Transparent, RoundedCornerShape(t.spacing.sm))
+            .padding(horizontal = t.spacing.sm, vertical = t.spacing.xs),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            painter = painterResource("/icons/agent-settings.svg"),
+            contentDescription = null,
+            tint = p.textSecondary,
+            modifier = Modifier.size(t.controls.iconMd),
+        )
+        Spacer(Modifier.width(t.spacing.sm))
+        Text(
+            text = name,
+            color = if (selected) p.textPrimary else p.textSecondary,
+            maxLines = 1,
+        )
+    }
+}

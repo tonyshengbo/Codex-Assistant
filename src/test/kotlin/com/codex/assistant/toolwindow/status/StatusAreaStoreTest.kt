@@ -8,20 +8,22 @@ import kotlin.test.assertEquals
 
 class StatusAreaStoreTest {
     @Test
-    fun `prompt accepted stores a localized running status reference`() {
+    fun `prompt accepted stores a localized running turn status reference`() {
         val store = StatusAreaStore()
 
         store.onEvent(AppEvent.PromptAccepted(prompt = "hello"))
 
-        assertEquals(UiText.Bundle("status.running"), store.state.value.text)
+        assertEquals(UiText.Bundle("status.running"), store.state.value.turnStatus?.label)
     }
 
     @Test
-    fun `engine errors preserve raw status messages`() {
+    fun `engine errors become raw toasts and clear the running turn status`() {
         val store = StatusAreaStore()
+        store.onEvent(AppEvent.PromptAccepted(prompt = "hello"))
 
         store.onEvent(AppEvent.UnifiedEventPublished(UnifiedEvent.Error("boom")))
 
-        assertEquals(UiText.Raw("boom"), store.state.value.text)
+        assertEquals(UiText.Raw("boom"), store.state.value.toast?.text)
+        assertEquals(null, store.state.value.turnStatus)
     }
 }

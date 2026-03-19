@@ -106,8 +106,8 @@ class TimelineActionAssembler(
 
             is EngineEvent.DiffProposal -> listOf(
                 TimelineAction.DiffProposalReceived(
-                    filePath = event.filePath,
-                    newContent = event.newContent,
+                    itemId = event.itemId,
+                    summary = event.changes.joinToString("\n") { change -> "${change.kind} ${change.path}" },
                     timestampMs = clock(),
                 ),
             )

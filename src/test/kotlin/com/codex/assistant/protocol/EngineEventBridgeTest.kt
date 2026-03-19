@@ -73,6 +73,28 @@ class EngineEventBridgeTest {
     }
 
     @Test
+    fun `maps file changes to diff apply item with stable request scoped id and summary`() {
+        val event = EngineEventBridge.map(
+            EngineEvent.DiffProposal(
+                itemId = "item_5",
+                changes = listOf(
+                    EngineEvent.FileChange(path = "/tmp/hello.java", kind = "update"),
+                    EngineEvent.FileChange(path = "/tmp/Util.kt", kind = "create"),
+                ),
+            ),
+            requestId = requestId,
+        )
+
+        val item = assertIs<UnifiedEvent.ItemUpdated>(event).item
+        assertEquals("request-123:item_5", item.id)
+        assertEquals(ItemKind.DIFF_APPLY, item.kind)
+        assertEquals(ItemStatus.RUNNING, item.status)
+        assertEquals("File Changes (2)", item.name)
+        assertTrue(item.text?.contains("update /tmp/hello.java") == true)
+        assertTrue(item.text?.contains("create /tmp/Util.kt") == true)
+    }
+
+    @Test
     fun `maps turn usage to successful turn completion`() {
         val event = EngineEventBridge.map(
             EngineEvent.TurnUsage(

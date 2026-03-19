@@ -157,7 +157,7 @@ class AgentChatServicePersistenceTest {
         assertEquals("/assets/preview.png", userEntry.attachments.single().assetPath)
 
         val activityEntry = history.entries[1]
-        assertEquals("shell", activityEntry.title)
+        assertEquals("Run Echo command", activityEntry.title)
         assertEquals("done", history.entries.last().body)
         assertTrue(history.entries.all { it.turnId == "turn-1" })
 

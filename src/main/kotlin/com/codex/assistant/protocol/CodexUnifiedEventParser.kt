@@ -1,6 +1,7 @@
 package com.codex.assistant.protocol
 
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -86,7 +87,24 @@ object CodexUnifiedEventParser {
         val decision = item.string("decision")?.let { parseApprovalDecision(it) }
         val status = parseStatus(item.string("status"), fallbackStatus)
         val kind = parseItemKind(itemType)
-        val text = item.string("text")
+        val diffChanges = if (kind == ItemKind.DIFF_APPLY) {
+            item.arrayValue("changes")
+                ?.mapNotNull { change ->
+                    val value = runCatching { change.jsonObject }.getOrNull() ?: return@mapNotNull null
+                    val path = value.string("path") ?: value.string("file_path") ?: value.string("filePath")
+                    path?.let {
+                        UnifiedFileChange(
+                            path = it,
+                            kind = value.string("kind").orEmpty().ifBlank { "update" },
+                            newContent = value.string("new_content") ?: value.string("newContent") ?: value.string("content"),
+                        )
+                    }
+                }
+                ?.takeIf { it.isNotEmpty() }
+        } else {
+            null
+        }
+        val text = diffChanges?.joinToString("\n") { "${it.kind} ${it.path}" } ?: item.string("text")
             ?: item.string("output")
             ?: item.string("input")
             ?: item.objectValue("payload")?.toString()
@@ -94,9 +112,12 @@ object CodexUnifiedEventParser {
             ?: item.objectValue("payload")?.string("command")
         val cwd = item.string("cwd")
             ?: item.objectValue("payload")?.string("cwd")
-        val filePath = item.string("file_path") ?: item.string("path")
         val exitCode = item.intOrNull("exit_code")
-        val name = item.string("tool_name") ?: item.string("name")
+        val name = if (kind == ItemKind.DIFF_APPLY) {
+            "File Changes (${text?.lineSequence()?.count { it.isNotBlank() } ?: 0})"
+        } else {
+            item.string("tool_name") ?: item.string("name")
+        }
         val errorStatus = if (eventType.contains("failed")) ItemStatus.FAILED else status
 
         return UnifiedItem(
@@ -107,7 +128,7 @@ object CodexUnifiedEventParser {
             text = text,
             command = command,
             cwd = cwd,
-            filePath = filePath,
+            fileChanges = diffChanges.orEmpty(),
             exitCode = exitCode,
             approvalDecision = decision,
         )
@@ -152,6 +173,11 @@ object CodexUnifiedEventParser {
 
     private fun JsonObject.objectValue(key: String): JsonObject? {
         return this[key]?.let { runCatching { it.jsonObject }.getOrNull() }
+    }
+
+    private fun JsonObject.arrayValue(key: String): JsonArray? {
+        val value = this[key] ?: return null
+        return value as? JsonArray
     }
 
     private fun JsonObject.int(key: String): Int {

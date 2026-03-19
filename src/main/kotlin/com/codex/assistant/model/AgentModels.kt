@@ -137,6 +137,12 @@ fun MessageRole.label(): String = when (this) {
 }
 
 sealed class EngineEvent {
+    data class FileChange(
+        val path: String,
+        val kind: String,
+        val newContent: String? = null,
+    )
+
     data class TurnStarted(
         val turnId: String,
         val threadId: String? = null,
@@ -169,7 +175,10 @@ sealed class EngineEvent {
     ) : EngineEvent()
     data class Status(val message: String) : EngineEvent()
     data class CommandProposal(val command: String, val cwd: String) : EngineEvent()
-    data class DiffProposal(val filePath: String, val newContent: String) : EngineEvent()
+    data class DiffProposal(
+        val itemId: String,
+        val changes: List<FileChange>,
+    ) : EngineEvent()
     data class Error(val message: String) : EngineEvent()
     data class Completed(val exitCode: Int) : EngineEvent()
 }
@@ -246,8 +255,8 @@ sealed class TimelineAction {
     @Serializable
     @SerialName("diff_proposal")
     data class DiffProposalReceived(
-        val filePath: String,
-        val newContent: String,
+        val itemId: String,
+        val summary: String,
         val timestampMs: Long? = null,
     ) : TimelineAction()
 

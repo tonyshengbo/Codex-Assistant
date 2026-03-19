@@ -129,7 +129,7 @@ class ToolWindowCoordinatorRestoreTest {
         assertEquals("look at this", userNode.text)
         assertEquals(1, userNode.attachments.size)
         assertEquals("/assets/preview.png", userNode.attachments.single().assetPath)
-        assertIs<TimelineNode.ActivityNode>(state.nodes[1])
+        assertIs<TimelineNode.ToolCallNode>(state.nodes[1])
         assertEquals("done", assertIs<TimelineNode.MessageNode>(state.nodes[2]).text)
 
         coordinator.dispose()

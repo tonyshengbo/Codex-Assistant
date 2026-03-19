@@ -56,6 +56,20 @@ class CodexUnifiedEventParserTest {
     }
 
     @Test
+    fun `parses file change item with change list into diff apply summary`() {
+        val event = CodexUnifiedEventParser.parseLine(
+            """{"type":"item.completed","item":{"id":"it_5","type":"file_change","changes":[{"path":"/tmp/hello.java","kind":"update"},{"path":"/tmp/Util.kt","kind":"create"}]}}""",
+        )
+
+        val item = assertIs<UnifiedEvent.ItemUpdated>(event).item
+        assertEquals("it_5", item.id)
+        assertEquals(ItemKind.DIFF_APPLY, item.kind)
+        assertEquals(ItemStatus.SUCCESS, item.status)
+        assertEquals("File Changes (2)", item.name)
+        assertEquals("update /tmp/hello.java\ncreate /tmp/Util.kt", item.text)
+    }
+
+    @Test
     fun `returns null for unsupported content`() {
         assertNull(CodexUnifiedEventParser.parseLine("WARNING: partial status"))
     }

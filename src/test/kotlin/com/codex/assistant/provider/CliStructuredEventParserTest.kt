@@ -52,14 +52,17 @@ class CliStructuredEventParserTest {
     }
 
     @Test
-    fun `parses diff proposal from codex json event`() {
-        val line = """{"type":"patch.proposal","file_path":"src/App.kt","new_content":"class App"}"""
+    fun `parses diff proposal from codex json event with change list`() {
+        val line = """{"type":"patch.proposal","id":"item_patch_1","changes":[{"path":"src/App.kt","kind":"update","new_content":"class App"}]}"""
 
         val event = CliStructuredEventParser.parseCodexLine(line)
 
         val proposal = assertIs<EngineEvent.DiffProposal>(event)
-        assertEquals("src/App.kt", proposal.filePath)
-        assertEquals("class App", proposal.newContent)
+        assertEquals("item_patch_1", proposal.itemId)
+        assertEquals(1, proposal.changes.size)
+        assertEquals("src/App.kt", proposal.changes.single().path)
+        assertEquals("update", proposal.changes.single().kind)
+        assertEquals("class App", proposal.changes.single().newContent)
     }
 
     @Test
@@ -120,13 +123,16 @@ class CliStructuredEventParserTest {
 
     @Test
     fun `parses file change item events as diff proposal`() {
-        val line = """{"type":"item.completed","item":{"type":"file_change","id":"item_3","file_path":"src/App.kt","new_content":"class App"}}"""
+        val line = """{"type":"item.completed","item":{"type":"file_change","id":"item_3","changes":[{"path":"src/App.kt","kind":"update"},{"path":"src/Util.kt","kind":"create"}]}}"""
 
         val event = CliStructuredEventParser.parseCodexLine(line)
 
         val diff = assertIs<EngineEvent.DiffProposal>(event)
-        assertEquals("src/App.kt", diff.filePath)
-        assertEquals("class App", diff.newContent)
+        assertEquals("item_3", diff.itemId)
+        assertEquals(
+            listOf("src/App.kt" to "update", "src/Util.kt" to "create"),
+            diff.changes.map { it.path to it.kind },
+        )
     }
 
     @Test

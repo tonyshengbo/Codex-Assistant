@@ -36,6 +36,13 @@ data class TurnUsage(
     val outputTokens: Int,
 )
 
+data class UnifiedFileChange(
+    val path: String,
+    val kind: String,
+    val oldContent: String? = null,
+    val newContent: String? = null,
+)
+
 data class UnifiedItem(
     val id: String,
     val kind: ItemKind,
@@ -45,6 +52,7 @@ data class UnifiedItem(
     val command: String? = null,
     val cwd: String? = null,
     val filePath: String? = null,
+    val fileChanges: List<UnifiedFileChange> = emptyList(),
     val exitCode: Int? = null,
     val approvalDecision: ApprovalDecision? = null,
 )

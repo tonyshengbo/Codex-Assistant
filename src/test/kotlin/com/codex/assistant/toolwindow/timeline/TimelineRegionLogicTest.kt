@@ -20,10 +20,9 @@ class TimelineRegionLogicTest {
             cursor = null,
         )
         val assistantItem = userItem.copy(id = "n2", role = MessageRole.ASSISTANT)
-        val toolItem = TimelineNode.ActivityNode(
+        val toolItem = TimelineNode.ToolCallNode(
             id = "n3",
             sourceId = "tool-1",
-            kind = TimelineActivityKind.TOOL,
             title = "shell",
             body = "ls",
             status = ItemStatus.SUCCESS,
