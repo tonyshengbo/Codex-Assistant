@@ -7,6 +7,7 @@ import com.auracode.assistant.protocol.UnifiedItem
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
+import kotlin.test.assertNull
 
 class TimelineNodeMapperTest {
     @Test
@@ -277,6 +278,44 @@ class TimelineNodeMapperTest {
 
         assertEquals("Edit b.java", assertIs<TimelineMutation.UpsertCommand>(writeMutation).title)
         assertEquals("Search java files", assertIs<TimelineMutation.UpsertCommand>(searchMutation).title)
+    }
+
+    @Test
+    fun `web search tool item maps to tool call instead of unknown activity`() {
+        val mutation = TimelineNodeMapper.fromUnifiedEvent(
+            UnifiedEvent.ItemUpdated(
+                UnifiedItem(
+                    id = "request-1:item-web",
+                    kind = ItemKind.TOOL_CALL,
+                    status = ItemStatus.SUCCESS,
+                    text = "kotlin compose ime",
+                ),
+            ),
+        )
+
+        val tool = assertIs<TimelineMutation.UpsertToolCall>(mutation)
+        assertEquals("Tool Call", tool.title)
+        assertNull(tool.titleTargetLabel)
+        assertNull(tool.titleTargetPath)
+    }
+
+    @Test
+    fun `unknown activity keeps raw type name without humanization`() {
+        val mutation = TimelineNodeMapper.fromUnifiedEvent(
+            UnifiedEvent.ItemUpdated(
+                UnifiedItem(
+                    id = "request-1:item-unknown",
+                    kind = ItemKind.UNKNOWN,
+                    status = ItemStatus.RUNNING,
+                    name = "fooBarBaz",
+                    text = "payload body",
+                ),
+            ),
+        )
+
+        val unknown = assertIs<TimelineMutation.UpsertUnknownActivity>(mutation)
+        assertEquals("fooBarBaz", unknown.title)
+        assertEquals("payload body", unknown.body)
     }
 
 }

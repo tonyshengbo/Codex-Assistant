@@ -41,6 +41,8 @@ internal fun AgentSettingsEditorPage(
     onIntent: (UiIntent) -> Unit,
 ) {
     val t = assistantUiTokens()
+    val nameInputState = rememberSettingsTextInputState(state.agentDraftName)
+    val promptInputState = rememberSettingsTextInputState(state.agentDraftPrompt)
     Box(modifier = Modifier.fillMaxSize()) {
         Column(
             modifier = Modifier
@@ -94,8 +96,11 @@ internal fun AgentSettingsEditorPage(
             ) {
                 SettingsTextInput(
                     p = p,
-                    value = state.agentDraftName,
-                    onValueChange = { onIntent(UiIntent.EditAgentDraftName(it)) },
+                    value = nameInputState.value,
+                    onValueChange = {
+                        nameInputState.value = it
+                        onIntent(UiIntent.EditAgentDraftName(it.text))
+                    },
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true,
                 )
@@ -108,8 +113,11 @@ internal fun AgentSettingsEditorPage(
             ) {
                 SettingsTextInput(
                     p = p,
-                    value = state.agentDraftPrompt,
-                    onValueChange = { onIntent(UiIntent.EditAgentDraftPrompt(it)) },
+                    value = promptInputState.value,
+                    onValueChange = {
+                        promptInputState.value = it
+                        onIntent(UiIntent.EditAgentDraftPrompt(it.text))
+                    },
                     modifier = Modifier.fillMaxWidth().height(280.dp),
                     singleLine = false,
                     minLines = 12,

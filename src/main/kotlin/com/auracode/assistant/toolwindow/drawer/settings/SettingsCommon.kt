@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.OutlinedTextField
 import androidx.compose.material.Surface
 import androidx.compose.material.Switch
@@ -21,6 +22,10 @@ import androidx.compose.material.Icon
 import androidx.compose.material.MaterialTheme
 import androidx.compose.material.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.MutableState
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -28,8 +33,10 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.unit.dp
 import com.auracode.assistant.i18n.AuraCodeBundle
 import com.auracode.assistant.provider.CodexEnvironmentStatus
@@ -264,8 +271,8 @@ internal fun SettingsSelectField(
 @Composable
 internal fun SettingsTextInput(
     p: DesignPalette,
-    value: String,
-    onValueChange: (String) -> Unit,
+    value: TextFieldValue,
+    onValueChange: (TextFieldValue) -> Unit,
     modifier: Modifier = Modifier,
     singleLine: Boolean = true,
     minLines: Int = 1,
@@ -292,6 +299,20 @@ internal fun SettingsTextInput(
             unfocusedLabelColor = p.textMuted,
         ),
     )
+}
+
+@Composable
+internal fun rememberSettingsTextInputState(text: String): MutableState<TextFieldValue> {
+    val inputState = remember { mutableStateOf(TextFieldValue(text = text, selection = TextRange(text.length))) }
+    LaunchedEffect(text) {
+        if (inputState.value.text != text) {
+            inputState.value = TextFieldValue(
+                text = text,
+                selection = TextRange(text.length),
+            )
+        }
+    }
+    return inputState
 }
 
 @Composable

@@ -36,6 +36,8 @@ internal fun GeneralSettingsPage(
     onIntent: (UiIntent) -> Unit,
 ) {
     val t = assistantUiTokens()
+    val codexPathInputState = rememberSettingsTextInputState(state.codexCliPath)
+    val nodePathInputState = rememberSettingsTextInputState(state.nodePath)
     Column(
         modifier = Modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(t.spacing.lg),
@@ -82,8 +84,11 @@ internal fun GeneralSettingsPage(
             Column(verticalArrangement = Arrangement.spacedBy(t.spacing.sm)) {
                 SettingsTextInput(
                     p = p,
-                    value = state.codexCliPath,
-                    onValueChange = { onIntent(UiIntent.EditSettingsCodexCliPath(it)) },
+                    value = codexPathInputState.value,
+                    onValueChange = {
+                        codexPathInputState.value = it
+                        onIntent(UiIntent.EditSettingsCodexCliPath(it.text))
+                    },
                 )
                 EnvironmentFieldBadge(
                     p = p,
@@ -106,8 +111,11 @@ internal fun GeneralSettingsPage(
             Column(verticalArrangement = Arrangement.spacedBy(t.spacing.sm)) {
                 SettingsTextInput(
                     p = p,
-                    value = state.nodePath,
-                    onValueChange = { onIntent(UiIntent.EditSettingsNodePath(it)) },
+                    value = nodePathInputState.value,
+                    onValueChange = {
+                        nodePathInputState.value = it
+                        onIntent(UiIntent.EditSettingsNodePath(it.text))
+                    },
                 )
                 EnvironmentFieldBadge(
                     p = p,

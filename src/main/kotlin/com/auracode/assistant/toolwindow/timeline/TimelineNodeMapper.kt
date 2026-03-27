@@ -226,6 +226,9 @@ internal object TimelineNodeMapper {
     private fun UnifiedItem.titleTextOrNull(): String? {
         val candidate = name?.trim().orEmpty()
         if (candidate.isNotBlank()) {
+            if (kind == ItemKind.UNKNOWN) {
+                return candidate
+            }
             return candidate
                 .split('_', '-', ' ')
                 .filter { it.isNotBlank() }

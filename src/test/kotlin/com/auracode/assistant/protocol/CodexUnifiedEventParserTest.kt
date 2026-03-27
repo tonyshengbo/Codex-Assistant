@@ -94,8 +94,48 @@ class CodexUnifiedEventParserTest {
         assertEquals("28a1b402-fd03-4921-b416-641c720ac400", item.id)
         assertEquals(ItemKind.CONTEXT_COMPACTION, item.kind)
         assertEquals(ItemStatus.RUNNING, item.status)
-        assertEquals("Context Compaction", item.name)
-        assertEquals("Compacting context", item.text)
+        assertNull(item.name)
+        assertNull(item.text)
+    }
+
+    @Test
+    fun `parses webSearch item as tool call for app server method payload`() {
+        val event = CodexUnifiedEventParser.parseLine(
+            """{"method":"item/completed","params":{"item":{"type":"webSearch","id":"ws_123","query":"kotlin compose ime","action":{"type":"search"}}}}""",
+        )
+
+        val item = assertIs<UnifiedEvent.ItemUpdated>(event).item
+        assertEquals("ws_123", item.id)
+        assertEquals(ItemKind.TOOL_CALL, item.kind)
+        assertEquals(ItemStatus.SUCCESS, item.status)
+        assertNull(item.name)
+        assertEquals("kotlin compose ime", item.text)
+    }
+
+    @Test
+    fun `parses web_search item as tool call for legacy type payload`() {
+        val event = CodexUnifiedEventParser.parseLine(
+            """{"type":"item.started","item":{"type":"web_search","id":"ws_legacy","input":"query: kotlin coroutines"}}""",
+        )
+
+        val item = assertIs<UnifiedEvent.ItemUpdated>(event).item
+        assertEquals("ws_legacy", item.id)
+        assertEquals(ItemKind.TOOL_CALL, item.kind)
+        assertEquals(ItemStatus.RUNNING, item.status)
+        assertNull(item.name)
+        assertEquals("query: kotlin coroutines", item.text)
+    }
+
+    @Test
+    fun `preserves unknown item type as name for easier diagnostics`() {
+        val event = CodexUnifiedEventParser.parseLine(
+            """{"type":"item.started","item":{"id":"it_unknown","type":"fooBarBaz","status":"running"}}""",
+        )
+
+        val item = assertIs<UnifiedEvent.ItemUpdated>(event).item
+        assertEquals(ItemKind.UNKNOWN, item.kind)
+        assertEquals("fooBarBaz", item.name)
+        assertNull(item.text)
     }
 
     @Test

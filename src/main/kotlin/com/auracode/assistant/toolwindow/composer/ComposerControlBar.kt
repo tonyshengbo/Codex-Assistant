@@ -36,6 +36,7 @@ import com.auracode.assistant.toolwindow.eventing.ComposerReasoning
 import com.auracode.assistant.toolwindow.eventing.UiIntent
 import com.auracode.assistant.toolwindow.eventing.localizedLabel
 import com.auracode.assistant.toolwindow.drawer.settings.SettingsTextInput
+import com.auracode.assistant.toolwindow.drawer.settings.rememberSettingsTextInputState
 import com.auracode.assistant.toolwindow.shared.DesignPalette
 import com.auracode.assistant.toolwindow.shared.HoverTooltip
 import com.auracode.assistant.toolwindow.shared.assistantUiTokens
@@ -339,6 +340,7 @@ private fun CustomModelInputSection(
     onCancel: () -> Unit,
 ) {
     val focusRequester = remember { FocusRequester() }
+    val draftInputState = rememberSettingsTextInputState(draft)
     LaunchedEffect(Unit) {
         focusRequester.requestFocus()
     }
@@ -350,8 +352,11 @@ private fun CustomModelInputSection(
     ) {
         SettingsTextInput(
             p = p,
-            value = draft,
-            onValueChange = onDraftChange,
+            value = draftInputState.value,
+            onValueChange = {
+                draftInputState.value = it
+                onDraftChange(it.text)
+            },
             modifier = Modifier.focusRequester(focusRequester),
         )
         Row(

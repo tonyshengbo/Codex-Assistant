@@ -141,12 +141,11 @@ object CodexUnifiedEventParser {
         } else {
             null
         }
-        val inferredName = inferUnknownItemName(itemType)
-        val inferredText = inferUnknownItemText(itemType, status)
+        val inferredName = inferUnknownItemName(itemType = itemType, kind = kind)
         val text = diffChanges?.joinToString("\n") { "${it.kind} ${it.path}" } ?: item.string("text")
             ?: item.string("output")
             ?: item.string("input")
-            ?: inferredText
+            ?: item.string("query")
             ?: item.objectValue("payload")?.toString()
         val command = item.string("command")
             ?: item.objectValue("payload")?.string("command")
@@ -156,7 +155,10 @@ object CodexUnifiedEventParser {
         val name = if (kind == ItemKind.DIFF_APPLY) {
             "File Changes (${text?.lineSequence()?.count { it.isNotBlank() } ?: 0})"
         } else {
-            item.string("tool_name") ?: item.string("name") ?: inferredName
+            item.string("tool_name")
+                ?: item.string("name")
+                ?: item.string("action")?.takeIf { kind == ItemKind.TOOL_CALL }
+                ?: inferredName
         }
         val errorStatus = if (eventType.contains("failed")) ItemStatus.FAILED else status
 
@@ -183,34 +185,21 @@ object CodexUnifiedEventParser {
                 ItemKind.CONTEXT_COMPACTION
             type.contains("command") || type.contains("shell") -> ItemKind.COMMAND_EXEC
             type.contains("diff") || type.contains("patch") || type.contains("file_change") -> ItemKind.DIFF_APPLY
+            type == "websearch" || type == "web_search" || type == "web-search" -> ItemKind.TOOL_CALL
             type.contains("tool") || type.contains("function_call") -> ItemKind.TOOL_CALL
             type.contains("reasoning") || type.contains("narrative") || type.contains("message") -> ItemKind.NARRATIVE
             else -> ItemKind.UNKNOWN
         }
     }
 
-    private fun inferUnknownItemName(itemType: String): String? {
+    private fun inferUnknownItemName(
+        itemType: String,
+        kind: ItemKind,
+    ): String? {
+        if (kind != ItemKind.UNKNOWN) return null
         val normalized = itemType.trim()
         if (normalized.isBlank()) return null
-        return when (normalized.lowercase()) {
-            "contextcompaction", "context_compaction", "context-compaction" -> "Context Compaction"
-            else -> null
-        }
-    }
-
-    private fun inferUnknownItemText(
-        itemType: String,
-        status: ItemStatus,
-    ): String? {
-        return when (itemType.trim().lowercase()) {
-            "contextcompaction", "context_compaction", "context-compaction" -> when (status) {
-                ItemStatus.RUNNING -> "Compacting context"
-                ItemStatus.SUCCESS -> "Context compacted"
-                ItemStatus.FAILED -> "Context compaction interrupted"
-                ItemStatus.SKIPPED -> "Context compaction skipped"
-            }
-            else -> null
-        }
+        return normalized
     }
 
     private fun parseStatus(status: String?, fallback: ItemStatus): ItemStatus {

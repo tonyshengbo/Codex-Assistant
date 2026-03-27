@@ -273,4 +273,43 @@ class TimelineRegionLogicTest {
         assertEquals(0, timelineBottomOverflowPx(fullyVisible))
         assertEquals(0, timelineBottomOverflowPx(nonTerminal))
     }
+
+    @Test
+    fun `timeline follow mode ignores programmatic settle when tall tail is still growing`() {
+        val resolution = timelineResolveAutoFollow(
+            wasAutoFollowEnabled = true,
+            isScrollInProgress = false,
+            isNearBottom = false,
+            hadProgrammaticScroll = true,
+        )
+
+        assertTrue(resolution.autoFollowEnabled)
+        assertFalse(resolution.hadProgrammaticScroll)
+    }
+
+    @Test
+    fun `timeline follow mode disables after manual upward scroll settles away from bottom`() {
+        val resolution = timelineResolveAutoFollow(
+            wasAutoFollowEnabled = true,
+            isScrollInProgress = false,
+            isNearBottom = false,
+            hadProgrammaticScroll = false,
+        )
+
+        assertFalse(resolution.autoFollowEnabled)
+        assertFalse(resolution.hadProgrammaticScroll)
+    }
+
+    @Test
+    fun `timeline follow mode preserves state while scrolling is still in progress`() {
+        val resolution = timelineResolveAutoFollow(
+            wasAutoFollowEnabled = true,
+            isScrollInProgress = true,
+            isNearBottom = false,
+            hadProgrammaticScroll = true,
+        )
+
+        assertTrue(resolution.autoFollowEnabled)
+        assertTrue(resolution.hadProgrammaticScroll)
+    }
 }

@@ -58,6 +58,11 @@ internal data class TimelineQuickScrollVisibility(
     val showBottom: Boolean,
 )
 
+internal data class TimelineAutoFollowResolution(
+    val autoFollowEnabled: Boolean,
+    val hadProgrammaticScroll: Boolean,
+)
+
 internal data class TimelineBottomSnapshot(
     val totalItemsCount: Int,
     val lastVisibleItemIndex: Int?,
@@ -99,6 +104,30 @@ internal fun timelineIsNearBottom(
         return false
     }
     return timelineBottomOverflowPx(snapshot) <= thresholdPx
+}
+
+internal fun timelineResolveAutoFollow(
+    wasAutoFollowEnabled: Boolean,
+    isScrollInProgress: Boolean,
+    isNearBottom: Boolean,
+    hadProgrammaticScroll: Boolean,
+): TimelineAutoFollowResolution {
+    if (isScrollInProgress) {
+        return TimelineAutoFollowResolution(
+            autoFollowEnabled = wasAutoFollowEnabled,
+            hadProgrammaticScroll = hadProgrammaticScroll,
+        )
+    }
+    if (hadProgrammaticScroll) {
+        return TimelineAutoFollowResolution(
+            autoFollowEnabled = wasAutoFollowEnabled,
+            hadProgrammaticScroll = false,
+        )
+    }
+    return TimelineAutoFollowResolution(
+        autoFollowEnabled = isNearBottom,
+        hadProgrammaticScroll = false,
+    )
 }
 
 private suspend fun scrollTimelineToBottom(
@@ -146,6 +175,7 @@ internal fun TimelineRegion(
     var previewAttachment by remember { mutableStateOf<TimelineMessageAttachment?>(null) }
     var quickScrollOverlayVisible by remember { mutableStateOf(false) }
     var autoFollowEnabled by remember { mutableStateOf(true) }
+    var hadProgrammaticScroll by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val listState = rememberLazyListState()
     val rowCount = state.nodes.size
@@ -181,6 +211,7 @@ internal fun TimelineRegion(
             TimelineRenderCause.LIVE_UPDATE,
             -> {
                 if (autoFollowEnabled) {
+                    hadProgrammaticScroll = true
                     scrollTimelineToBottom(
                         listState = listState,
                         rowCount = rowCount,
@@ -204,11 +235,14 @@ internal fun TimelineRegion(
     }
 
     LaunchedEffect(listState.isScrollInProgress) {
-        if (!listState.isScrollInProgress) {
-            // Only update follow mode when scrolling settles. This preserves "stick to bottom"
-            // across streaming re-layouts, while still letting a manual upward scroll disable follow mode.
-            autoFollowEnabled = nearBottom.value
-        }
+        val resolution = timelineResolveAutoFollow(
+            wasAutoFollowEnabled = autoFollowEnabled,
+            isScrollInProgress = listState.isScrollInProgress,
+            isNearBottom = nearBottom.value,
+            hadProgrammaticScroll = hadProgrammaticScroll,
+        )
+        autoFollowEnabled = resolution.autoFollowEnabled
+        hadProgrammaticScroll = resolution.hadProgrammaticScroll
     }
 
     TimelineAttachmentPreviewDialog(
@@ -341,6 +375,7 @@ internal fun TimelineRegion(
                             if (rowCount > 0) {
                                 previewAttachment = null
                                 quickScrollOverlayVisible = false
+                                autoFollowEnabled = false
                                 scope.launch { listState.animateScrollToItem(0) }
                             }
                         },
@@ -355,7 +390,14 @@ internal fun TimelineRegion(
                             if (rowCount > 0) {
                                 previewAttachment = null
                                 quickScrollOverlayVisible = false
-                                scope.launch { listState.animateScrollToItem(rowCount - 1) }
+                                autoFollowEnabled = true
+                                scope.launch {
+                                    hadProgrammaticScroll = true
+                                    scrollTimelineToBottom(
+                                        listState = listState,
+                                        rowCount = rowCount,
+                                    )
+                                }
                             }
                         },
                     )
