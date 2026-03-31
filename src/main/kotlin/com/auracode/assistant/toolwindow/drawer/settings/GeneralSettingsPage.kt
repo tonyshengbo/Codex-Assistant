@@ -2,15 +2,10 @@ package com.auracode.assistant.toolwindow.drawer.settings
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.material.DropdownMenu
 import androidx.compose.material.DropdownMenuItem
-import androidx.compose.material.MaterialTheme
 import androidx.compose.material.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -20,8 +15,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.auracode.assistant.i18n.AuraCodeBundle
-import com.auracode.assistant.provider.codex.CodexEnvironmentCheckResult
-import com.auracode.assistant.provider.codex.CodexEnvironmentStatus
 import com.auracode.assistant.settings.UiLanguageMode
 import com.auracode.assistant.settings.UiThemeMode
 import com.auracode.assistant.toolwindow.drawer.RightDrawerAreaState
@@ -36,8 +29,6 @@ internal fun GeneralSettingsPage(
     onIntent: (UiIntent) -> Unit,
 ) {
     val t = assistantUiTokens()
-    val codexPathInputState = rememberSettingsTextInputState(state.codexCliPath)
-    val nodePathInputState = rememberSettingsTextInputState(state.nodePath)
     Column(
         modifier = Modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(t.spacing.lg),
@@ -76,60 +67,7 @@ internal fun GeneralSettingsPage(
             title = AuraCodeBundle.message("settings.group.environment"),
             description = AuraCodeBundle.message("settings.group.environment.subtitle"),
         )
-        SettingsField(
-            p = p,
-            title = AuraCodeBundle.message("settings.codexPath.label"),
-            description = AuraCodeBundle.message("settings.codexPath.hint"),
-        ) {
-            Column(verticalArrangement = Arrangement.spacedBy(t.spacing.sm)) {
-                SettingsTextInput(
-                    p = p,
-                    value = codexPathInputState.value,
-                    onValueChange = {
-                        codexPathInputState.value = it
-                        onIntent(UiIntent.EditSettingsCodexCliPath(it.text))
-                    },
-                )
-                EnvironmentFieldBadge(
-                    p = p,
-                    label = fieldStatusLabel(
-                        configuredValue = state.codexCliPath,
-                        detectedValue = state.environmentCheckResult?.codexPath,
-                    ),
-                    status = fieldStatus(
-                        configuredValue = state.codexCliPath,
-                        detectedValue = state.environmentCheckResult?.codexPath,
-                    ),
-                )
-            }
-        }
-        SettingsField(
-            p = p,
-            title = AuraCodeBundle.message("settings.nodePath.label"),
-            description = AuraCodeBundle.message("settings.nodePath.hint"),
-        ) {
-            Column(verticalArrangement = Arrangement.spacedBy(t.spacing.sm)) {
-                SettingsTextInput(
-                    p = p,
-                    value = nodePathInputState.value,
-                    onValueChange = {
-                        nodePathInputState.value = it
-                        onIntent(UiIntent.EditSettingsNodePath(it.text))
-                    },
-                )
-                EnvironmentFieldBadge(
-                    p = p,
-                    label = fieldStatusLabel(
-                        configuredValue = state.nodePath,
-                        detectedValue = state.environmentCheckResult?.nodePath,
-                    ),
-                    status = fieldStatus(
-                        configuredValue = state.nodePath,
-                        detectedValue = state.environmentCheckResult?.nodePath,
-                    ),
-                )
-            }
-        }
+        GeneralEnvironmentSettingsSection(p = p, state = state, onIntent = onIntent)
         SettingsField(
             p = p,
             title = AuraCodeBundle.message("settings.autoContext.label"),
@@ -140,98 +78,6 @@ internal fun GeneralSettingsPage(
                 checked = state.autoContextEnabled,
                 onCheckedChange = { onIntent(UiIntent.EditSettingsAutoContextEnabled(it)) },
             )
-        }
-        Spacer(Modifier.height(t.spacing.sm))
-        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(t.spacing.sm, alignment = androidx.compose.ui.Alignment.End)) {
-            SettingsActionButton(
-                p = p,
-                text = AuraCodeBundle.message("settings.environment.detect"),
-                emphasized = false,
-                enabled = !state.environmentCheckRunning,
-                onClick = { onIntent(UiIntent.DetectCodexEnvironment) },
-            )
-            SettingsActionButton(
-                p = p,
-                text = AuraCodeBundle.message("settings.environment.test"),
-                emphasized = false,
-                enabled = !state.environmentCheckRunning,
-                onClick = { onIntent(UiIntent.TestCodexEnvironment) },
-            )
-            SettingsActionButton(
-                p = p,
-                text = AuraCodeBundle.message("common.save"),
-                onClick = { onIntent(UiIntent.SaveSettings) },
-            )
-        }
-        state.environmentCheckResult?.let { result ->
-            SettingsField(
-                p = p,
-                title = AuraCodeBundle.message("settings.environment.result.label"),
-                description = AuraCodeBundle.message("settings.environment.result.hint"),
-            ) {
-                EnvironmentResultPanel(
-                    p = p,
-                    result = result,
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun EnvironmentFieldBadge(
-    p: DesignPalette,
-    label: String,
-    status: CodexEnvironmentStatus,
-) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.Start,
-    ) {
-        SettingsStatusBadge(
-            p = p,
-            text = label,
-            status = status,
-        )
-    }
-}
-
-@Composable
-private fun EnvironmentResultPanel(
-    p: DesignPalette,
-    result: CodexEnvironmentCheckResult,
-) {
-    val t = assistantUiTokens()
-    Column(verticalArrangement = Arrangement.spacedBy(t.spacing.sm)) {
-        EnvironmentResultRow(p, AuraCodeBundle.message("settings.codexPath.label"), statusLabel(result.codexStatus), result.codexStatus)
-        EnvironmentResultRow(p, AuraCodeBundle.message("settings.nodePath.label"), statusLabel(result.nodeStatus), result.nodeStatus)
-        EnvironmentResultRow(p, AuraCodeBundle.message("settings.environment.appServer"), statusLabel(result.appServerStatus), result.appServerStatus)
-        Text(
-            text = result.message,
-            color = p.textSecondary,
-            style = MaterialTheme.typography.body2,
-        )
-    }
-}
-
-@Composable
-private fun EnvironmentResultRow(
-    p: DesignPalette,
-    title: String,
-    label: String,
-    status: CodexEnvironmentStatus,
-) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween,
-    ) {
-        Text(
-            text = title,
-            color = p.textPrimary,
-            style = MaterialTheme.typography.body2,
-        )
-        Row(modifier = Modifier.wrapContentWidth(), horizontalArrangement = Arrangement.End) {
-            SettingsStatusBadge(p = p, text = label, status = status)
         }
     }
 }
@@ -300,27 +146,4 @@ private fun themeModeLabel(mode: UiThemeMode): String = when (mode) {
     UiThemeMode.FOLLOW_IDE -> AuraCodeBundle.message("settings.theme.followIde")
     UiThemeMode.LIGHT -> AuraCodeBundle.message("settings.theme.light")
     UiThemeMode.DARK -> AuraCodeBundle.message("settings.theme.dark")
-}
-
-private fun fieldStatus(
-    configuredValue: String,
-    detectedValue: String?,
-): CodexEnvironmentStatus {
-    return when {
-        configuredValue.trim().isNotBlank() -> CodexEnvironmentStatus.CONFIGURED
-        !detectedValue.isNullOrBlank() -> CodexEnvironmentStatus.DETECTED
-        else -> CodexEnvironmentStatus.MISSING
-    }
-}
-
-private fun fieldStatusLabel(
-    configuredValue: String,
-    detectedValue: String?,
-): String = statusLabel(fieldStatus(configuredValue, detectedValue))
-
-private fun statusLabel(status: CodexEnvironmentStatus): String = when (status) {
-    CodexEnvironmentStatus.CONFIGURED -> AuraCodeBundle.message("settings.environment.status.configured")
-    CodexEnvironmentStatus.DETECTED -> AuraCodeBundle.message("settings.environment.status.detected")
-    CodexEnvironmentStatus.MISSING -> AuraCodeBundle.message("settings.environment.status.missing")
-    CodexEnvironmentStatus.FAILED -> AuraCodeBundle.message("settings.environment.status.failed")
 }

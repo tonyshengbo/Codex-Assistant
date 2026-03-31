@@ -440,6 +440,75 @@ class AreaStoresTest {
     }
 
     @Test
+    fun `environment detection keeps manual draft edits and still updates untouched fields`() {
+        val store = RightDrawerAreaStore()
+
+        store.onEvent(
+            AppEvent.SettingsSnapshotUpdated(
+                codexCliPath = "codex",
+                nodePath = "",
+                languageMode = com.auracode.assistant.settings.UiLanguageMode.FOLLOW_IDE,
+                themeMode = UiThemeMode.DARK,
+                autoContextEnabled = true,
+                savedAgents = emptyList(),
+                customModelIds = emptyList(),
+            ),
+        )
+        store.onEvent(AppEvent.UiIntentPublished(UiIntent.EditSettingsCodexCliPath("/manual/codex")))
+
+        store.onEvent(
+            AppEvent.CodexEnvironmentCheckUpdated(
+                result = CodexEnvironmentCheckResult(
+                    codexPath = "/usr/local/bin/codex",
+                    nodePath = "/opt/homebrew/bin/node",
+                    codexStatus = CodexEnvironmentStatus.DETECTED,
+                    nodeStatus = CodexEnvironmentStatus.DETECTED,
+                    appServerStatus = CodexEnvironmentStatus.DETECTED,
+                    message = "ready",
+                ),
+                updateDraftPaths = true,
+            ),
+        )
+
+        assertEquals("/manual/codex", store.state.value.codexCliPath)
+        assertEquals("/opt/homebrew/bin/node", store.state.value.nodePath)
+    }
+
+    @Test
+    fun `environment save visibility follows draft dirtiness`() {
+        val store = RightDrawerAreaStore()
+
+        store.onEvent(
+            AppEvent.SettingsSnapshotUpdated(
+                codexCliPath = "codex",
+                nodePath = "",
+                languageMode = com.auracode.assistant.settings.UiLanguageMode.FOLLOW_IDE,
+                themeMode = UiThemeMode.DARK,
+                autoContextEnabled = true,
+                savedAgents = emptyList(),
+                customModelIds = emptyList(),
+            ),
+        )
+        assertFalse(store.state.value.isEnvironmentSaveVisible)
+
+        store.onEvent(AppEvent.UiIntentPublished(UiIntent.EditSettingsNodePath("/opt/homebrew/bin/node")))
+        assertTrue(store.state.value.isEnvironmentSaveVisible)
+
+        store.onEvent(
+            AppEvent.SettingsSnapshotUpdated(
+                codexCliPath = "codex",
+                nodePath = "/opt/homebrew/bin/node",
+                languageMode = com.auracode.assistant.settings.UiLanguageMode.FOLLOW_IDE,
+                themeMode = UiThemeMode.DARK,
+                autoContextEnabled = true,
+                savedAgents = emptyList(),
+                customModelIds = emptyList(),
+            ),
+        )
+        assertFalse(store.state.value.isEnvironmentSaveVisible)
+    }
+
+    @Test
     fun `mcp settings switch between list and editor pages and keep batch draft state`() {
         val store = RightDrawerAreaStore()
 
@@ -733,6 +802,7 @@ class AreaStoresTest {
 
         store.onEvent(AppEvent.PromptAccepted(prompt = "hello", localTurnId = "local-turn-1"))
         assertTrue(store.state.value.isRunning)
+        assertEquals(1L, store.state.value.promptScrollRequestVersion)
 
         store.onEvent(
             AppEvent.TimelineMutationApplied(
@@ -781,6 +851,7 @@ class AreaStoresTest {
 
         store.onEvent(AppEvent.PromptAccepted(prompt = "second", localTurnId = "local-turn-2"))
         assertTrue(store.state.value.isRunning)
+        assertEquals(2L, store.state.value.promptScrollRequestVersion)
 
         store.onEvent(
             AppEvent.TimelineMutationApplied(

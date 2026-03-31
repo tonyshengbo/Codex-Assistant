@@ -87,7 +87,7 @@ internal fun RunningPlanComposerSection(
                 )
                 .clickable { onIntent(UiIntent.ToggleRunningPlanExpanded) }
                 .padding(horizontal = t.spacing.md - 1.dp, vertical = 6.dp)
-                .defaultMinSize(minHeight = 31.dp),
+                .defaultMinSize(minHeight = 20.dp),
             horizontalArrangement = Arrangement.spacedBy(6.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {

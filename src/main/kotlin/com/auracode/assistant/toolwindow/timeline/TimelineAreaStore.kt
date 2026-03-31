@@ -25,6 +25,7 @@ internal data class TimelineAreaState(
     val renderCause: TimelineRenderCause = TimelineRenderCause.IDLE,
     val prependedCount: Int = 0,
     val latestError: String? = null,
+    val promptScrollRequestVersion: Long = 0L,
 )
 
 internal class TimelineAreaStore {

@@ -344,4 +344,20 @@ class TimelineRegionLogicTest {
         assertTrue(resolution.autoFollowEnabled)
         assertTrue(resolution.hadProgrammaticScroll)
     }
+
+    @Test
+    fun `prompt accepted requests force bottom only once per version`() {
+        assertTrue(
+            timelineHasPendingPromptScrollRequest(
+                requestVersion = 2L,
+                handledVersion = 1L,
+            ),
+        )
+        assertFalse(
+            timelineHasPendingPromptScrollRequest(
+                requestVersion = 2L,
+                handledVersion = 2L,
+            ),
+        )
+    }
 }

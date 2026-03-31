@@ -35,6 +35,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.ImageBitmap
@@ -135,6 +136,11 @@ internal fun timelineResolveAutoFollow(
     )
 }
 
+internal fun timelineHasPendingPromptScrollRequest(
+    requestVersion: Long,
+    handledVersion: Long,
+): Boolean = requestVersion > handledVersion
+
 internal fun timelineBottomScrollStrategy(
     snapshot: TimelineBottomSnapshot,
 ): TimelineBottomScrollStrategy {
@@ -212,6 +218,7 @@ internal fun TimelineRegion(
     var quickScrollOverlayVisible by remember { mutableStateOf(false) }
     var autoFollowEnabled by remember { mutableStateOf(true) }
     var hadProgrammaticScroll by remember { mutableStateOf(false) }
+    var handledPromptScrollVersion by remember { mutableStateOf(0L) }
     val scope = rememberCoroutineScope()
     val listState = rememberLazyListState()
     val rowCount = state.nodes.size
@@ -258,6 +265,24 @@ internal fun TimelineRegion(
 
             TimelineRenderCause.IDLE -> Unit
         }
+    }
+
+    LaunchedEffect(state.promptScrollRequestVersion, state.renderVersion, rowCount) {
+        if (!timelineHasPendingPromptScrollRequest(state.promptScrollRequestVersion, handledPromptScrollVersion)) {
+            return@LaunchedEffect
+        }
+        if (rowCount <= 0) {
+            return@LaunchedEffect
+        }
+        autoFollowEnabled = true
+        hadProgrammaticScroll = true
+        withFrameNanos { }
+        scrollTimelineToBottom(
+            listState = listState,
+            rowCount = rowCount,
+            animateReveal = false,
+        )
+        handledPromptScrollVersion = state.promptScrollRequestVersion
     }
 
     LaunchedEffect(listState.isScrollInProgress, nearTop.value, nearBottom.value) {

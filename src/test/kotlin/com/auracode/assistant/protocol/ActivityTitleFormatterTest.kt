@@ -16,6 +16,17 @@ class ActivityTitleFormatterTest {
     }
 
     @Test
+    fun `formats relative file probes as read`() {
+        val presentation = ActivityTitleFormatter.commandPresentation(
+            command = "/bin/zsh -lc 'sed -n ''240,340p'' src/main/kotlin/com/auracode/assistant/toolwindow/eventing/ToolWindowCoordinator.kt'",
+        )
+
+        assertEquals("Read ToolWindowCoordinator.kt", presentation.title)
+        assertEquals("ToolWindowCoordinator.kt", presentation.targetLabel)
+        assertEquals("src/main/kotlin/com/auracode/assistant/toolwindow/eventing/ToolWindowCoordinator.kt", presentation.targetPath)
+    }
+
+    @Test
     fun `formats file writes as edit`() {
         val presentation = ActivityTitleFormatter.commandPresentation(
             command = "/bin/zsh -lc \"cat > /Users/tonysheng/DataGripProjects/HelloTest.java <<'EOF'\nhello\nEOF\"",

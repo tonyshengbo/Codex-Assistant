@@ -207,6 +207,8 @@ internal class ToolWindowCoordinator(
                         loadMcpServers()
                     } else if (rightDrawerStore.state.value.settingsSection == SettingsSection.SKILLS) {
                         loadSkills()
+                    } else if (rightDrawerStore.state.value.settingsSection == SettingsSection.GENERAL) {
+                        detectCodexEnvironment()
                     }
                 }
             }
@@ -237,6 +239,11 @@ internal class ToolWindowCoordinator(
                     loadMcpServers()
                 } else if (intent.section == SettingsSection.SKILLS) {
                     loadSkills()
+                } else if (
+                    intent.section == SettingsSection.GENERAL &&
+                    rightDrawerStore.state.value.kind == RightDrawerKind.SETTINGS
+                ) {
+                    detectCodexEnvironment()
                 }
             }
             UiIntent.OpenAttachmentPicker -> {
@@ -283,6 +290,7 @@ internal class ToolWindowCoordinator(
             is UiIntent.UpdateFocusedContextFile -> recordFocusedFile(intent.snapshot?.path)
             is UiIntent.EditSettingsLanguageMode -> applyLanguagePreview(intent.mode)
             is UiIntent.EditSettingsThemeMode -> applyThemePreview(intent.mode)
+            is UiIntent.EditSettingsAutoContextEnabled -> applyAutoContextPreference(intent.enabled)
             is UiIntent.SubmitApprovalAction -> submitApprovalDecision(intent.action)
             UiIntent.SubmitToolUserInputPrompt -> submitToolUserInputPrompt(cancelled = false)
             UiIntent.CancelToolUserInputPrompt -> submitToolUserInputPrompt(cancelled = true)
@@ -455,6 +463,12 @@ internal class ToolWindowCoordinator(
         if (settingsService.uiThemeMode() == mode) return
         settingsService.setUiThemeMode(mode)
         settingsService.notifyAppearanceChanged()
+        publishSettingsSnapshot()
+    }
+
+    private fun applyAutoContextPreference(enabled: Boolean) {
+        if (settingsService.autoContextEnabled() == enabled) return
+        settingsService.setAutoContextEnabled(enabled)
         publishSettingsSnapshot()
     }
 

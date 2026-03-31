@@ -118,7 +118,7 @@ internal object ActivityTitleFormatter {
 
         return when (executable) {
             "cat", "type", "sed", "head", "tail", "nl" ->
-                targetFile?.takeIf { it.isAbsoluteFilePath() }?.let { fileTitle("Read", it) } ?: TitlePresentation(title = "Read file")
+                targetFile?.let { fileTitle("Read", it) } ?: TitlePresentation(title = "Read file")
             "ls" -> TitlePresentation(title = "List files")
             "dir" -> TitlePresentation(title = "List files")
             "find" -> TitlePresentation(title = "Search files")
@@ -157,7 +157,7 @@ internal object ActivityTitleFormatter {
                 Regex("""\s([^\s]+)$""", RegexOption.IGNORE_CASE).find(trimmed)?.groupValues?.getOrNull(1)
             else -> null
         }?.trim('"', '\'')
-        return readPath?.takeIf { it.isAbsoluteFilePath() }?.let { fileTitle("Read", it) }
+        return readPath?.let { fileTitle("Read", it) }
     }
 
     private fun summarizeFileWrite(command: String): TitlePresentation? {

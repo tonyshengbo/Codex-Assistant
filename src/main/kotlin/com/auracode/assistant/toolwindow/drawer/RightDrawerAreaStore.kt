@@ -44,8 +44,7 @@ internal data class RightDrawerAreaState(
     val historyNextCursor: String? = null,
     val historyLoading: Boolean = false,
     val historyQuery: String = "",
-    val codexCliPath: String = "",
-    val nodePath: String = "",
+    val environmentDraft: EnvironmentDraftState = EnvironmentDraftState(),
     val languageMode: UiLanguageMode = UiLanguageMode.FOLLOW_IDE,
     val themeMode: UiThemeMode = UiThemeMode.FOLLOW_IDE,
     val autoContextEnabled: Boolean = true,
@@ -77,6 +76,18 @@ internal data class RightDrawerAreaState(
     val mcpFeedbackMessage: String? = null,
     val mcpFeedbackIsError: Boolean = false,
 ) {
+    /** Exposes the editable Codex path from the environment draft for UI callers. */
+    val codexCliPath: String
+        get() = environmentDraft.codexCliPath
+
+    /** Exposes the editable Node path from the environment draft for UI callers. */
+    val nodePath: String
+        get() = environmentDraft.nodePath
+
+    /** Returns true when the environment draft needs an explicit save action. */
+    val isEnvironmentSaveVisible: Boolean
+        get() = environmentDraft.isDirty
+
     /**
      * Keeps agent editing modal visibility derived from the existing page mode
      * so the UI does not need a second source of truth for the same state.
@@ -130,11 +141,15 @@ internal class RightDrawerAreaStore {
                     }
 
                     is UiIntent.EditSettingsCodexCliPath -> {
-                        _state.value = _state.value.copy(codexCliPath = event.intent.value)
+                        _state.value = _state.value.copy(
+                            environmentDraft = _state.value.environmentDraft.withEditedCodexPath(event.intent.value),
+                        )
                     }
 
                     is UiIntent.EditSettingsNodePath -> {
-                        _state.value = _state.value.copy(nodePath = event.intent.value)
+                        _state.value = _state.value.copy(
+                            environmentDraft = _state.value.environmentDraft.withEditedNodePath(event.intent.value),
+                        )
                     }
 
                     is UiIntent.EditSettingsLanguageMode -> {
@@ -267,8 +282,10 @@ internal class RightDrawerAreaStore {
                 val selected = event.savedAgents.firstOrNull { it.id == _state.value.editingAgentId }
                 val fallback = event.savedAgents.firstOrNull()
                 _state.value = _state.value.copy(
-                    codexCliPath = event.codexCliPath,
-                    nodePath = event.nodePath,
+                    environmentDraft = _state.value.environmentDraft.withPersistedPaths(
+                        codexCliPath = event.codexCliPath,
+                        nodePath = event.nodePath,
+                    ),
                     languageMode = event.languageMode,
                     themeMode = event.themeMode,
                     autoContextEnabled = event.autoContextEnabled,
@@ -293,16 +310,11 @@ internal class RightDrawerAreaStore {
 
             is AppEvent.CodexEnvironmentCheckUpdated -> {
                 _state.value = _state.value.copy(
-                    codexCliPath = if (event.updateDraftPaths && event.result.codexPath.isNotBlank()) {
-                        event.result.codexPath
-                    } else {
-                        _state.value.codexCliPath
-                    },
-                    nodePath = if (event.updateDraftPaths && event.result.nodePath.isNotBlank()) {
-                        event.result.nodePath
-                    } else {
-                        _state.value.nodePath
-                    },
+                    environmentDraft = _state.value.environmentDraft.withDetectedPaths(
+                        codexCliPath = event.result.codexPath,
+                        nodePath = event.result.nodePath,
+                        updateDraftPaths = event.updateDraftPaths,
+                    ),
                     environmentCheckResult = event.result,
                     environmentCheckRunning = false,
                 )

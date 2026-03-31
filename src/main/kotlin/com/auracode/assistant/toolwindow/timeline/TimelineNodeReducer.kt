@@ -96,6 +96,7 @@ internal class TimelineNodeReducer {
             renderVersion = state.renderVersion + 1,
             renderCause = TimelineRenderCause.LIVE_UPDATE,
             prependedCount = 0,
+            promptScrollRequestVersion = state.promptScrollRequestVersion + 1,
         )
     }
 
