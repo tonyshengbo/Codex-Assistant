@@ -28,6 +28,10 @@ internal class StatusAreaStore {
     private val _state = MutableStateFlow(StatusAreaState())
     val state: StateFlow<StatusAreaState> = _state.asStateFlow()
 
+    fun restoreState(state: StatusAreaState) {
+        _state.value = state
+    }
+
     fun onEvent(event: AppEvent) {
         when (event) {
             is AppEvent.PromptAccepted -> {

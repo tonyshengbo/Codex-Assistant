@@ -3,6 +3,7 @@ package com.auracode.assistant.toolwindow.eventing
 import com.auracode.assistant.model.AgentApprovalMode
 import com.auracode.assistant.model.AgentCollaborationMode
 import com.auracode.assistant.model.AgentRequest
+import com.auracode.assistant.conversation.ConversationCapabilities
 import com.auracode.assistant.protocol.ItemKind
 import com.auracode.assistant.protocol.ItemStatus
 import com.auracode.assistant.protocol.TurnOutcome
@@ -326,6 +327,17 @@ class ToolWindowToolUserInputFlowTest {
         val submissions = mutableListOf<Pair<String, Map<String, UnifiedToolUserInputAnswerDraft>>>()
         val cancelledRequestIds = mutableListOf<String>()
         private var sink: (UnifiedEvent) -> Unit = {}
+
+        override fun capabilities(): ConversationCapabilities = ConversationCapabilities(
+            supportsStructuredHistory = false,
+            supportsHistoryPagination = false,
+            supportsPlanMode = true,
+            supportsApprovalRequests = false,
+            supportsToolUserInput = true,
+            supportsResume = true,
+            supportsAttachments = true,
+            supportsImageInputs = true,
+        )
 
         override fun stream(request: AgentRequest): Flow<UnifiedEvent> = callbackFlow {
             requests += request

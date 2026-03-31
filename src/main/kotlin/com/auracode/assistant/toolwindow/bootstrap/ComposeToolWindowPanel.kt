@@ -171,8 +171,8 @@ class ComposeToolWindowPanel(
         sessionTabCoordinator = SessionTabCoordinator(
             chatService = chatService,
             toolWindowProvider = { toolWindow as? ToolWindowEx },
-            isRunning = { timelineStore.state.value.isRunning },
             onStatus = { message -> eventHub.publish(AppEvent.StatusTextUpdated(message)) },
+            onBeforeSessionActivated = { sessionId -> coordinator.captureSessionState(sessionId) },
             onSessionActivated = { coordinator.onSessionActivated() },
         )
         sessionTabCoordinator.initialize()

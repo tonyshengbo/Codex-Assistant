@@ -10,6 +10,10 @@ internal class ApprovalAreaStore {
     private val _state = MutableStateFlow(ApprovalAreaState())
     val state: StateFlow<ApprovalAreaState> = _state.asStateFlow()
 
+    fun restoreState(state: ApprovalAreaState) {
+        _state.value = state
+    }
+
     fun onEvent(event: AppEvent) {
         when (event) {
             is AppEvent.ApprovalRequested -> enqueue(event.request)

@@ -108,6 +108,16 @@ internal class TimelineNodeReducer {
         state = TimelineAreaState()
     }
 
+    fun restoreState(restoredState: TimelineAreaState) {
+        state = restoredState
+        activeThreadId = null
+        activeTurnId = restoredState.nodes.asReversed().firstNotNullOfOrNull { node ->
+            node.turnId?.takeIf { restoredState.isRunning || node.status == ItemStatus.RUNNING }
+        }
+        syntheticTurnCount = 0
+        errorNodeCount = restoredState.nodes.count { it is TimelineNode.ErrorNode }
+    }
+
     private fun acceptTurnStarted(mutation: TimelineMutation.TurnStarted): TimelineAreaState {
         if (!mutation.threadId.isNullOrBlank()) {
             activeThreadId = mutation.threadId

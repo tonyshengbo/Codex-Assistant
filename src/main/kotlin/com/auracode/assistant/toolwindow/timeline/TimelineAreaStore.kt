@@ -93,6 +93,11 @@ internal class TimelineAreaStore {
         }
     }
 
+    fun restoreState(state: TimelineAreaState) {
+        reducer.restoreState(state)
+        _state.value = state
+    }
+
     private fun syncReducerState(previous: TimelineAreaState = _state.value) {
         val nextState = reducer.state
         val nextNodeIds = nextState.nodes.mapTo(linkedSetOf(), TimelineNode::id)

@@ -40,8 +40,8 @@ import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.application.PathManager
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.collect
@@ -90,6 +90,7 @@ class AgentChatService private constructor(
         val messageCount: Int,
         val remoteConversationId: String,
         val usageSnapshot: TurnUsageSnapshot? = null,
+        val isRunning: Boolean = false,
     )
 
     private data class SessionData(
@@ -106,10 +107,8 @@ class AgentChatService private constructor(
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val stateLock = Any()
 
-    private var currentJob: Job? = null
-    private var currentRequestId: String? = null
-
     private val sessions = linkedMapOf<String, SessionData>()
+    private val sessionRuns = SessionRunRegistry()
     private var currentSessionId: String = ""
 
     companion object {
@@ -196,6 +195,7 @@ class AgentChatService private constructor(
                         messageCount = it.messageCount,
                         remoteConversationId = it.remoteConversationId,
                         usageSnapshot = it.usageSnapshot,
+                        isRunning = sessionRuns.isRunning(it.id),
                     )
                 }
         }
@@ -277,6 +277,7 @@ class AgentChatService private constructor(
         )
         synchronized(stateLock) {
             sessions[session.id] = session.toSessionData()
+            sessionRuns.ensureSession(session.id)
             currentSessionId = session.id
         }
         repository.upsertSession(session)
@@ -316,6 +317,7 @@ class AgentChatService private constructor(
                     if (existing.title.isBlank() && suggestedTitle.isNotBlank()) {
                         existing.title = suggestedTitle.trim()
                     }
+                    sessionRuns.ensureSession(existing.id)
                     currentSessionId = existing.id
                     existing.id
                 }
@@ -343,6 +345,7 @@ class AgentChatService private constructor(
                         messageCount = 0,
                         remoteConversationId = normalizedRemoteId,
                     )
+                    sessionRuns.ensureSession(id)
                     currentSessionId = id
                     id
                 }
@@ -354,11 +357,13 @@ class AgentChatService private constructor(
     }
 
     fun deleteSession(sessionId: String): Boolean {
+        cancelSessionRun(sessionId)
         val fallbackSessionId = synchronized(stateLock) {
             if (!sessions.containsKey(sessionId)) {
                 return false
             }
             sessions.remove(sessionId)
+            sessionRuns.removeSession(sessionId)
             if (sessions.isEmpty()) {
                 currentSessionId = ""
                 null
@@ -389,11 +394,11 @@ class AgentChatService private constructor(
     )
 
     internal fun recordUserMessage(
+        sessionId: String = getCurrentSessionId(),
         prompt: String,
         turnId: String = "",
         attachments: List<PersistedMessageAttachment> = emptyList(),
     ): LocalUserMessage? {
-        val sessionId = synchronized(stateLock) { currentSessionId }
         if (sessionId.isBlank()) return null
         val message = ChatMessage(role = MessageRole.USER, content = prompt)
         repository.saveSessionAssets(
@@ -417,6 +422,7 @@ class AgentChatService private constructor(
     }
 
     fun runAgent(
+        sessionId: String = getCurrentSessionId(),
         engineId: String,
         model: String,
         reasoningEffort: String? = null,
@@ -431,9 +437,9 @@ class AgentChatService private constructor(
         onTurnPersisted: () -> Unit = {},
         onUnifiedEvent: (UnifiedEvent) -> Unit = {},
     ) {
-        cancelCurrent()
+        cancelSessionRun(sessionId)
         val resolvedModel = resolveModel(engineId, model)
-        val remoteConversationId = currentRemoteConversationId()
+        val remoteConversationId = currentRemoteConversationId(sessionId)
         val request = AgentRequest(
             engineId = engineId,
             action = AgentAction.CHAT,
@@ -451,7 +457,7 @@ class AgentChatService private constructor(
         )
         if (engineId == CodexProviderFactory.ENGINE_ID) {
             logCodexChain(
-                "Codex chain request: sessionId=${sessionIdForLog()} requestId=${request.requestId} " +
+                "Codex chain request: sessionId=${sessionIdForLog(sessionId)} requestId=${request.requestId} " +
                     "mode=${if (remoteConversationId == null) "start-thread" else "resume-thread"} " +
                     "model=${resolvedModel ?: "<auto>"} " +
                     "remoteConversationId=${remoteConversationId ?: "<none>"} contextFiles=${contextFiles.size} " +
@@ -461,7 +467,6 @@ class AgentChatService private constructor(
         val provider = registry.providerOrDefault(engineId)
         val job = scope.launch {
             val assistantBuffer = StringBuilder()
-            val sessionId = synchronized(stateLock) { currentSessionId }
             var activeTurnId = localTurnId?.trim().orEmpty()
             val countedAssistantItems = mutableSetOf<String>()
             try {
@@ -493,6 +498,7 @@ class AgentChatService private constructor(
                         }
                         if (unified is UnifiedEvent.ThreadTokenUsageUpdated) {
                             updateCurrentUsageSnapshot(
+                                sessionId = sessionId,
                                 model = resolvedModel ?: model,
                                 contextWindow = unified.contextWindow,
                                 inputTokens = unified.inputTokens,
@@ -505,6 +511,9 @@ class AgentChatService private constructor(
                     }
                     onTurnPersisted()
                 }.onFailure { error ->
+                    if (error is CancellationException) {
+                        return@onFailure
+                    }
                     LOG.error(
                         "AgentChatService stream coroutine failed: requestId=${request.requestId} engineId=$engineId sessionId=$sessionId",
                         error,
@@ -513,29 +522,26 @@ class AgentChatService private constructor(
                 }
             } finally {
                 synchronized(stateLock) {
-                    if (currentRequestId == request.requestId) {
-                        currentRequestId = null
-                        currentJob = null
-                    }
+                    sessionRuns.clearRun(sessionId, request.requestId)
                 }
             }
         }
         synchronized(stateLock) {
-            currentRequestId = request.requestId
-            currentJob = job
+            sessionRuns.ensureSession(sessionId)
+            sessionRuns.replaceRun(sessionId, request.requestId, job)
         }
     }
 
     fun cancelCurrent() {
-        val (job, requestId) = synchronized(stateLock) {
-            val activeJob = currentJob
-            val activeRequestId = currentRequestId
-            currentJob = null
-            currentRequestId = null
-            activeJob to activeRequestId
-        }
-        job?.cancel()
-        requestId?.let { id ->
+        cancelSessionRun(getCurrentSessionId())
+    }
+
+    fun cancelSessionRun(sessionId: String) {
+        val cancelledRun = synchronized(stateLock) {
+            sessionRuns.clearRun(sessionId)
+        } ?: return
+        cancelledRun.job?.cancel()
+        cancelledRun.requestId?.let { id ->
             runCatching {
                 registry.cancel(id)
             }
@@ -586,7 +592,8 @@ class AgentChatService private constructor(
     }
 
     override fun dispose() {
-        cancelCurrent()
+        val sessionIds = synchronized(stateLock) { sessions.keys.toList() }
+        sessionIds.forEach(::cancelSessionRun)
         scope.cancel()
     }
 
@@ -602,6 +609,7 @@ class AgentChatService private constructor(
             persistedSessions.forEach { session ->
                 sessions[session.id] = session.toSessionData()
             }
+            sessionRuns.retainSessions(sessions.keys)
             currentSessionId = persistedSessions.firstOrNull { it.isActive }?.id
                 ?: persistedSessions.maxByOrNull { it.updatedAt }?.id
                 ?: sessions.keys.first()
@@ -645,7 +653,7 @@ class AgentChatService private constructor(
             is UnifiedEvent.ApprovalRequested -> Unit
             is UnifiedEvent.ToolUserInputRequested -> Unit
             is UnifiedEvent.ToolUserInputResolved -> Unit
-            is UnifiedEvent.ThreadStarted -> updateCurrentRemoteConversationId(event.threadId)
+            is UnifiedEvent.ThreadStarted -> updateCurrentRemoteConversationId(sessionId, event.threadId)
             is UnifiedEvent.ThreadTokenUsageUpdated -> Unit
             is UnifiedEvent.TurnDiffUpdated -> Unit
             is UnifiedEvent.RunningPlanUpdated -> Unit
@@ -671,24 +679,23 @@ class AgentChatService private constructor(
         )
     }
 
-    private fun currentRemoteConversationId(): String? = synchronized(stateLock) {
-        sessions[currentSessionId]?.remoteConversationId?.trim()?.takeIf { it.isNotBlank() }
+    private fun currentRemoteConversationId(sessionId: String): String? = synchronized(stateLock) {
+        sessions[sessionId]?.remoteConversationId?.trim()?.takeIf { it.isNotBlank() }
     }
 
-    private fun updateCurrentRemoteConversationId(remoteConversationId: String) {
+    private fun updateCurrentRemoteConversationId(sessionId: String, remoteConversationId: String) {
         val trimmed = remoteConversationId.trim()
         if (trimmed.isBlank()) return
-        val sessionId = synchronized(stateLock) {
-            val sessionId = currentSessionId
+        synchronized(stateLock) {
             sessions[sessionId]?.remoteConversationId = trimmed
             sessions[sessionId]?.updatedAt = System.currentTimeMillis()
-            sessionId
         }
-        logCodexChain("Codex chain stored remote conversation: sessionId=${sessionIdForLog()} remoteConversationId=$trimmed")
+        logCodexChain("Codex chain stored remote conversation: sessionId=${sessionIdForLog(sessionId)} remoteConversationId=$trimmed")
         persistSessionSnapshot(sessionId)
     }
 
     private fun updateCurrentUsageSnapshot(
+        sessionId: String,
         model: String?,
         contextWindow: Int,
         inputTokens: Int,
@@ -703,15 +710,13 @@ class AgentChatService private constructor(
             cachedInputTokens = cachedInputTokens,
             outputTokens = outputTokens,
         )
-        val sessionId = synchronized(stateLock) {
-            val sessionId = currentSessionId
+        synchronized(stateLock) {
             sessions[sessionId]?.usageSnapshot = snapshot
             sessions[sessionId]?.updatedAt = snapshot.capturedAt
-            sessionId
         }
         if (engineId == CodexProviderFactory.ENGINE_ID) {
             logCodexChain(
-                "Codex chain usage captured: sessionId=${sessionIdForLog()} " +
+                "Codex chain usage captured: sessionId=${sessionIdForLog(sessionId)} " +
                     "model=${snapshot.model.ifBlank { "<unknown>" }} contextWindow=${snapshot.contextWindow} " +
                     "inputTokens=${snapshot.inputTokens} cachedInputTokens=${snapshot.cachedInputTokens} " +
                     "outputTokens=${snapshot.outputTokens}",
@@ -724,7 +729,9 @@ class AgentChatService private constructor(
         diagnosticLogger(message)
     }
 
-    private fun sessionIdForLog(): String = synchronized(stateLock) { currentSessionId.ifBlank { "<none>" } }
+    private fun sessionIdForLog(sessionId: String? = null): String = synchronized(stateLock) {
+        sessionId?.takeIf { it.isNotBlank() } ?: currentSessionId.ifBlank { "<none>" }
+    }
 
     private fun resolveModel(engineId: String, selectedModel: String): String? {
         val trimmed = selectedModel.trim()

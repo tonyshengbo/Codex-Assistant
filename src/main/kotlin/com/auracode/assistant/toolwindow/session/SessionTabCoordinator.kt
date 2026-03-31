@@ -1,6 +1,5 @@
 package com.auracode.assistant.toolwindow.session
 
-import com.auracode.assistant.i18n.AuraCodeBundle
 import com.auracode.assistant.service.AgentChatService
 import com.auracode.assistant.toolwindow.shared.UiText
 import com.intellij.openapi.application.ApplicationManager
@@ -9,8 +8,8 @@ import com.intellij.openapi.wm.ex.ToolWindowEx
 internal class SessionTabCoordinator(
     private val chatService: AgentChatService,
     private val toolWindowProvider: () -> ToolWindowEx?,
-    private val isRunning: () -> Boolean,
     private val onStatus: (UiText) -> Unit,
+    private val onBeforeSessionActivated: (String) -> Unit,
     private val onSessionActivated: () -> Unit,
 ) {
     private val openSessionTabs = linkedSetOf<String>()
@@ -47,29 +46,20 @@ internal class SessionTabCoordinator(
     }
 
     fun startNewSession() {
-        if (isRunning()) {
-            onStatus(UiText.bundle("session.warn.stopBeforeNewSession"))
-            return
-        }
+        notifySessionDeactivated(activeSessionTabId)
         val id = chatService.createSession()
         replaceActiveSessionTab(id)
     }
 
     fun startNewWindowTab() {
-        if (isRunning()) {
-            onStatus(UiText.bundle("session.warn.stopBeforeNewWindow"))
-            return
-        }
+        notifySessionDeactivated(activeSessionTabId)
         val id = chatService.createSession()
         openSessionTab(id)
     }
 
     fun switchToSession(sessionId: String) {
         if (sessionId == activeSessionTabId) return
-        if (isRunning()) {
-            onStatus(UiText.bundle("session.warn.runningNoSwitch"))
-            return
-        }
+        notifySessionDeactivated(activeSessionTabId)
         if (chatService.switchSession(sessionId)) {
             activeSessionTabId = sessionId
             onSessionActivated()
@@ -81,15 +71,15 @@ internal class SessionTabCoordinator(
             onStatus(UiText.bundle("session.warn.keepOneTab"))
             return
         }
-        if (sessionId == activeSessionTabId && isRunning()) {
-            onStatus(UiText.bundle("session.warn.stopBeforeClose"))
-            return
+        if (isSessionRunning(sessionId)) {
+            chatService.cancelSessionRun(sessionId)
         }
         val ordered = openSessionTabs.toList()
         val index = ordered.indexOf(sessionId)
         if (index < 0) return
         openSessionTabs.remove(sessionId)
         if (sessionId == activeSessionTabId) {
+            notifySessionDeactivated(sessionId)
             val nextSessionId = openSessionTabs.elementAtOrNull(index.coerceAtMost(openSessionTabs.size - 1))
                 ?: openSessionTabs.lastOrNull()
             if (nextSessionId != null && chatService.switchSession(nextSessionId)) {
@@ -125,6 +115,16 @@ internal class SessionTabCoordinator(
         openSessionTabs.addAll(ordered)
         activeSessionTabId = sessionId
         onSessionActivated()
+    }
+
+    private fun notifySessionDeactivated(sessionId: String) {
+        if (sessionId.isNotBlank()) {
+            onBeforeSessionActivated(sessionId)
+        }
+    }
+
+    private fun isSessionRunning(sessionId: String): Boolean {
+        return chatService.listSessions().firstOrNull { it.id == sessionId }?.isRunning == true
     }
 
     private fun syncToolWindowHeaderTabs(sessions: List<AgentChatService.SessionSummary>) {

@@ -8,6 +8,7 @@ internal data class ToolWindowHeaderTab(
     val displayTitle: String,
     val active: Boolean,
     val closable: Boolean,
+    val running: Boolean,
 )
 
 internal data class ToolWindowHeaderTabsLayout(
@@ -35,12 +36,17 @@ internal object ToolWindowHeaderTabsModel {
                 rawTitle = summary.title,
                 fallbackIndex = index,
             )
+            val decoratedTitle = decorateHeaderTabTitle(
+                title = fullTitle,
+                running = summary.isRunning,
+            )
             ToolWindowHeaderTab(
                 sessionId = sessionId,
-                fullTitle = fullTitle,
-                displayTitle = truncateHeaderTabTitle(fullTitle),
+                fullTitle = decoratedTitle,
+                displayTitle = truncateHeaderTabTitle(decoratedTitle),
                 active = sessionId == activeSessionId,
                 closable = closable,
+                running = summary.isRunning,
             )
         }
         if (allTabs.size <= MAX_VISIBLE_TABS) {
@@ -74,6 +80,13 @@ internal object ToolWindowHeaderTabsModel {
         fallbackIndex: Int,
     ): String {
         return rawTitle.trim().ifBlank { "T${fallbackIndex + 1}" }
+    }
+
+    internal fun decorateHeaderTabTitle(
+        title: String,
+        running: Boolean,
+    ): String {
+        return if (running) "$title (Running)" else title
     }
 
     internal fun truncateHeaderTabTitle(

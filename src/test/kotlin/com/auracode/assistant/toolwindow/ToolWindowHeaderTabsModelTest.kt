@@ -61,6 +61,20 @@ class ToolWindowHeaderTabsModelTest {
     }
 
     @Test
+    fun `running tabs include a visible running marker in the header title`() {
+        val layout = ToolWindowHeaderTabsModel.buildTabs(
+            openSessionIds = listOf("s1"),
+            activeSessionId = "s1",
+            sessions = listOf(
+                AgentChatService.SessionSummary("s1", "First Session", 1L, 0, "", isRunning = true),
+            ),
+        )
+
+        assertEquals("First Session (Running)", layout.visibleTabs.single().fullTitle)
+        assertTrue(layout.visibleTabs.single().running)
+    }
+
+    @Test
     fun `builds overflow when open tabs exceed visible limit`() {
         val layout = ToolWindowHeaderTabsModel.buildTabs(
             openSessionIds = listOf("s1", "s2", "s3", "s4", "s5"),

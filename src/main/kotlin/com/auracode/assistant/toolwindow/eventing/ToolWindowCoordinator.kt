@@ -153,8 +153,9 @@ internal class ToolWindowCoordinator(
 
     }
     private val recentFocusedFiles = ArrayDeque<String>()
-    private val pendingSubmissions = ArrayDeque<PendingComposerSubmission>()
-    private var activePlanRunContext: ActivePlanRunContext? = null
+    private val sessionUiStateCache = SessionUiStateCache()
+    private val pendingSubmissionsBySessionId = linkedMapOf<String, ArrayDeque<PendingComposerSubmission>>()
+    private val activePlanRunContexts = linkedMapOf<String, ActivePlanRunContext>()
 
     init {
         launchLogged("eventHub.collect") {
@@ -175,11 +176,11 @@ internal class ToolWindowCoordinator(
                     if (event is AppEvent.UiIntentPublished) {
                         handleUiIntent(event.intent)
                     } else if (event is AppEvent.UnifiedEventPublished) {
-                        handleUnifiedEvent(event.event)
+                        handleUnifiedEvent(activeSessionId(), event.event)
                     } else if (event is AppEvent.TimelineMutationApplied &&
                         event.mutation is TimelineMutation.TurnCompleted
                     ) {
-                        dispatchNextPendingSubmissionIfIdle()
+                        dispatchNextPendingSubmissionIfIdle(chatService.getCurrentSessionId())
                     }
                 }.onFailure { error ->
                     if (event is AppEvent.UiIntentPublished && isMcpIntent(event.intent)) {
@@ -341,16 +342,17 @@ internal class ToolWindowCoordinator(
         }
     }
 
-    private fun handleUnifiedEvent(event: UnifiedEvent) {
+    private fun handleUnifiedEvent(sessionId: String, event: UnifiedEvent) {
         when (event) {
             is UnifiedEvent.ApprovalRequested -> {
-                eventHub.publish(AppEvent.ApprovalRequested(event.request.toUiModel()))
+                dispatchSessionEvent(sessionId, AppEvent.ApprovalRequested(event.request.toUiModel()))
             }
 
             is UnifiedEvent.ToolUserInputRequested -> {
                 val prompt = event.prompt.toUiModel()
-                eventHub.publish(AppEvent.ToolUserInputRequested(prompt))
-                eventHub.publish(
+                dispatchSessionEvent(sessionId, AppEvent.ToolUserInputRequested(prompt))
+                dispatchSessionEvent(
+                    sessionId,
                     AppEvent.TimelineMutationApplied(
                         mutation = TimelineMutation.UpsertUserInput(
                             sourceId = toolUserInputSourceId(prompt),
@@ -364,8 +366,9 @@ internal class ToolWindowCoordinator(
             }
 
             is UnifiedEvent.ToolUserInputResolved -> {
-                toolUserInputPromptStore.state.value.queue.firstOrNull { it.requestId == event.requestId }?.let { prompt ->
-                    eventHub.publish(
+                findToolUserInputPrompt(sessionId, event.requestId)?.let { prompt ->
+                    dispatchSessionEvent(
+                        sessionId,
                         AppEvent.TimelineMutationApplied(
                             mutation = TimelineMutation.UpsertUserInput(
                                 sourceId = toolUserInputSourceId(prompt),
@@ -377,20 +380,20 @@ internal class ToolWindowCoordinator(
                         ),
                     )
                 }
-                eventHub.publish(AppEvent.ToolUserInputResolved(event.requestId))
+                dispatchSessionEvent(sessionId, AppEvent.ToolUserInputResolved(event.requestId))
             }
 
             is UnifiedEvent.ThreadStarted -> {
-                activePlanRunContext = activePlanRunContext?.apply {
+                activePlanRunContexts[sessionId] = planRunContext(sessionId).apply {
                     threadId = event.threadId
-                } ?: return
+                }
             }
 
             is UnifiedEvent.TurnStarted -> {
-                activePlanRunContext = activePlanRunContext?.apply {
+                activePlanRunContexts[sessionId] = planRunContext(sessionId).apply {
                     remoteTurnId = event.turnId
                     threadId = event.threadId ?: threadId
-                } ?: return
+                }
             }
 
             is UnifiedEvent.ThreadTokenUsageUpdated -> {
@@ -398,7 +401,8 @@ internal class ToolWindowCoordinator(
             }
 
             is UnifiedEvent.TurnDiffUpdated -> {
-                eventHub.publish(
+                dispatchSessionEvent(
+                    sessionId,
                     AppEvent.TurnDiffUpdated(
                         threadId = event.threadId,
                         turnId = event.turnId,
@@ -408,15 +412,16 @@ internal class ToolWindowCoordinator(
             }
 
             is UnifiedEvent.RunningPlanUpdated -> {
-                activePlanRunContext = activePlanRunContext?.apply {
+                activePlanRunContexts[sessionId] = planRunContext(sessionId).apply {
                     latestPlanBody = event.body.trim().takeIf { it.isNotBlank() } ?: latestPlanBody
                     threadId = event.threadId ?: threadId
                     remoteTurnId = event.turnId.takeIf { it.isNotBlank() } ?: remoteTurnId
-                } ?: return
-                eventHub.publish(
+                }
+                dispatchSessionEvent(
+                    sessionId,
                     AppEvent.RunningPlanUpdated(
                         plan = ComposerRunningPlanState(
-                            threadId = event.threadId ?: activePlanRunContext?.threadId,
+                            threadId = event.threadId ?: activePlanRunContexts[sessionId]?.threadId,
                             turnId = event.turnId,
                             explanation = event.explanation,
                             steps = event.steps.map { step ->
@@ -432,16 +437,16 @@ internal class ToolWindowCoordinator(
 
             is UnifiedEvent.ItemUpdated -> {
                 if (event.item.kind == com.auracode.assistant.protocol.ItemKind.PLAN_UPDATE) {
-                    activePlanRunContext = activePlanRunContext?.apply {
+                    activePlanRunContexts[sessionId] = planRunContext(sessionId).apply {
                         latestPlanBody = event.item.text?.trim()?.takeIf { it.isNotBlank() } ?: latestPlanBody
-                    } ?: return
+                    }
                 }
             }
 
             is UnifiedEvent.TurnCompleted -> {
-                eventHub.publish(AppEvent.ClearApprovals)
-                eventHub.publish(AppEvent.ClearToolUserInputs)
-                handlePlanTurnCompleted(event)
+                dispatchSessionEvent(sessionId, AppEvent.ClearApprovals)
+                dispatchSessionEvent(sessionId, AppEvent.ClearToolUserInputs)
+                handlePlanTurnCompleted(sessionId, event)
             }
 
             else -> Unit
@@ -1100,14 +1105,22 @@ internal class ToolWindowCoordinator(
 
     private fun deleteSession(sessionId: String) {
         if (!chatService.deleteSession(sessionId)) return
+        sessionUiStateCache.drop(sessionId)
+        pendingSubmissionsBySessionId.remove(sessionId)
+        activePlanRunContexts.remove(sessionId)
         publishSessionSnapshot()
         restoreCurrentSessionHistory()
     }
 
     private fun switchSession(sessionId: String) {
+        val previousSessionId = activeSessionId()
+        if (previousSessionId == sessionId) return
+        captureVisibleSessionState(previousSessionId)
         if (!chatService.switchSession(sessionId)) return
         publishSessionSnapshot()
-        restoreCurrentSessionHistory()
+        if (!restoreCachedSessionState(sessionId)) {
+            restoreCurrentSessionHistory()
+        }
     }
 
     private fun openRemoteConversation(remoteConversationId: String, title: String) {
@@ -1163,6 +1176,7 @@ internal class ToolWindowCoordinator(
         resetPlanFlowState()
         eventHub.publish(AppEvent.ActiveRunCancelled)
         publishUnifiedEvent(
+            activeSessionId(),
             UnifiedEvent.TurnCompleted(
                 turnId = "",
                 outcome = TurnOutcome.CANCELLED,
@@ -1179,6 +1193,57 @@ internal class ToolWindowCoordinator(
             ),
         )
         onSessionSnapshotPublished()
+    }
+
+    private fun activeSessionId(): String = chatService.getCurrentSessionId()
+
+    private fun planRunContext(sessionId: String): ActivePlanRunContext {
+        return activePlanRunContexts.getOrPut(sessionId) {
+            // Plan follow-up turns should keep the mode the user saw when the plan was generated.
+            ActivePlanRunContext(
+                localTurnId = "",
+                preferredExecutionMode = composerStore.state.value.executionMode,
+            )
+        }
+    }
+
+    private fun pendingSubmissionQueue(sessionId: String): ArrayDeque<PendingComposerSubmission> {
+        return pendingSubmissionsBySessionId.getOrPut(sessionId) { ArrayDeque() }
+    }
+
+    private fun captureVisibleSessionState(sessionId: String) {
+        if (sessionId.isBlank()) return
+        sessionUiStateCache.captureVisibleState(
+            sessionId = sessionId,
+            timelineStore = timelineStore,
+            composerStore = composerStore,
+            approvalStore = approvalStore,
+            toolUserInputPromptStore = toolUserInputPromptStore,
+            statusStore = statusStore,
+        )
+    }
+
+    private fun restoreCachedSessionState(sessionId: String): Boolean {
+        return sessionUiStateCache.restoreVisibleState(
+            sessionId = sessionId,
+            timelineStore = timelineStore,
+            composerStore = composerStore,
+            approvalStore = approvalStore,
+            toolUserInputPromptStore = toolUserInputPromptStore,
+            statusStore = statusStore,
+        )
+    }
+
+    private fun dispatchSessionEvent(sessionId: String, event: AppEvent) {
+        if (sessionId == activeSessionId()) {
+            statusStore.onEvent(event)
+            timelineStore.onEvent(event)
+            composerStore.onEvent(event)
+            approvalStore.onEvent(event)
+            toolUserInputPromptStore.onEvent(event)
+        } else {
+            sessionUiStateCache.applyScopedEvent(sessionId, event)
+        }
     }
 
     private fun buildPendingSubmission(composerState: com.auracode.assistant.toolwindow.composer.ComposerAreaState): PendingComposerSubmission? {
@@ -1231,7 +1296,7 @@ internal class ToolWindowCoordinator(
     private fun buildBuildErrorSubmission(request: BuildErrorAuraRequest): PendingComposerSubmission {
         val composerState = composerStore.state.value
         return PendingComposerSubmission(
-            id = "build-error-${System.currentTimeMillis()}-${pendingSubmissions.size}",
+            id = "build-error-${System.currentTimeMillis()}-${pendingSubmissionQueue(activeSessionId()).size}",
             prompt = request.prompt,
             systemInstructions = composerState.serializedSystemInstructions(),
             contextFiles = emptyList(),
@@ -1246,56 +1311,64 @@ internal class ToolWindowCoordinator(
     }
 
     private fun enqueuePendingSubmission(submission: PendingComposerSubmission) {
-        pendingSubmissions.addLast(submission)
-        publishPendingSubmissions(clearComposerDraft = true)
+        val sessionId = activeSessionId()
+        pendingSubmissionQueue(sessionId).addLast(submission)
+        publishPendingSubmissions(sessionId = sessionId, clearComposerDraft = true)
     }
 
     private fun removePendingSubmission(id: String) {
-        val removed = pendingSubmissions.removeAll { it.id == id }
+        val sessionId = activeSessionId()
+        val removed = pendingSubmissionQueue(sessionId).removeAll { it.id == id }
         if (!removed) return
-        publishPendingSubmissions()
+        publishPendingSubmissions(sessionId = sessionId)
     }
 
-    private fun dispatchNextPendingSubmissionIfIdle() {
-        if (timelineStore.state.value.isRunning) return
-        val next = pendingSubmissions.removeFirstOrNull() ?: return
-        publishPendingSubmissions()
-        dispatchSubmission(next)
+    private fun dispatchNextPendingSubmissionIfIdle(sessionId: String, allowTurnCompletedBypass: Boolean = false) {
+        if (!allowTurnCompletedBypass && chatService.listSessions().firstOrNull { it.id == sessionId }?.isRunning == true) return
+        val next = pendingSubmissionQueue(sessionId).removeFirstOrNull() ?: return
+        publishPendingSubmissions(sessionId = sessionId)
+        dispatchSubmission(next, sessionId)
     }
 
-    private fun publishPendingSubmissions(clearComposerDraft: Boolean = false) {
-        eventHub.publish(
+    private fun publishPendingSubmissions(sessionId: String, clearComposerDraft: Boolean = false) {
+        dispatchSessionEvent(
+            sessionId,
             AppEvent.PendingSubmissionsUpdated(
-                submissions = pendingSubmissions.toList(),
+                submissions = pendingSubmissionQueue(sessionId).toList(),
                 clearComposerDraft = clearComposerDraft,
             ),
         )
     }
 
-    private fun dispatchSubmission(submission: PendingComposerSubmission) {
+    private fun dispatchSubmission(
+        submission: PendingComposerSubmission,
+        sessionId: String = activeSessionId(),
+    ) {
         val localTurnId = "local-turn-${System.currentTimeMillis()}"
         val localMessage = if (submission.prompt.isBlank()) {
             null
         } else {
             chatService.recordUserMessage(
+                sessionId = sessionId,
                 prompt = submission.prompt,
                 turnId = localTurnId,
                 attachments = submission.stagedAttachments,
             )
         }
         if (submission.planEnabled) {
-            activePlanRunContext = ActivePlanRunContext(
+            activePlanRunContexts[sessionId] = ActivePlanRunContext(
                 localTurnId = localTurnId,
                 preferredExecutionMode = submission.executionMode,
             )
         } else {
-            activePlanRunContext = null
+            activePlanRunContexts.remove(sessionId)
         }
-        eventHub.publish(AppEvent.PlanCompletionPromptUpdated(prompt = null))
-        eventHub.publish(AppEvent.ClearToolUserInputs)
-        eventHub.publish(AppEvent.PromptAccepted(prompt = submission.prompt, localTurnId = localTurnId))
+        dispatchSessionEvent(sessionId, AppEvent.PlanCompletionPromptUpdated(prompt = null))
+        dispatchSessionEvent(sessionId, AppEvent.ClearToolUserInputs)
+        dispatchSessionEvent(sessionId, AppEvent.PromptAccepted(prompt = submission.prompt, localTurnId = localTurnId))
         localMessage?.let { message ->
-            eventHub.publish(
+            dispatchSessionEvent(
+                sessionId,
                 AppEvent.TimelineMutationApplied(
                     mutation = TimelineNodeMapper.localUserMessageMutation(
                         sourceId = message.sourceId,
@@ -1310,6 +1383,7 @@ internal class ToolWindowCoordinator(
         publishSessionSnapshot()
 
         chatService.runAgent(
+            sessionId = sessionId,
             engineId = chatService.defaultEngineId(),
             model = submission.selectedModel,
             reasoningEffort = submission.selectedReasoning.effort,
@@ -1322,7 +1396,7 @@ internal class ToolWindowCoordinator(
             approvalMode = submission.executionMode.toApprovalMode(),
             collaborationMode = if (submission.planEnabled) AgentCollaborationMode.PLAN else AgentCollaborationMode.DEFAULT,
             onTurnPersisted = { publishSessionSnapshot() },
-            onUnifiedEvent = { event -> publishUnifiedEvent(event) },
+            onUnifiedEvent = { event -> publishUnifiedEvent(sessionId, event) },
         )
     }
 
@@ -1352,15 +1426,16 @@ internal class ToolWindowCoordinator(
         )
     }
 
-    private fun handlePlanTurnCompleted(event: UnifiedEvent.TurnCompleted) {
-        val context = activePlanRunContext ?: return
+    private fun handlePlanTurnCompleted(sessionId: String, event: UnifiedEvent.TurnCompleted) {
+        val context = activePlanRunContexts[sessionId] ?: return
         if (context.remoteTurnId != null && context.remoteTurnId != event.turnId) return
-        activePlanRunContext = null
-        eventHub.publish(AppEvent.RunningPlanUpdated(plan = null))
+        activePlanRunContexts.remove(sessionId)
+        dispatchSessionEvent(sessionId, AppEvent.RunningPlanUpdated(plan = null))
         if (event.outcome != TurnOutcome.SUCCESS) return
         val body = context.latestPlanBody?.trim().orEmpty()
         if (body.isBlank()) return
-        eventHub.publish(
+        dispatchSessionEvent(
+            sessionId,
             AppEvent.PlanCompletionPromptUpdated(
                 prompt = PlanCompletionPromptUiModel(
                     turnId = event.turnId,
@@ -1392,7 +1467,7 @@ internal class ToolWindowCoordinator(
         if (!composerStore.state.value.planEnabled) {
             eventHub.publishUiIntent(UiIntent.TogglePlanMode)
         }
-        activePlanRunContext = ActivePlanRunContext(
+        activePlanRunContexts[activeSessionId()] = ActivePlanRunContext(
             localTurnId = "local-turn-${System.currentTimeMillis()}",
             preferredExecutionMode = planCompletion.preferredExecutionMode,
             threadId = planCompletion.threadId,
@@ -1402,7 +1477,7 @@ internal class ToolWindowCoordinator(
             prompt = revision,
             approvalMode = planCompletion.preferredExecutionMode.toApprovalMode(),
             collaborationMode = AgentCollaborationMode.PLAN,
-            localTurnId = activePlanRunContext?.localTurnId.orEmpty(),
+            localTurnId = activePlanRunContexts[activeSessionId()]?.localTurnId.orEmpty(),
         )
     }
 
@@ -1415,7 +1490,7 @@ internal class ToolWindowCoordinator(
     }
 
     private fun resetPlanFlowState() {
-        activePlanRunContext = null
+        activePlanRunContexts.remove(activeSessionId())
         eventHub.publish(AppEvent.ClearToolUserInputs)
         eventHub.publish(AppEvent.RunningPlanUpdated(plan = null))
         eventHub.publish(AppEvent.PlanCompletionPromptUpdated(prompt = null))
@@ -1435,7 +1510,9 @@ internal class ToolWindowCoordinator(
         collaborationMode: AgentCollaborationMode = AgentCollaborationMode.DEFAULT,
         localTurnId: String = "local-turn-${System.currentTimeMillis()}",
     ) {
+        val sessionId = activeSessionId()
         chatService.recordUserMessage(
+            sessionId = sessionId,
             prompt = prompt,
             turnId = localTurnId,
             attachments = emptyList(),
@@ -1454,6 +1531,7 @@ internal class ToolWindowCoordinator(
         }
         publishSessionSnapshot()
         chatService.runAgent(
+            sessionId = sessionId,
             engineId = chatService.defaultEngineId(),
             model = composerStore.state.value.selectedModel,
             reasoningEffort = composerStore.state.value.selectedReasoning.effort,
@@ -1466,7 +1544,7 @@ internal class ToolWindowCoordinator(
             approvalMode = approvalMode,
             collaborationMode = collaborationMode,
             onTurnPersisted = { publishSessionSnapshot() },
-            onUnifiedEvent = { event -> publishUnifiedEvent(event) },
+            onUnifiedEvent = { event -> publishUnifiedEvent(sessionId, event) },
         )
     }
 
@@ -1539,11 +1617,17 @@ internal class ToolWindowCoordinator(
 
     fun onSessionActivated() {
         publishSessionSnapshot()
-        restoreCurrentSessionHistory()
+        if (!restoreCachedSessionState(activeSessionId())) {
+            restoreCurrentSessionHistory()
+        }
     }
 
     fun onSessionSwitched(sessionId: String) {
         eventHub.publishUiIntent(UiIntent.SwitchSession(sessionId))
+    }
+
+    fun captureSessionState(sessionId: String) {
+        captureVisibleSessionState(sessionId)
     }
 
     override fun dispose() {
@@ -1650,11 +1734,13 @@ internal class ToolWindowCoordinator(
     }
 
     private fun restoreCurrentSessionHistory() {
+        val sessionId = activeSessionId()
         resetPlanFlowState()
-        eventHub.publish(AppEvent.ConversationReset)
+        dispatchSessionEvent(sessionId, AppEvent.ConversationReset)
         launchLogged("restoreCurrentSessionHistory") {
             val page = chatService.loadCurrentConversationHistory(limit = historyPageSize)
-            eventHub.publish(
+            dispatchSessionEvent(
+                sessionId,
                 AppEvent.TimelineHistoryLoaded(
                     nodes = restoreNodes(page.events),
                     oldestCursor = page.olderCursor,
@@ -1666,16 +1752,18 @@ internal class ToolWindowCoordinator(
     }
 
     private fun loadOlderMessages() {
+        val sessionId = activeSessionId()
         val state = timelineStore.state.value
         if (!state.hasOlder || state.isLoadingOlder) return
         val beforeCursor = state.oldestCursor ?: return
-        eventHub.publish(AppEvent.TimelineOlderLoadingChanged(loading = true))
+        dispatchSessionEvent(sessionId, AppEvent.TimelineOlderLoadingChanged(loading = true))
         launchLogged("loadOlderMessages(cursor=$beforeCursor)") {
             val page = chatService.loadOlderConversationHistory(
                 cursor = beforeCursor,
                 limit = historyPageSize,
             )
-            eventHub.publish(
+            dispatchSessionEvent(
+                sessionId,
                 AppEvent.TimelineHistoryLoaded(
                     nodes = restoreNodes(page.events),
                     oldestCursor = page.olderCursor,
@@ -1686,10 +1774,22 @@ internal class ToolWindowCoordinator(
         }
     }
 
-    private fun publishUnifiedEvent(event: UnifiedEvent) {
-        eventHub.publishUnifiedEvent(event)
+    private fun publishUnifiedEvent(sessionId: String, event: UnifiedEvent) {
+        dispatchSessionEvent(sessionId, AppEvent.UnifiedEventPublished(event))
         TimelineNodeMapper.fromUnifiedEvent(event)?.let { mutation ->
-            eventHub.publish(AppEvent.TimelineMutationApplied(mutation = mutation))
+            dispatchSessionEvent(sessionId, AppEvent.TimelineMutationApplied(mutation = mutation))
+        }
+        handleUnifiedEvent(sessionId, event)
+        if (event is UnifiedEvent.TurnCompleted) {
+            dispatchNextPendingSubmissionIfIdle(sessionId, allowTurnCompletedBypass = true)
+        }
+    }
+
+    private fun findToolUserInputPrompt(sessionId: String, requestId: String): ToolUserInputPromptUiModel? {
+        return if (sessionId == activeSessionId()) {
+            toolUserInputPromptStore.state.value.queue.firstOrNull { it.requestId == requestId }
+        } else {
+            sessionUiStateCache.findToolUserInputPrompt(sessionId, requestId)
         }
     }
 

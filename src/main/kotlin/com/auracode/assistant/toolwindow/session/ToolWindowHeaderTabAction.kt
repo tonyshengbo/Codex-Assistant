@@ -19,6 +19,8 @@ import javax.swing.JButton
 import javax.swing.JComponent
 import javax.swing.JLabel
 import javax.swing.JPanel
+import java.awt.event.MouseAdapter
+import java.awt.event.MouseEvent
 
 internal open class ToolWindowHeaderTabAction(
     tab: ToolWindowHeaderTab,
@@ -64,11 +66,7 @@ internal open class ToolWindowHeaderTabAction(
         applyStyle(panel, titleLabel, closeButton)
         panel.border = BorderFactory.createEmptyBorder(0, tokens.spacing.xs.value.toInt(), 0, tokens.spacing.xs.value.toInt())
         panel.toolTipText = tab.fullTitle
-        panel.addMouseListener(object : java.awt.event.MouseAdapter() {
-            override fun mouseClicked(e: java.awt.event.MouseEvent?) {
-                onSelect(tab.sessionId)
-            }
-        })
+        installSelectionHandlers(panel, center, titleLabel)
         customComponents += WeakReference(panel)
         return panel
     }
@@ -117,6 +115,21 @@ internal open class ToolWindowHeaderTabAction(
             } else {
                 updateCustomComponent(component, templatePresentation)
             }
+        }
+    }
+
+    /**
+     * Swing header actions do not bubble mouse clicks from child components back
+     * to the outer tab panel, so the title text needs its own selection handler.
+     */
+    private fun installSelectionHandlers(vararg components: JComponent) {
+        val selectListener = object : MouseAdapter() {
+            override fun mouseClicked(e: MouseEvent?) {
+                onSelect(tab.sessionId)
+            }
+        }
+        components.forEach { component ->
+            component.addMouseListener(selectListener)
         }
     }
 }

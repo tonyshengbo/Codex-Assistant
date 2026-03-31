@@ -65,6 +65,7 @@ class ToolWindowHeaderActionCacheTest {
             displayTitle = sessionId.uppercase(),
             active = active,
             closable = true,
+            running = false,
         )
     }
 }

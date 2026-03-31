@@ -262,6 +262,10 @@ internal class ComposerAreaStore(
     private val _state = MutableStateFlow(ComposerAreaState())
     val state: StateFlow<ComposerAreaState> = _state.asStateFlow()
 
+    fun restoreState(state: ComposerAreaState) {
+        _state.value = state
+    }
+
     fun onEvent(event: AppEvent) {
         when (event) {
             is AppEvent.UiIntentPublished -> {

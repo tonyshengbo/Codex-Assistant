@@ -10,6 +10,10 @@ internal class ToolUserInputPromptStore {
     private val _state = MutableStateFlow(ToolUserInputPromptState())
     val state: StateFlow<ToolUserInputPromptState> = _state.asStateFlow()
 
+    fun restoreState(state: ToolUserInputPromptState) {
+        _state.value = state
+    }
+
     fun onEvent(event: AppEvent) {
         when (event) {
             is AppEvent.ToolUserInputRequested -> enqueue(event.prompt)

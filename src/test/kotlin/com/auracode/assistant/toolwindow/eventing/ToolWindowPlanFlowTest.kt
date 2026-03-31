@@ -1,5 +1,6 @@
 package com.auracode.assistant.toolwindow.eventing
 
+import com.auracode.assistant.conversation.ConversationCapabilities
 import com.auracode.assistant.model.AgentApprovalMode
 import com.auracode.assistant.model.AgentCollaborationMode
 import com.auracode.assistant.model.AgentRequest
@@ -301,6 +302,17 @@ class ToolWindowPlanFlowTest {
     private class RecordingPlanProvider : AgentProvider {
         val requests = mutableListOf<AgentRequest>()
         private var sink: (UnifiedEvent) -> Unit = {}
+
+        override fun capabilities(): ConversationCapabilities = ConversationCapabilities(
+            supportsStructuredHistory = false,
+            supportsHistoryPagination = false,
+            supportsPlanMode = true,
+            supportsApprovalRequests = false,
+            supportsToolUserInput = false,
+            supportsResume = true,
+            supportsAttachments = true,
+            supportsImageInputs = true,
+        )
 
         override fun stream(request: AgentRequest): Flow<UnifiedEvent> = callbackFlow {
             requests += request
