@@ -2,6 +2,9 @@ package com.auracode.assistant.toolwindow.session
 
 import com.auracode.assistant.service.AgentChatService
 
+/**
+ * Describes a single rendered tab item in the tool window header.
+ */
 internal data class ToolWindowHeaderTab(
     val sessionId: String,
     val fullTitle: String,
@@ -9,8 +12,12 @@ internal data class ToolWindowHeaderTab(
     val active: Boolean,
     val closable: Boolean,
     val running: Boolean,
+    val hasUnreadCompletion: Boolean = false,
 )
 
+/**
+ * Splits header tabs into visible and overflow buckets for the fixed-width tool window chrome.
+ */
 internal data class ToolWindowHeaderTabsLayout(
     val visibleTabs: List<ToolWindowHeaderTab>,
     val overflowTabs: List<ToolWindowHeaderTab>,
@@ -19,6 +26,9 @@ internal data class ToolWindowHeaderTabsLayout(
         get() = overflowTabs.isNotEmpty()
 }
 
+/**
+ * Builds stable tab view models from session state and lightweight attention metadata.
+ */
 internal object ToolWindowHeaderTabsModel {
     private const val MAX_VISIBLE_TABS: Int = 3
     private const val MAX_VISIBLE_TITLE_LENGTH: Int = 18
@@ -27,6 +37,7 @@ internal object ToolWindowHeaderTabsModel {
         openSessionIds: List<String>,
         activeSessionId: String,
         sessions: List<AgentChatService.SessionSummary>,
+        unreadCompletionSessionIds: Set<String> = emptySet(),
     ): ToolWindowHeaderTabsLayout {
         val sessionsById = sessions.associateBy { it.id }
         val closable = openSessionIds.size > 1
@@ -38,7 +49,7 @@ internal object ToolWindowHeaderTabsModel {
             )
             val decoratedTitle = decorateHeaderTabTitle(
                 title = fullTitle,
-                running = summary.isRunning,
+                hasUnreadCompletion = unreadCompletionSessionIds.contains(sessionId),
             )
             ToolWindowHeaderTab(
                 sessionId = sessionId,
@@ -47,6 +58,7 @@ internal object ToolWindowHeaderTabsModel {
                 active = sessionId == activeSessionId,
                 closable = closable,
                 running = summary.isRunning,
+                hasUnreadCompletion = unreadCompletionSessionIds.contains(sessionId),
             )
         }
         if (allTabs.size <= MAX_VISIBLE_TABS) {
@@ -75,6 +87,9 @@ internal object ToolWindowHeaderTabsModel {
         )
     }
 
+    /**
+     * Normalizes blank titles into deterministic fallback labels for stable tab rendering.
+     */
     internal fun normalizeHeaderTabTitle(
         rawTitle: String,
         fallbackIndex: Int,
@@ -82,13 +97,22 @@ internal object ToolWindowHeaderTabsModel {
         return rawTitle.trim().ifBlank { "T${fallbackIndex + 1}" }
     }
 
+    /**
+     * Applies lightweight status decoration that should remain visible in the tab title.
+     */
     internal fun decorateHeaderTabTitle(
         title: String,
-        running: Boolean,
+        hasUnreadCompletion: Boolean = false,
     ): String {
-        return if (running) "$title (Running)" else title
+        return when {
+            hasUnreadCompletion -> "$title (Done)"
+            else -> title
+        }
     }
 
+    /**
+     * Truncates tab titles to the header budget while preserving the full title separately.
+     */
     internal fun truncateHeaderTabTitle(
         title: String,
         maxLength: Int = MAX_VISIBLE_TITLE_LENGTH,

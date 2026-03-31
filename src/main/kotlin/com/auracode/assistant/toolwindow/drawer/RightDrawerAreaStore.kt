@@ -48,6 +48,7 @@ internal data class RightDrawerAreaState(
     val languageMode: UiLanguageMode = UiLanguageMode.FOLLOW_IDE,
     val themeMode: UiThemeMode = UiThemeMode.FOLLOW_IDE,
     val autoContextEnabled: Boolean = true,
+    val backgroundCompletionNotificationsEnabled: Boolean = true,
     val environmentCheckRunning: Boolean = false,
     val environmentCheckResult: CodexEnvironmentCheckResult? = null,
     val settingsSection: SettingsSection = SettingsSection.GENERAL,
@@ -162,6 +163,12 @@ internal class RightDrawerAreaStore {
 
                     is UiIntent.EditSettingsAutoContextEnabled -> {
                         _state.value = _state.value.copy(autoContextEnabled = event.intent.enabled)
+                    }
+
+                    is UiIntent.EditSettingsBackgroundCompletionNotificationsEnabled -> {
+                        _state.value = _state.value.copy(
+                            backgroundCompletionNotificationsEnabled = event.intent.enabled,
+                        )
                     }
 
                     UiIntent.CreateNewAgentDraft -> {
@@ -289,6 +296,7 @@ internal class RightDrawerAreaStore {
                     languageMode = event.languageMode,
                     themeMode = event.themeMode,
                     autoContextEnabled = event.autoContextEnabled,
+                    backgroundCompletionNotificationsEnabled = event.backgroundCompletionNotificationsEnabled,
                     savedAgents = event.savedAgents,
                     editingAgentId = selected?.id ?: _state.value.editingAgentId?.takeIf { id ->
                         event.savedAgents.any { it.id == id }

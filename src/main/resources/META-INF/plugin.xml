@@ -28,6 +28,10 @@
                 anchor="right"
                 icon="/icons/toolwindow-stripe.svg"
                 canCloseContents="false"/>
+        <notificationGroup
+                id="Aura Code Chat Completion"
+                displayType="BALLOON"
+                key="notification.chatCompletion.title"/>
 
     </extensions>
 

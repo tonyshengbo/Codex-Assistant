@@ -10,6 +10,7 @@ import com.auracode.assistant.model.ContextFile
 import com.auracode.assistant.model.FileAttachment
 import com.auracode.assistant.model.ImageAttachment
 import com.auracode.assistant.model.MessageRole
+import com.auracode.assistant.notification.ChatCompletionNotificationService
 import com.auracode.assistant.context.MentionFileWhitelist
 import com.auracode.assistant.persistence.chat.PersistedAttachmentKind
 import com.auracode.assistant.persistence.chat.PersistedMessageAttachment
@@ -49,6 +50,7 @@ import com.auracode.assistant.toolwindow.drawer.formatConversationExportMarkdown
 import com.auracode.assistant.toolwindow.drawer.suggestConversationExportFileName
 import com.auracode.assistant.toolwindow.header.HeaderAreaStore
 import com.auracode.assistant.toolwindow.plan.PlanCompletionPromptUiModel
+import com.auracode.assistant.toolwindow.session.SessionAttentionStore
 import com.auracode.assistant.toolwindow.status.StatusAreaStore
 import com.auracode.assistant.toolwindow.timeline.TimelineAreaStore
 import com.auracode.assistant.toolwindow.timeline.TimelineFileChange
@@ -98,6 +100,8 @@ internal class ToolWindowCoordinator(
     private val rightDrawerStore: RightDrawerAreaStore,
     private val approvalStore: ApprovalAreaStore = ApprovalAreaStore(),
     private val toolUserInputPromptStore: ToolUserInputPromptStore = ToolUserInputPromptStore(),
+    private val completionNotificationService: ChatCompletionNotificationService? = null,
+    private val sessionAttentionStore: SessionAttentionStore = SessionAttentionStore(),
     private val mcpAdapterRegistry: McpManagementAdapterRegistry = McpManagementAdapterRegistry(settingsService),
     private val skillsRuntimeService: SkillsRuntimeService = SkillsRuntimeService(
         adapterRegistry = com.auracode.assistant.settings.skills.SkillsManagementAdapterRegistry(settingsService),
@@ -296,6 +300,9 @@ internal class ToolWindowCoordinator(
             is UiIntent.EditSettingsLanguageMode -> applyLanguagePreview(intent.mode)
             is UiIntent.EditSettingsThemeMode -> applyThemePreview(intent.mode)
             is UiIntent.EditSettingsAutoContextEnabled -> applyAutoContextPreference(intent.enabled)
+            is UiIntent.EditSettingsBackgroundCompletionNotificationsEnabled -> {
+                applyBackgroundCompletionNotificationPreference(intent.enabled)
+            }
             is UiIntent.SubmitApprovalAction -> submitApprovalDecision(intent.action)
             UiIntent.SubmitToolUserInputPrompt -> submitToolUserInputPrompt(cancelled = false)
             UiIntent.CancelToolUserInputPrompt -> submitToolUserInputPrompt(cancelled = true)
@@ -446,6 +453,7 @@ internal class ToolWindowCoordinator(
             is UnifiedEvent.TurnCompleted -> {
                 dispatchSessionEvent(sessionId, AppEvent.ClearApprovals)
                 dispatchSessionEvent(sessionId, AppEvent.ClearToolUserInputs)
+                notifyBackgroundCompletionIfNeeded(sessionId, event)
                 handlePlanTurnCompleted(sessionId, event)
             }
 
@@ -481,6 +489,12 @@ internal class ToolWindowCoordinator(
         publishSettingsSnapshot()
     }
 
+    private fun applyBackgroundCompletionNotificationPreference(enabled: Boolean) {
+        if (settingsService.backgroundCompletionNotificationsEnabled() == enabled) return
+        settingsService.setBackgroundCompletionNotificationsEnabled(enabled)
+        publishSettingsSnapshot()
+    }
+
     private fun saveSettings() {
         val drawerState = rightDrawerStore.state.value
         val oldLanguage = settingsService.uiLanguageMode()
@@ -491,6 +505,9 @@ internal class ToolWindowCoordinator(
         settingsService.setUiLanguageMode(drawerState.languageMode)
         settingsService.setUiThemeMode(drawerState.themeMode)
         settingsService.setAutoContextEnabled(drawerState.autoContextEnabled)
+        settingsService.setBackgroundCompletionNotificationsEnabled(
+            drawerState.backgroundCompletionNotificationsEnabled,
+        )
         if (oldLanguage != settingsService.uiLanguageMode()) {
             settingsService.notifyLanguageChanged()
         }
@@ -1106,6 +1123,7 @@ internal class ToolWindowCoordinator(
     private fun deleteSession(sessionId: String) {
         if (!chatService.deleteSession(sessionId)) return
         sessionUiStateCache.drop(sessionId)
+        sessionAttentionStore.drop(sessionId)
         pendingSubmissionsBySessionId.remove(sessionId)
         activePlanRunContexts.remove(sessionId)
         publishSessionSnapshot()
@@ -1117,6 +1135,7 @@ internal class ToolWindowCoordinator(
         if (previousSessionId == sessionId) return
         captureVisibleSessionState(previousSessionId)
         if (!chatService.switchSession(sessionId)) return
+        sessionAttentionStore.clear(sessionId)
         publishSessionSnapshot()
         if (!restoreCachedSessionState(sessionId)) {
             restoreCurrentSessionHistory()
@@ -1409,6 +1428,7 @@ internal class ToolWindowCoordinator(
                 languageMode = settingsService.uiLanguageMode(),
                 themeMode = settingsService.uiThemeMode(),
                 autoContextEnabled = settingsService.autoContextEnabled(),
+                backgroundCompletionNotificationsEnabled = settingsService.backgroundCompletionNotificationsEnabled(),
                 savedAgents = state.savedAgents.toList(),
                 selectedAgentIds = settingsService.selectedAgentIds(),
                 customModelIds = settingsService.customModelIds(),
@@ -1444,6 +1464,18 @@ internal class ToolWindowCoordinator(
                     preferredExecutionMode = context.preferredExecutionMode,
                 ),
             ),
+        )
+    }
+
+    private fun notifyBackgroundCompletionIfNeeded(sessionId: String, event: UnifiedEvent.TurnCompleted) {
+        val sessionTitle = chatService.listSessions()
+            .firstOrNull { it.id == sessionId }
+            ?.title
+            .orEmpty()
+        completionNotificationService?.notifyIfNeeded(
+            sessionId = sessionId,
+            sessionTitle = sessionTitle,
+            outcome = event.outcome,
         )
     }
 

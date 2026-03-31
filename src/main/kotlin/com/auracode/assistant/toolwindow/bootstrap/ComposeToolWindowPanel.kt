@@ -15,6 +15,9 @@ import com.auracode.assistant.context.EditorContextProvider
 import com.auracode.assistant.context.SmartFileSearchService
 import com.auracode.assistant.i18n.AuraCodeBundle
 import com.auracode.assistant.settings.AgentSettingsService
+import com.auracode.assistant.notification.ChatCompletionNotificationService
+import com.auracode.assistant.notification.IdeAttentionState
+import com.auracode.assistant.notification.IdeAttentionStateProvider
 import com.auracode.assistant.settings.skills.SkillsManagementAdapterRegistry
 import com.auracode.assistant.settings.skills.SkillsRuntimeService
 import com.auracode.assistant.toolwindow.approval.ApprovalAreaStore
@@ -28,6 +31,7 @@ import com.auracode.assistant.toolwindow.external.ToolWindowExternalRequestBridg
 import com.auracode.assistant.toolwindow.header.HeaderAreaStore
 import com.auracode.assistant.toolwindow.toolinput.ToolUserInputPromptStore
 import com.auracode.assistant.toolwindow.session.SessionTabCoordinator
+import com.auracode.assistant.toolwindow.session.SessionAttentionStore
 import com.auracode.assistant.toolwindow.status.StatusAreaStore
 import com.auracode.assistant.toolwindow.timeline.TimelineAreaStore
 import com.auracode.assistant.toolwindow.timeline.TimelineFileChange
@@ -59,6 +63,7 @@ import com.intellij.diff.DiffContentFactory
 import com.intellij.diff.DiffManager
 import com.intellij.diff.requests.SimpleDiffRequest
 import java.awt.BorderLayout
+import java.awt.KeyboardFocusManager
 import javax.swing.JPanel
 
 class ComposeToolWindowPanel(
@@ -90,12 +95,25 @@ class ComposeToolWindowPanel(
     private val rightDrawerStore = RightDrawerAreaStore()
     private val approvalStore = ApprovalAreaStore()
     private val toolUserInputPromptStore = ToolUserInputPromptStore()
+    private val sessionAttentionStore = SessionAttentionStore()
     private val externalRequestBridge = project.getService(ToolWindowExternalRequestBridge::class.java)
     private val externalRequestRegistration = externalRequestBridge.registerBuildErrorHandler { request ->
         eventHub.publishUiIntent(UiIntent.SubmitBuildErrorRequest(request))
     }
 
     private lateinit var sessionTabCoordinator: SessionTabCoordinator
+    private val attentionStateProvider = IdeAttentionStateProvider {
+        IdeAttentionState(
+            isIdeFrameFocused = KeyboardFocusManager.getCurrentKeyboardFocusManager().activeWindow != null,
+            isToolWindowVisible = hostToolWindow.isVisible,
+            activeSessionId = chatService.getCurrentSessionId(),
+        )
+    }
+    private val completionNotificationService = ChatCompletionNotificationService(
+        settingsService = settingsService,
+        attentionStateProvider = attentionStateProvider,
+        attentionStore = sessionAttentionStore,
+    )
 
     private val coordinator = ToolWindowCoordinator(
         chatService = chatService,
@@ -108,6 +126,8 @@ class ComposeToolWindowPanel(
         rightDrawerStore = rightDrawerStore,
         approvalStore = approvalStore,
         toolUserInputPromptStore = toolUserInputPromptStore,
+        completionNotificationService = completionNotificationService,
+        sessionAttentionStore = sessionAttentionStore,
         skillsRuntimeService = skillsRuntimeService,
         pickAttachments = {
             val app = ApplicationManager.getApplication()
@@ -170,6 +190,7 @@ class ComposeToolWindowPanel(
     init {
         sessionTabCoordinator = SessionTabCoordinator(
             chatService = chatService,
+            sessionAttentionStore = sessionAttentionStore,
             toolWindowProvider = { toolWindow as? ToolWindowEx },
             onStatus = { message -> eventHub.publish(AppEvent.StatusTextUpdated(message)) },
             onBeforeSessionActivated = { sessionId -> coordinator.captureSessionState(sessionId) },

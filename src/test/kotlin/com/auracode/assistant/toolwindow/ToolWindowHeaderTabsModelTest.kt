@@ -61,7 +61,7 @@ class ToolWindowHeaderTabsModelTest {
     }
 
     @Test
-    fun `running tabs include a visible running marker in the header title`() {
+    fun `running tabs keep running state without changing the header title`() {
         val layout = ToolWindowHeaderTabsModel.buildTabs(
             openSessionIds = listOf("s1"),
             activeSessionId = "s1",
@@ -70,8 +70,23 @@ class ToolWindowHeaderTabsModelTest {
             ),
         )
 
-        assertEquals("First Session (Running)", layout.visibleTabs.single().fullTitle)
+        assertEquals("First Session", layout.visibleTabs.single().fullTitle)
         assertTrue(layout.visibleTabs.single().running)
+    }
+
+    @Test
+    fun `background completion marker is included in unread tabs`() {
+        val layout = ToolWindowHeaderTabsModel.buildTabs(
+            openSessionIds = listOf("s1"),
+            activeSessionId = "other",
+            sessions = listOf(
+                AgentChatService.SessionSummary("s1", "First Session", 1L, 0, "", isRunning = false),
+            ),
+            unreadCompletionSessionIds = setOf("s1"),
+        )
+
+        assertTrue(layout.visibleTabs.single().hasUnreadCompletion)
+        assertEquals("First Session (Done)", layout.visibleTabs.single().fullTitle)
     }
 
     @Test

@@ -7,6 +7,7 @@ import com.intellij.openapi.wm.ex.ToolWindowEx
 
 internal class SessionTabCoordinator(
     private val chatService: AgentChatService,
+    private val sessionAttentionStore: SessionAttentionStore = SessionAttentionStore(),
     private val toolWindowProvider: () -> ToolWindowEx?,
     private val onStatus: (UiText) -> Unit,
     private val onBeforeSessionActivated: (String) -> Unit,
@@ -61,6 +62,7 @@ internal class SessionTabCoordinator(
         if (sessionId == activeSessionTabId) return
         notifySessionDeactivated(activeSessionTabId)
         if (chatService.switchSession(sessionId)) {
+            sessionAttentionStore.clear(sessionId)
             activeSessionTabId = sessionId
             onSessionActivated()
         }
@@ -74,6 +76,7 @@ internal class SessionTabCoordinator(
         if (isSessionRunning(sessionId)) {
             chatService.cancelSessionRun(sessionId)
         }
+        sessionAttentionStore.drop(sessionId)
         val ordered = openSessionTabs.toList()
         val index = ordered.indexOf(sessionId)
         if (index < 0) return
@@ -138,6 +141,7 @@ internal class SessionTabCoordinator(
             openSessionIds = openSessionTabs.toList(),
             activeSessionId = activeSessionTabId,
             sessions = sessions,
+            unreadCompletionSessionIds = sessionAttentionStore.unreadCompletionSessionIds(),
         )
         val update = headerActionCache.update(layout)
         if (update.structureChanged) {

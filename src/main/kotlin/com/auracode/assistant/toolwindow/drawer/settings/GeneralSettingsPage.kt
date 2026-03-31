@@ -79,6 +79,19 @@ internal fun GeneralSettingsPage(
                 onCheckedChange = { onIntent(UiIntent.EditSettingsAutoContextEnabled(it)) },
             )
         }
+        SettingsField(
+            p = p,
+            title = AuraCodeBundle.message("settings.backgroundNotifications.label"),
+            description = AuraCodeBundle.message("settings.backgroundNotifications.hint"),
+        ) {
+            SettingsToggle(
+                p = p,
+                checked = state.backgroundCompletionNotificationsEnabled,
+                onCheckedChange = {
+                    onIntent(UiIntent.EditSettingsBackgroundCompletionNotificationsEnabled(it))
+                },
+            )
+        }
     }
 }
 

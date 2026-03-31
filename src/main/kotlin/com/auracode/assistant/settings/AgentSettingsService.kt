@@ -33,6 +33,7 @@ class AgentSettingsService : PersistentStateComponent<AgentSettingsService.State
         var uiLanguage: String = UiLanguageMode.FOLLOW_IDE.name,
         var uiTheme: String = UiThemeMode.FOLLOW_IDE.name,
         var autoContextEnabled: Boolean = true,
+        var backgroundCompletionNotificationsEnabled: Boolean = true,
         var savedAgents: MutableList<SavedAgentDefinition> = mutableListOf(),
         // Persist selected composer agents independently so selections survive resets and restarts.
         var selectedAgentIds: LinkedHashSet<String> = linkedSetOf(),
@@ -91,6 +92,12 @@ class AgentSettingsService : PersistentStateComponent<AgentSettingsService.State
 
     fun setAutoContextEnabled(enabled: Boolean) {
         state.autoContextEnabled = enabled
+    }
+
+    fun backgroundCompletionNotificationsEnabled(): Boolean = state.backgroundCompletionNotificationsEnabled
+
+    fun setBackgroundCompletionNotificationsEnabled(enabled: Boolean) {
+        state.backgroundCompletionNotificationsEnabled = enabled
     }
 
     fun nodeExecutablePath(): String = state.nodeExecutablePath.trim()

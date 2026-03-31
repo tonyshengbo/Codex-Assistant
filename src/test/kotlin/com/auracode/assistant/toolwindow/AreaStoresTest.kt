@@ -360,19 +360,23 @@ class AreaStoresTest {
                 languageMode = com.auracode.assistant.settings.UiLanguageMode.FOLLOW_IDE,
                 themeMode = UiThemeMode.DARK,
                 autoContextEnabled = true,
+                backgroundCompletionNotificationsEnabled = true,
                 savedAgents = emptyList(),
                 customModelIds = emptyList(),
             ),
         )
         assertEquals(UiThemeMode.DARK, store.state.value.themeMode)
         assertTrue(store.state.value.autoContextEnabled)
+        assertTrue(store.state.value.backgroundCompletionNotificationsEnabled)
         assertEquals("/opt/homebrew/bin/node", store.state.value.nodePath)
 
         store.onEvent(AppEvent.UiIntentPublished(UiIntent.EditSettingsThemeMode(UiThemeMode.LIGHT)))
         store.onEvent(AppEvent.UiIntentPublished(UiIntent.EditSettingsAutoContextEnabled(false)))
+        store.onEvent(AppEvent.UiIntentPublished(UiIntent.EditSettingsBackgroundCompletionNotificationsEnabled(false)))
 
         assertEquals(UiThemeMode.LIGHT, store.state.value.themeMode)
         assertFalse(store.state.value.autoContextEnabled)
+        assertFalse(store.state.value.backgroundCompletionNotificationsEnabled)
     }
 
     @Test

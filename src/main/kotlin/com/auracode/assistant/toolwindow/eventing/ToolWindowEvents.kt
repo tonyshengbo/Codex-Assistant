@@ -128,6 +128,7 @@ internal sealed interface UiIntent {
     data class EditSettingsLanguageMode(val mode: UiLanguageMode) : UiIntent
     data class EditSettingsThemeMode(val mode: UiThemeMode) : UiIntent
     data class EditSettingsAutoContextEnabled(val enabled: Boolean) : UiIntent
+    data class EditSettingsBackgroundCompletionNotificationsEnabled(val enabled: Boolean) : UiIntent
     data object DetectCodexEnvironment : UiIntent
     data object TestCodexEnvironment : UiIntent
     data object CreateNewAgentDraft : UiIntent
@@ -216,6 +217,7 @@ internal sealed interface AppEvent {
         val languageMode: UiLanguageMode,
         val themeMode: UiThemeMode,
         val autoContextEnabled: Boolean,
+        val backgroundCompletionNotificationsEnabled: Boolean = true,
         val savedAgents: List<SavedAgentDefinition>,
         val selectedAgentIds: List<String> = emptyList(),
         val customModelIds: List<String> = emptyList(),
