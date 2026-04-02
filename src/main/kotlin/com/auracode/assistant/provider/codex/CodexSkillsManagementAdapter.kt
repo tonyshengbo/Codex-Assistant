@@ -49,8 +49,11 @@ internal class CodexSkillsManagementAdapter(
             configuredCodexPath = settings.getState().executablePathFor(CodexProviderFactory.ENGINE_ID),
             configuredNodePath = settings.nodeExecutablePath(),
         )
+        require(resolution.codexStatus != CodexEnvironmentStatus.MISSING) { "Aura Code runtime path is not configured." }
+        require(resolution.codexStatus != CodexEnvironmentStatus.FAILED) {
+            "Configured Codex Runtime Path is not executable. Update Settings and try again."
+        }
         val binary = resolution.codexPath.trim()
-        require(binary.isNotEmpty()) { "Aura Code runtime path is not configured." }
         val process = createCodexAppServerProcess(
             binary = binary,
             environmentOverrides = resolution.environmentOverrides,

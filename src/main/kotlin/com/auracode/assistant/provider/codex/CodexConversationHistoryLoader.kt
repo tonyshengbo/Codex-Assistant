@@ -79,8 +79,10 @@ internal class CodexConversationHistoryLoader(
             configuredCodexPath = settings.getState().executablePathFor(CodexProviderFactory.ENGINE_ID),
             configuredNodePath = settings.nodeExecutablePath(),
         )
+        if (resolution.codexStatus == CodexEnvironmentStatus.MISSING || resolution.codexStatus == CodexEnvironmentStatus.FAILED) {
+            return emptyList()
+        }
         val binary = resolution.codexPath.trim()
-        if (binary.isEmpty()) return emptyList()
         val process = createCodexAppServerProcess(
             binary = binary,
             environmentOverrides = resolution.environmentOverrides,
@@ -108,8 +110,10 @@ internal class CodexConversationHistoryLoader(
             configuredCodexPath = settings.getState().executablePathFor(CodexProviderFactory.ENGINE_ID),
             configuredNodePath = settings.nodeExecutablePath(),
         )
+        if (resolution.codexStatus == CodexEnvironmentStatus.MISSING || resolution.codexStatus == CodexEnvironmentStatus.FAILED) {
+            return emptyList<JsonObject>() to null
+        }
         val binary = resolution.codexPath.trim()
-        if (binary.isEmpty()) return emptyList<JsonObject>() to null
         val process = createCodexAppServerProcess(
             binary = binary,
             environmentOverrides = resolution.environmentOverrides,

@@ -3,6 +3,7 @@ package com.auracode.assistant.settings.mcp
 import com.auracode.assistant.provider.CodexProviderFactory
 import com.auracode.assistant.provider.codex.CodexEnvironmentDetector
 import com.auracode.assistant.provider.codex.CodexEnvironmentResolution
+import com.auracode.assistant.provider.codex.CodexEnvironmentStatus
 import com.auracode.assistant.settings.AgentSettingsService
 import com.intellij.execution.configurations.GeneralCommandLine
 import com.intellij.execution.process.CapturingProcessHandler
@@ -301,9 +302,12 @@ internal class CodexMcpManagementAdapter(
     }
 
     private fun binary(): String {
-        return launchResolution().codexPath
-            .trim()
-            .ifBlank { error("Aura Code runtime path is not configured.") }
+        val resolution = launchResolution()
+        when (resolution.codexStatus) {
+            CodexEnvironmentStatus.MISSING -> error("Aura Code runtime path is not configured.")
+            CodexEnvironmentStatus.FAILED -> error("Configured Codex Runtime Path is not executable. Update Settings and try again.")
+            else -> return resolution.codexPath.trim()
+        }
     }
 
     private fun runCli(vararg args: String): CommandExecutionResult {

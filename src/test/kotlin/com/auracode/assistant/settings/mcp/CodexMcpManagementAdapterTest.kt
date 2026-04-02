@@ -125,6 +125,14 @@ class CodexMcpManagementAdapterTest {
         val client = FakeCodexMcpAppServerClient()
         val adapter = CodexMcpManagementAdapter(
             settings = settings("/usr/local/bin/codex"),
+            launchEnvironmentResolver = environmentResolver(
+                CodexEnvironmentResolution(
+                    codexPath = "/usr/local/bin/codex",
+                    nodePath = null,
+                    shellEnvironment = emptyMap(),
+                    environmentOverrides = emptyMap(),
+                ),
+            ),
             commandRunner = FakeCommandRunner(
                 mapOf(
                     listOf("/usr/local/bin/codex", "mcp", "list", "--json") to CommandExecutionResult(
@@ -252,6 +260,14 @@ class CodexMcpManagementAdapterTest {
         val client = FakeCodexMcpAppServerClient()
         val adapter = CodexMcpManagementAdapter(
             settings = settings("/usr/local/bin/codex"),
+            launchEnvironmentResolver = environmentResolver(
+                CodexEnvironmentResolution(
+                    codexPath = "/usr/local/bin/codex",
+                    nodePath = null,
+                    shellEnvironment = emptyMap(),
+                    environmentOverrides = emptyMap(),
+                ),
+            ),
             commandRunner = FakeCommandRunner(emptyMap())::run,
             appServerClientFactory = { _, _ -> client },
         )
@@ -307,6 +323,14 @@ class CodexMcpManagementAdapterTest {
         }
         val adapter = CodexMcpManagementAdapter(
             settings = settings("/usr/local/bin/codex"),
+            launchEnvironmentResolver = environmentResolver(
+                CodexEnvironmentResolution(
+                    codexPath = "/usr/local/bin/codex",
+                    nodePath = null,
+                    shellEnvironment = emptyMap(),
+                    environmentOverrides = emptyMap(),
+                ),
+            ),
             commandRunner = FakeCommandRunner(
                 mapOf(
                     listOf("/usr/local/bin/codex", "mcp", "list", "--json") to CommandExecutionResult(
@@ -356,6 +380,14 @@ class CodexMcpManagementAdapterTest {
         }
         val adapter = CodexMcpManagementAdapter(
             settings = settings("/usr/local/bin/codex"),
+            launchEnvironmentResolver = environmentResolver(
+                CodexEnvironmentResolution(
+                    codexPath = "/usr/local/bin/codex",
+                    nodePath = null,
+                    shellEnvironment = emptyMap(),
+                    environmentOverrides = emptyMap(),
+                ),
+            ),
             commandRunner = FakeCommandRunner(
                 mapOf(
                     listOf("/usr/local/bin/codex", "mcp", "list", "--json") to CommandExecutionResult(

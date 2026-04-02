@@ -9,8 +9,11 @@ import com.auracode.assistant.protocol.ItemStatus
 import com.auracode.assistant.protocol.TurnOutcome
 import com.auracode.assistant.protocol.UnifiedToolUserInputAnswerDraft
 import com.auracode.assistant.protocol.UnifiedEvent
+import com.auracode.assistant.settings.AgentSettingsService
 import com.auracode.assistant.settings.skills.RuntimeSkillRecord
 import com.auracode.assistant.settings.skills.SkillSelector
+import kotlinx.coroutines.flow.toList
+import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.Json
@@ -29,6 +32,35 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 class CodexAppServerProviderTest {
+    @Test
+    fun `stream returns early error when configured codex path is invalid`() = runBlocking {
+        val provider = CodexAppServerProvider(
+            settings = providerSettings("/missing/codex"),
+            environmentDetector = CodexEnvironmentDetector(
+                shellEnvironmentLoader = { emptyMap() },
+                commonSearchPaths = emptyList(),
+                executableResolver = CodexExecutableResolver(
+                    commonSearchPaths = emptyList(),
+                    operatingSystemName = "Linux",
+                    pathExt = "",
+                ),
+            ),
+            diagnosticLogger = {},
+        )
+
+        val events = provider.stream(
+            AgentRequest(
+                engineId = "codex",
+                prompt = "hello",
+                contextFiles = emptyList(),
+                workingDirectory = ".",
+            ),
+        ).toList()
+
+        val error = assertIs<UnifiedEvent.Error>(events.single())
+        assertEquals("Configured Codex Runtime Path is not executable. Update Settings and try again.", error.message)
+    }
+
     @Test
     fun `thread start sandbox mode defaults to full access protocol enum`() {
         assertEquals("danger-full-access", buildThreadSandboxMode())
@@ -976,4 +1008,15 @@ private class FakeCodexAppServerSession : CodexAppServerSession {
     fun response(method: String, result: JsonObject) {
         responses[method] = result
     }
+}
+
+private fun providerSettings(path: String): AgentSettingsService {
+        return AgentSettingsService().apply {
+            loadState(
+                AgentSettingsService.State(
+                    codexCliPath = path,
+                    engineExecutablePaths = mutableMapOf("codex" to path),
+                ),
+            )
+        }
 }

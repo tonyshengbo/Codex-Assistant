@@ -78,13 +78,18 @@ internal class CodexAppServerProvider(
             configuredCodexPath = settings.getState().executablePathFor(CodexProviderFactory.ENGINE_ID),
             configuredNodePath = settings.nodeExecutablePath(),
         )
-        val binary = resolution.codexPath.trim()
-        if (binary.isEmpty()) {
+        if (resolution.codexStatus == CodexEnvironmentStatus.FAILED) {
+            trySend(UnifiedEvent.Error("Configured Codex Runtime Path is not executable. Update Settings and try again."))
+            close()
+            return@callbackFlow
+        }
+        if (resolution.codexStatus == CodexEnvironmentStatus.MISSING) {
             trySend(UnifiedEvent.Error("Aura Code runtime path is not configured."))
             close()
             return@callbackFlow
         }
-        if (settings.nodeExecutablePath().isNotBlank() && resolution.nodePath.isNullOrBlank()) {
+        val binary = resolution.codexPath.trim()
+        if (settings.nodeExecutablePath().isNotBlank() && resolution.nodeStatus == CodexEnvironmentStatus.FAILED) {
             trySend(UnifiedEvent.Error("Configured Node Path is not executable. Update Settings and try again."))
             close()
             return@callbackFlow

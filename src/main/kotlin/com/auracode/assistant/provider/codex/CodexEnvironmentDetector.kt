@@ -2,7 +2,6 @@ package com.auracode.assistant.provider.codex
 
 import java.io.File
 import java.util.concurrent.TimeUnit
-import kotlin.concurrent.thread
 
 /** Represents how a required Codex runtime dependency was discovered. */
 internal enum class CodexEnvironmentStatus {
@@ -28,12 +27,17 @@ internal data class CodexEnvironmentResolution(
     val nodePath: String?,
     val shellEnvironment: Map<String, String>,
     val environmentOverrides: Map<String, String>,
+    val codexStatus: CodexEnvironmentStatus = CodexEnvironmentStatus.DETECTED,
+    val nodeStatus: CodexEnvironmentStatus = CodexEnvironmentStatus.MISSING,
 )
 
 /** Detects Codex and Node executables and prepares environment overrides for launches. */
 internal class CodexEnvironmentDetector(
     private val shellEnvironmentLoader: () -> Map<String, String> = ::loadShellEnvironment,
-    private val commonSearchPaths: List<String> = DEFAULT_SEARCH_PATHS,
+    private val commonSearchPaths: List<String> = defaultCodexCommonSearchPaths(System.getProperty("os.name").orEmpty()),
+    private val executableResolver: CodexExecutableResolver = CodexExecutableResolver(commonSearchPaths = commonSearchPaths),
+    private val launchEnvironmentBuilder: CodexLaunchEnvironmentBuilder = CodexLaunchEnvironmentBuilder(),
+    private val appServerProbe: CodexAppServerProbe = CodexAppServerProbe(),
 ) {
     @Volatile
     private var cachedShellEnvironment: Map<String, String>? = null
@@ -67,12 +71,12 @@ internal class CodexEnvironmentDetector(
         configuredNodePath: String,
     ): CodexEnvironmentResolution {
         val shellEnvironment = shellEnvironment(refresh = false)
-        val codex = resolveExecutable(
+        val codex = executableResolver.resolve(
             configuredPath = configuredCodexPath,
             commandName = "codex",
             shellEnvironment = shellEnvironment,
         )
-        val node = resolveExecutable(
+        val node = executableResolver.resolve(
             configuredPath = configuredNodePath,
             commandName = "node",
             shellEnvironment = shellEnvironment,
@@ -84,10 +88,9 @@ internal class CodexEnvironmentDetector(
             codexPath = codexPath,
             nodePath = node.path?.takeIf { it.isNotBlank() },
             shellEnvironment = shellEnvironment,
-            environmentOverrides = buildLaunchEnvironmentOverrides(
-                shellEnvironment = shellEnvironment,
-                nodePath = node.path,
-            ),
+            environmentOverrides = launchEnvironmentBuilder.build(shellEnvironment = shellEnvironment, nodePath = node.path),
+            codexStatus = codex.status,
+            nodeStatus = node.status,
         )
     }
 
@@ -98,23 +101,27 @@ internal class CodexEnvironmentDetector(
         testAppServer: Boolean,
     ): CodexEnvironmentCheckResult {
         val shellEnvironment = shellEnvironment(refresh = refreshShellEnvironment)
-        val codex = resolveExecutable(
+        val codex = executableResolver.resolve(
             configuredPath = configuredCodexPath,
             commandName = "codex",
             shellEnvironment = shellEnvironment,
         )
-        val node = resolveExecutable(
+        val node = executableResolver.resolve(
             configuredPath = configuredNodePath,
             commandName = "node",
             shellEnvironment = shellEnvironment,
         )
-        val appServerProbe: Pair<CodexEnvironmentStatus, String> = when {
+        val environmentOverrides = launchEnvironmentBuilder.build(
+            shellEnvironment = shellEnvironment,
+            nodePath = node.path,
+        )
+        val appServerProbeResult: Pair<CodexEnvironmentStatus, String> = when {
             codex.path.isNullOrBlank() -> CodexEnvironmentStatus.MISSING to buildSummary(
                 codex.status,
                 node.status,
                 CodexEnvironmentStatus.MISSING,
             )
-            node.path.isNullOrBlank() -> CodexEnvironmentStatus.FAILED to buildSummary(
+            configuredNodePath.trim().isNotBlank() && node.path.isNullOrBlank() -> CodexEnvironmentStatus.FAILED to buildSummary(
                 codex.status,
                 node.status,
                 CodexEnvironmentStatus.FAILED,
@@ -132,19 +139,18 @@ internal class CodexEnvironmentDetector(
                     CodexEnvironmentStatus.DETECTED,
                 )
             }
-            else -> testAppServerStartup(
+            else -> appServerProbe.probe(
                 codexPath = codex.path,
-                nodePath = node.path,
-                shellEnvironment = shellEnvironment,
-            )
+                environmentOverrides = environmentOverrides,
+            ).let { it.status to it.message }
         }
         return CodexEnvironmentCheckResult(
             codexPath = codex.path.orEmpty(),
             nodePath = node.path.orEmpty(),
             codexStatus = codex.status,
             nodeStatus = node.status,
-            appServerStatus = appServerProbe.first,
-            message = appServerProbe.second,
+            appServerStatus = appServerProbeResult.first,
+            message = appServerProbeResult.second,
         )
     }
 
@@ -154,103 +160,6 @@ internal class CodexEnvironmentDetector(
         }
         return cachedShellEnvironment ?: runCatching(shellEnvironmentLoader).getOrNull().orEmpty().also {
             cachedShellEnvironment = it
-        }
-    }
-
-    private fun resolveExecutable(
-        configuredPath: String,
-        commandName: String,
-        shellEnvironment: Map<String, String>,
-    ): ResolvedExecutable {
-        val normalized = configuredPath.trim()
-        if (normalized.isNotBlank()) {
-            resolveExactPath(normalized)?.let {
-                return ResolvedExecutable(it, CodexEnvironmentStatus.CONFIGURED)
-            }
-            if (!normalized.contains(File.separatorChar)) {
-                searchExecutable(normalized, shellEnvironment["PATH"]).let { found ->
-                    if (found != null) return ResolvedExecutable(found, CodexEnvironmentStatus.CONFIGURED)
-                }
-            }
-            return ResolvedExecutable(null, CodexEnvironmentStatus.FAILED)
-        }
-
-        searchExecutable(commandName, shellEnvironment["PATH"])?.let {
-            return ResolvedExecutable(it, CodexEnvironmentStatus.DETECTED)
-        }
-        searchExecutable(commandName, commonSearchPaths.joinToString(File.pathSeparator))?.let {
-            return ResolvedExecutable(it, CodexEnvironmentStatus.DETECTED)
-        }
-        return ResolvedExecutable(null, CodexEnvironmentStatus.MISSING)
-    }
-
-    private fun resolveExactPath(path: String): String? {
-        val file = File(path)
-        return file.takeIf { it.exists() && it.isFile && it.canExecute() }?.absolutePath
-    }
-
-    private fun searchExecutable(
-        executable: String,
-        pathValue: String?,
-    ): String? {
-        return pathValue
-            ?.split(File.pathSeparator)
-            ?.asSequence()
-            ?.map { it.trim() }
-            ?.filter { it.isNotBlank() }
-            ?.map { File(it, executable) }
-            ?.firstOrNull { candidate -> candidate.exists() && candidate.isFile && candidate.canExecute() }
-            ?.absolutePath
-    }
-
-    private fun testAppServerStartup(
-        codexPath: String,
-        nodePath: String,
-        shellEnvironment: Map<String, String>,
-    ): Pair<CodexEnvironmentStatus, String> {
-        val overrides = buildLaunchEnvironmentOverrides(shellEnvironment = shellEnvironment, nodePath = nodePath)
-        val stderrLines = mutableListOf<String>()
-        val process = runCatching {
-            ProcessBuilder(listOf(codexPath, "app-server"))
-                .apply {
-                    environment().putAll(overrides)
-                    redirectErrorStream(false)
-                }
-                .start()
-        }.getOrElse {
-            return CodexEnvironmentStatus.FAILED to "Failed to start codex app-server: ${it.message.orEmpty()}"
-        }
-
-        val reader = thread(start = true, isDaemon = true) {
-            runCatching {
-                process.errorStream.bufferedReader().useLines { lines ->
-                    lines.forEach { line ->
-                        synchronized(stderrLines) {
-                            stderrLines += line
-                        }
-                    }
-                }
-            }
-        }
-
-        return try {
-            if (process.waitFor(APP_SERVER_PROBE_TIMEOUT_MS, TimeUnit.MILLISECONDS)) {
-                val stderr = synchronized(stderrLines) { stderrLines.joinToString("\n") }.trim()
-                if (stderr.contains("node: No such file or directory", ignoreCase = true)) {
-                    CodexEnvironmentStatus.FAILED to "Aura Code can start, but Node is not visible to the app-server."
-                } else {
-                    CodexEnvironmentStatus.FAILED to "codex app-server exited early${stderr.takeIf { it.isNotBlank() }?.let { ": $it" }.orEmpty()}"
-                }
-            } else {
-                CodexEnvironmentStatus.DETECTED to "Aura Code, Node, and the built-in app-server look available."
-            }
-        } finally {
-            process.destroy()
-            process.waitFor(200, TimeUnit.MILLISECONDS)
-            if (process.isAlive) {
-                process.destroyForcibly()
-            }
-            reader.interrupt()
         }
     }
 
@@ -271,60 +180,27 @@ internal class CodexEnvironmentDetector(
         CodexEnvironmentStatus.MISSING -> "missing"
         CodexEnvironmentStatus.FAILED -> "failed"
     }
-
-    private data class ResolvedExecutable(
-        val path: String?,
-        val status: CodexEnvironmentStatus,
-    )
-
-    private companion object {
-        private val DEFAULT_SEARCH_PATHS = listOf(
-            "/opt/homebrew/bin",
-            "/usr/local/bin",
-            "/usr/bin",
-            "/bin",
-        )
-        private const val APP_SERVER_PROBE_TIMEOUT_MS = 1500L
-    }
 }
 
 internal fun buildLaunchEnvironmentOverrides(
     shellEnvironment: Map<String, String>,
     nodePath: String?,
 ): Map<String, String> {
-    val overrides = linkedMapOf<String, String>()
-    SHELL_ENV_KEYS.forEach { key ->
-        shellEnvironment[key]?.takeIf { it.isNotBlank() }?.let { overrides[key] = it }
-    }
-    val currentPath = overrides["PATH"].orEmpty().ifBlank { System.getenv("PATH").orEmpty() }
-    val nodeDir = nodePath?.trim()
-        ?.takeIf { it.isNotBlank() && it.contains(File.separatorChar) }
-        ?.let { File(it).parentFile?.absolutePath }
-        ?.takeIf { it.isNotBlank() }
-    val mergedPath = listOfNotNull(nodeDir, currentPath.takeIf { it.isNotBlank() })
-        .distinct()
-        .joinToString(File.pathSeparator)
-        .ifBlank { null }
-    if (mergedPath != null) {
-        overrides["PATH"] = mergedPath
-    }
-    return overrides
+    return CodexLaunchEnvironmentBuilder().build(
+        shellEnvironment = shellEnvironment,
+        nodePath = nodePath,
+    )
 }
 
-private val SHELL_ENV_KEYS = listOf(
-    "PATH",
-    "HOME",
-    "SHELL",
-    "NVM_DIR",
-    "FNM_DIR",
-    "ASDF_DIR",
-    "VOLTA_HOME",
-    "PNPM_HOME",
-)
-
 private fun loadShellEnvironment(): Map<String, String> {
-    val shell = System.getenv("SHELL").takeUnless { it.isNullOrBlank() } ?: "/bin/zsh"
-    val process = ProcessBuilder(shell, "-lc", "env").start()
+    val systemEnvironment = System.getenv()
+    val operatingSystemName = System.getProperty("os.name").orEmpty()
+    if (operatingSystemName.contains("win", ignoreCase = true)) {
+        return systemEnvironment
+    }
+    val shell = systemEnvironment["SHELL"].takeUnless { it.isNullOrBlank() } ?: "/bin/zsh"
+    val process = runCatching { ProcessBuilder(shell, "-lc", "env").start() }.getOrNull()
+        ?: return systemEnvironment
     return try {
         process.inputStream.bufferedReader().useLines { lines ->
             lines.mapNotNull { line ->
@@ -334,7 +210,7 @@ private fun loadShellEnvironment(): Map<String, String> {
                 } else {
                     line.substring(0, separator) to line.substring(separator + 1)
                 }
-            }.toMap()
+            }.toMap().ifEmpty { systemEnvironment }
         }
     } finally {
         process.waitFor(2, TimeUnit.SECONDS)
