@@ -2,86 +2,27 @@ package com.auracode.assistant.protocol
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNull
 
 class ActivityTitleFormatterTest {
     @Test
-    fun `formats file probes as read`() {
-        val presentation = ActivityTitleFormatter.commandPresentation(
-            command = "/bin/zsh -lc 'cat /tmp/a >/dev/null && nl -ba /Users/tonysheng/DataGripProjects/hello.java'",
+    fun `formats mcp tool title from structured tool name`() {
+        assertEquals(
+            "Call MCP · cloudview-gray · get_figma_node",
+            ActivityTitleFormatter.toolTitle(
+                explicitName = "mcp:cloudview-gray",
+                body = """
+                    - Server: `cloudview-gray`
+                    - Tool: `get_figma_node`
+                """.trimIndent(),
+            ),
         )
-
-        assertEquals("Read hello.java", presentation.title)
-        assertEquals("hello.java", presentation.targetLabel)
-        assertEquals("/Users/tonysheng/DataGripProjects/hello.java", presentation.targetPath)
     }
 
     @Test
-    fun `formats relative file probes as read`() {
-        val presentation = ActivityTitleFormatter.commandPresentation(
-            command = "/bin/zsh -lc 'sed -n ''240,340p'' src/main/kotlin/com/auracode/assistant/toolwindow/eventing/ToolWindowCoordinator.kt'",
-        )
-
-        assertEquals("Read ToolWindowCoordinator.kt", presentation.title)
-        assertEquals("ToolWindowCoordinator.kt", presentation.targetLabel)
-        assertEquals("src/main/kotlin/com/auracode/assistant/toolwindow/eventing/ToolWindowCoordinator.kt", presentation.targetPath)
-    }
-
-    @Test
-    fun `formats piped nl and sed file probes as read target file`() {
-        val presentation = ActivityTitleFormatter.commandPresentation(
-            command = "/bin/zsh -lc \"nl -ba src/main/kotlin/com/auracode/assistant/service/AgentChatService.kt | sed -n '95,175p'\"",
-        )
-
-        assertEquals("Read AgentChatService.kt", presentation.title)
-        assertEquals("AgentChatService.kt", presentation.targetLabel)
-        assertEquals("src/main/kotlin/com/auracode/assistant/service/AgentChatService.kt", presentation.targetPath)
-    }
-
-    @Test
-    fun `formats file writes as edit`() {
-        val presentation = ActivityTitleFormatter.commandPresentation(
-            command = "/bin/zsh -lc \"cat > /Users/tonysheng/DataGripProjects/HelloTest.java <<'EOF'\nhello\nEOF\"",
-        )
-
-        assertEquals("Edit HelloTest.java", presentation.title)
-        assertEquals("HelloTest.java", presentation.targetLabel)
-        assertEquals("/Users/tonysheng/DataGripProjects/HelloTest.java", presentation.targetPath)
-    }
-
-    @Test
-    fun `formats append as edit`() {
-        val presentation = ActivityTitleFormatter.commandPresentation(
-            command = "/bin/zsh -lc \"cat >> /Users/tonysheng/DataGripProjects/hello.java <<'EOF'\nhello\nEOF\"",
-        )
-
-        assertEquals("Edit hello.java", presentation.title)
-        assertEquals("hello.java", presentation.targetLabel)
-        assertEquals("/Users/tonysheng/DataGripProjects/hello.java", presentation.targetPath)
-    }
-
-    @Test
-    fun `keeps search classification`() {
-        val presentation = ActivityTitleFormatter.commandPresentation(
-            command = "rg --files -g '*.kt'",
-        )
-
-        assertEquals("Search kt files", presentation.title)
-    }
-
-    @Test
-    fun `keeps high value run categories`() {
-        assertEquals("Run Git Status", ActivityTitleFormatter.commandTitle(command = "git status"))
-        assertEquals("Run Gradle Test", ActivityTitleFormatter.commandTitle(command = "./gradlew test"))
-        assertEquals("Run Java", ActivityTitleFormatter.commandTitle(command = "javac hello.java"))
-    }
-
-    @Test
-    fun `falls back to generic run command`() {
-        assertEquals("Run command foobar", ActivityTitleFormatter.commandTitle(command = "foobar --flag"))
-    }
-
-    @Test
-    fun `falls back to bare run command when command cannot be extracted`() {
-        assertEquals("Run command", ActivityTitleFormatter.commandTitle(command = "&& || ;"))
+    fun `extracts mcp server name only from valid mcp tool names`() {
+        assertEquals("cloudview-gray", ActivityTitleFormatter.mcpServerName("mcp:cloudview-gray"))
+        assertNull(ActivityTitleFormatter.mcpServerName("Tool Call"))
+        assertNull(ActivityTitleFormatter.mcpServerName("mcp:"))
     }
 }

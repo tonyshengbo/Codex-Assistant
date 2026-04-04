@@ -1,7 +1,10 @@
-{"type":"thread.started","thread_id":"th_123","timestamp":"2026-03-15T08:00:00Z"}
-{"type":"turn.started","turn_id":"tu_1","thread_id":"th_123"}
-{"type":"item.started","item":{"id":"it_1","type":"reasoning","text":"Analyzing project layout..."}}
-{"type":"item.started","item":{"id":"it_2","type":"tool_call","tool_name":"shell","input":"rg --files"}}
-{"type":"item.completed","item":{"id":"it_2","type":"tool_result","tool_name":"shell","output":"src/main/kotlin/..."}}
-{"type":"item.started","item":{"id":"it_3","type":"plan_update","text":"Create protocol layer before UI migration"}}
-{"type":"turn.completed","turn_id":"tu_1","usage":{"input_tokens":1450,"cached_input_tokens":430,"output_tokens":238}}
+{"method":"thread/started","params":{"thread":{"id":"th_123","preview":"","ephemeral":false,"status":{"type":"idle"}}}}
+{"method":"turn/started","params":{"threadId":"th_123","turn":{"id":"tu_1","items":[],"status":"inProgress","error":null}}}
+{"method":"item/started","params":{"item":{"type":"reasoning","id":"rs_1","summary":[],"content":[]},"threadId":"th_123","turnId":"tu_1"}}
+{"method":"item/completed","params":{"item":{"type":"reasoning","id":"rs_1","summary":[],"content":[]},"threadId":"th_123","turnId":"tu_1"}}
+{"method":"item/started","params":{"item":{"type":"agentMessage","id":"msg_1","text":"","phase":"commentary","memoryCitation":null},"threadId":"th_123","turnId":"tu_1"}}
+{"method":"item/agentMessage/delta","params":{"threadId":"th_123","turnId":"tu_1","itemId":"msg_1","delta":"Analyzing "}}
+{"method":"item/agentMessage/delta","params":{"threadId":"th_123","turnId":"tu_1","itemId":"msg_1","delta":"project layout..."}}
+{"method":"item/completed","params":{"item":{"type":"agentMessage","id":"msg_1","text":"Analyzing project layout...","phase":"commentary","memoryCitation":null},"threadId":"th_123","turnId":"tu_1"}}
+{"method":"thread/tokenUsage/updated","params":{"threadId":"th_123","turnId":"tu_1","tokenUsage":{"total":{"totalTokens":2118,"inputTokens":1450,"cachedInputTokens":430,"outputTokens":238,"reasoningOutputTokens":64},"last":{"totalTokens":210,"inputTokens":180,"cachedInputTokens":80,"outputTokens":30,"reasoningOutputTokens":8},"modelContextWindow":258400}}}
+{"method":"turn/completed","params":{"threadId":"th_123","turn":{"id":"tu_1","items":[],"status":"completed","error":null},"usage":{"inputTokens":1450,"cachedInputTokens":430,"outputTokens":238}}}

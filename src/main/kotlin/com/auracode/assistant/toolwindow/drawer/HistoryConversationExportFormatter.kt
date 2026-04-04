@@ -121,11 +121,11 @@ private fun UnifiedItem.diffSection(): String? {
 private fun UnifiedItem.toolSection(): String? {
     val normalized = (text ?: command)?.trim().orEmpty()
     if (normalized.isBlank()) return null
-    val heading = if (ActivityTitleFormatter.isWebSearchTool(explicitName = name)) {
-        ActivityTitleFormatter.webSearchTitle(status)
-    } else {
-        "Tool"
-    }
+    val heading = ActivityTitleFormatter.toolTitle(
+        explicitName = name,
+        body = normalized,
+        status = status,
+    )
     return "## $heading\n\n$normalized\n"
 }
 

@@ -1,10 +1,16 @@
-{"type":"thread.started","thread_id":"th_resume_1"}
-{"type":"turn.started","turn_id":"tu_9","thread_id":"th_resume_1"}
-{"type":"item.started","item":{"id":"it_90","type":"command_exec","command":"./gradlew build","cwd":"."}}
-{"type":"item.completed","item":{"id":"it_90","type":"command_exec","stdout":"","stderr":"Compilation failed","exit_code":1}}
-{"type":"error","message":"Turn failed because command exited with 1"}
-{"type":"turn.failed","turn_id":"tu_9","error":{"message":"build failed"}}
-{"type":"thread.started","thread_id":"th_resume_1"}
-{"type":"turn.started","turn_id":"tu_10","thread_id":"th_resume_1","resume_from":"tu_9"}
-{"type":"item.started","item":{"id":"it_91","type":"narrative","text":"Retrying with targeted fix"}}
-{"type":"turn.completed","turn_id":"tu_10","usage":{"input_tokens":612,"cached_input_tokens":301,"output_tokens":88}}
+{"method":"thread/started","params":{"thread":{"id":"th_resume_1","preview":"","ephemeral":false,"status":{"type":"idle"}}}}
+{"method":"turn/started","params":{"threadId":"th_resume_1","turn":{"id":"tu_9","items":[],"status":"inProgress","error":null}}}
+{"method":"item/started","params":{"item":{"type":"commandExecution","id":"call_90","command":"./gradlew build","cwd":".","status":"inProgress"},"threadId":"th_resume_1","turnId":"tu_9"}}
+{"method":"item/commandExecution/outputDelta","params":{"threadId":"th_resume_1","turnId":"tu_9","itemId":"call_90","delta":"Compilation failed\n"}}
+{"method":"item/completed","params":{"item":{"type":"commandExecution","id":"call_90","command":"./gradlew build","cwd":".","status":"failed","aggregatedOutput":"Compilation failed\n","exitCode":1},"threadId":"th_resume_1","turnId":"tu_9"}}
+{"method":"error","params":{"message":"Turn failed because command exited with 1"}}
+{"method":"turn/completed","params":{"threadId":"th_resume_1","turn":{"id":"tu_9","items":[],"status":"failed","error":{"message":"build failed"}}}}
+{"method":"turn/started","params":{"threadId":"th_resume_1","turn":{"id":"tu_10","items":[],"status":"inProgress","error":null}}}
+{"method":"item/started","params":{"item":{"type":"plan","id":"tu_10-plan","text":""},"threadId":"th_resume_1","turnId":"tu_10"}}
+{"method":"item/plan/delta","params":{"threadId":"th_resume_1","turnId":"tu_10","itemId":"tu_10-plan","delta":"# Recovery Plan"}}
+{"method":"item/started","params":{"item":{"type":"contextCompaction","id":"ctx_10"},"threadId":"th_resume_1","turnId":"tu_10"}}
+{"method":"thread/compacted","params":{"threadId":"th_resume_1","turnId":"tu_10"}}
+{"method":"item/started","params":{"item":{"type":"agentMessage","id":"msg_91","text":"","phase":"final_answer","memoryCitation":null},"threadId":"th_resume_1","turnId":"tu_10"}}
+{"method":"item/agentMessage/delta","params":{"threadId":"th_resume_1","turnId":"tu_10","itemId":"msg_91","delta":"Retrying with targeted fix"}}
+{"method":"item/completed","params":{"item":{"type":"agentMessage","id":"msg_91","text":"Retrying with targeted fix","phase":"final_answer","memoryCitation":null},"threadId":"th_resume_1","turnId":"tu_10"}}
+{"method":"turn/completed","params":{"threadId":"th_resume_1","turn":{"id":"tu_10","items":[],"status":"completed","error":null},"usage":{"inputTokens":612,"cachedInputTokens":301,"outputTokens":88}}}

@@ -129,6 +129,43 @@ class HistoryConversationFormatterTest {
     }
 
     @Test
+    fun `formats mcp tool call in export with mcp specific heading`() {
+        val markdown = formatConversationExportMarkdown(
+            summary = ConversationSummary(
+                remoteConversationId = "thread-3",
+                title = "MCP tool",
+                createdAt = 1L,
+                updatedAt = 1_710_000_000L,
+                status = "idle",
+            ),
+            events = listOf(
+                UnifiedEvent.ItemUpdated(
+                    UnifiedItem(
+                        id = "tool-mcp-1",
+                        kind = ItemKind.TOOL_CALL,
+                        status = ItemStatus.SUCCESS,
+                        name = "mcp:cloudview-gray",
+                        text = """
+                            - Server: `cloudview-gray`
+                            - Tool: `get_figma_node`
+                            
+                            **Result**
+                            
+                            ```json
+                            {"name":"多窗口"}
+                            ```
+                        """.trimIndent(),
+                    ),
+                ),
+            ),
+        )
+
+        assertContains(markdown, "## Call MCP · cloudview-gray · get_figma_node")
+        assertContains(markdown, "- Tool: `get_figma_node`")
+        assertContains(markdown, "{\"name\":\"多窗口\"}")
+    }
+
+    @Test
     fun `suggests stable markdown export filename`() {
         assertEquals(
             "Refine-timeline-UI.md",

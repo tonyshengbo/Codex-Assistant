@@ -4,78 +4,59 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 class CodexUnifiedEventParserTest {
     @Test
-    fun `parses thread started event`() {
+    fun parsesThreadStartedEventFromMethodPayload() {
         val event = CodexUnifiedEventParser.parseLine(
-            """{"type":"thread.started","thread_id":"th_123"}""",
+            """{"method":"thread/started","params":{"thread":{"id":"019d4d2d-6a0a-7850-b4df-80af9d8a14d5"}}}""",
         )
 
         val started = assertIs<UnifiedEvent.ThreadStarted>(event)
-        assertEquals("th_123", started.threadId)
+        assertEquals("019d4d2d-6a0a-7850-b4df-80af9d8a14d5", started.threadId)
     }
 
     @Test
-    fun `parses turn completed usage and success status`() {
-        val event = CodexUnifiedEventParser.parseLine(
-            """{"type":"turn.completed","turn_id":"tu_1","usage":{"input_tokens":10,"cached_input_tokens":3,"output_tokens":7}}""",
+    fun parsesTurnStartedAndCompletedEvents() {
+        val started = CodexUnifiedEventParser.parseLine(
+            """{"method":"turn/started","params":{"threadId":"thread-1","turn":{"id":"turn-1","status":"inProgress"}}}""",
+        )
+        val completed = CodexUnifiedEventParser.parseLine(
+            """{"method":"turn/completed","params":{"threadId":"thread-1","turn":{"id":"turn-1","status":"completed"},"usage":{"inputTokens":10,"cachedInputTokens":3,"outputTokens":7}}}""",
         )
 
-        val completed = assertIs<UnifiedEvent.TurnCompleted>(event)
-        assertEquals("tu_1", completed.turnId)
-        assertEquals(TurnOutcome.SUCCESS, completed.outcome)
-        assertEquals(10, completed.usage?.inputTokens)
-        assertEquals(3, completed.usage?.cachedInputTokens)
-        assertEquals(7, completed.usage?.outputTokens)
+        val startedEvent = assertIs<UnifiedEvent.TurnStarted>(started)
+        assertEquals("turn-1", startedEvent.turnId)
+        assertEquals("thread-1", startedEvent.threadId)
+
+        val completedEvent = assertIs<UnifiedEvent.TurnCompleted>(completed)
+        assertEquals("turn-1", completedEvent.turnId)
+        assertEquals(TurnOutcome.SUCCESS, completedEvent.outcome)
+        assertEquals(10, completedEvent.usage?.inputTokens)
+        assertEquals(3, completedEvent.usage?.cachedInputTokens)
+        assertEquals(7, completedEvent.usage?.outputTokens)
     }
 
     @Test
-    fun `parses approval request item as pending`() {
+    fun parsesThreadTokenUsageUpdatedEvent() {
         val event = CodexUnifiedEventParser.parseLine(
-            """{"type":"item.started","item":{"id":"it_10","type":"approval_request","target_type":"command","payload":{"command":"./gradlew test","cwd":"."},"decision":"pending"}}""",
+            """{"method":"thread/tokenUsage/updated","params":{"threadId":"thread-1","turnId":"turn-1","tokenUsage":{"total":{"inputTokens":100,"cachedInputTokens":60,"outputTokens":40},"modelContextWindow":258400}}}""",
         )
 
-        val item = assertIs<UnifiedEvent.ItemUpdated>(event).item
-        assertEquals("it_10", item.id)
-        assertEquals(ItemKind.APPROVAL_REQUEST, item.kind)
-        assertEquals(ItemStatus.RUNNING, item.status)
-        assertEquals(ApprovalDecision.PENDING, item.approvalDecision)
+        val updated = assertIs<UnifiedEvent.ThreadTokenUsageUpdated>(event)
+        assertEquals("thread-1", updated.threadId)
+        assertEquals("turn-1", updated.turnId)
+        assertEquals(258400, updated.contextWindow)
+        assertEquals(100, updated.inputTokens)
+        assertEquals(60, updated.cachedInputTokens)
+        assertEquals(40, updated.outputTokens)
     }
 
     @Test
-    fun `parses plan update item text`() {
+    fun parsesTurnDiffUpdatedEvent() {
         val event = CodexUnifiedEventParser.parseLine(
-            """{"type":"item.started","item":{"id":"it_3","type":"plan_update","text":"Create protocol layer before UI migration"}}""",
-        )
-
-        val item = assertIs<UnifiedEvent.ItemUpdated>(event).item
-        assertEquals("it_3", item.id)
-        assertEquals(ItemKind.PLAN_UPDATE, item.kind)
-        assertEquals("Create protocol layer before UI migration", item.text)
-    }
-
-    @Test
-    fun `parses file change item with change list into diff apply summary`() {
-        val event = CodexUnifiedEventParser.parseLine(
-            """{"type":"item.completed","item":{"id":"it_5","type":"file_change","changes":[{"path":"/tmp/hello.java","kind":"update","old_content":"a\nb\nc","new_content":"a\nb2\nc\nd"},{"path":"/tmp/Util.kt","kind":"create"}]}}""",
-        )
-
-        val item = assertIs<UnifiedEvent.ItemUpdated>(event).item
-        assertEquals("it_5", item.id)
-        assertEquals(ItemKind.DIFF_APPLY, item.kind)
-        assertEquals(ItemStatus.SUCCESS, item.status)
-        assertEquals("File Changes (2)", item.name)
-        assertEquals("update /tmp/hello.java\ncreate /tmp/Util.kt", item.text)
-        assertEquals("it_5:0", item.fileChanges.first().sourceScopedId)
-        assertEquals(2, item.fileChanges.first().addedLines)
-        assertEquals(1, item.fileChanges.first().deletedLines)
-    }
-
-    @Test
-    fun `parses turn diff updated event`() {
-        val event = CodexUnifiedEventParser.parseLine(
-            """{"type":"turn.diff.updated","thread_id":"thread-1","turn_id":"turn-1","diff":"diff --git a/foo b/foo"}""",
+            """{"method":"turn/diff/updated","params":{"threadId":"thread-1","turnId":"turn-1","diff":"diff --git a/foo b/foo"}}""",
         )
 
         val updated = assertIs<UnifiedEvent.TurnDiffUpdated>(event)
@@ -85,61 +66,172 @@ class CodexUnifiedEventParserTest {
     }
 
     @Test
-    fun `parses context compaction item into dedicated compaction activity`() {
+    fun parsesTurnPlanUpdatedEvent() {
         val event = CodexUnifiedEventParser.parseLine(
-            """{"method":"item/started","params":{"item":{"type":"contextCompaction","id":"28a1b402-fd03-4921-b416-641c720ac400"},"threadId":"019d2843-2387-7243-9192-1d1bed702252","turnId":"019d28c1-46a5-7e82-9ffd-d451f0542031"}}""",
+            """{"method":"turn/plan/updated","params":{"threadId":"thread-1","turnId":"turn-1","explanation":"Follow the parser refactor","plan":[{"step":"Split routers","status":"in_progress"},{"step":"Add tests","status":"pending"}]}}""",
         )
 
-        val item = assertIs<UnifiedEvent.ItemUpdated>(event).item
-        assertEquals("28a1b402-fd03-4921-b416-641c720ac400", item.id)
-        assertEquals(ItemKind.CONTEXT_COMPACTION, item.kind)
-        assertEquals(ItemStatus.RUNNING, item.status)
-        assertNull(item.name)
-        assertNull(item.text)
+        val updated = assertIs<UnifiedEvent.RunningPlanUpdated>(event)
+        assertEquals("thread-1", updated.threadId)
+        assertEquals("turn-1", updated.turnId)
+        assertEquals("Follow the parser refactor", updated.explanation)
+        assertEquals(2, updated.steps.size)
+        assertTrue(updated.body.contains("Split routers"))
     }
 
     @Test
-    fun `parses webSearch item as tool call for app server method payload`() {
+    fun parsesItemLifecycleForWebSearchAndCommandExecution() {
+        val started = CodexUnifiedEventParser.parseLine(
+            """{"method":"item/started","params":{"item":{"type":"webSearch","id":"ws_123","query":"","action":{"type":"other"}},"threadId":"thread-1","turnId":"turn-1"}}""",
+        )
+        val completed = CodexUnifiedEventParser.parseLine(
+            """{"method":"item/completed","params":{"item":{"type":"commandExecution","id":"call_123","command":"echo hi","cwd":"/tmp","status":"completed","aggregatedOutput":"hi\n","exitCode":0},"threadId":"thread-1","turnId":"turn-1"}}""",
+        )
+
+        val webSearchItem = assertIs<UnifiedEvent.ItemUpdated>(started).item
+        assertEquals(ItemKind.TOOL_CALL, webSearchItem.kind)
+        assertEquals(ItemStatus.RUNNING, webSearchItem.status)
+        assertEquals("web_search", webSearchItem.name)
+
+        val commandItem = assertIs<UnifiedEvent.ItemUpdated>(completed).item
+        assertEquals(ItemKind.COMMAND_EXEC, commandItem.kind)
+        assertEquals(ItemStatus.SUCCESS, commandItem.status)
+        assertEquals("hi\n", commandItem.text)
+        assertEquals(0, commandItem.exitCode)
+    }
+
+    @Test
+    fun parsesItemTypeAliasesAndUserMessage() {
+        val aliasedWebSearch = CodexUnifiedEventParser.parseLine(
+            """{"method":"item/started","params":{"item":{"type":"web_search","id":"ws_alias","query":"compose","action":{"type":"search","query":"compose","queries":["compose"]}},"threadId":"thread-1","turnId":"turn-1"}}""",
+        )
+        val userMessage = CodexUnifiedEventParser.parseLine(
+            """{"method":"item/completed","params":{"item":{"type":"userMessage","id":"msg_user","text":"Please continue"},"threadId":"thread-1","turnId":"turn-1"}}""",
+        )
+
+        val webSearchItem = assertIs<UnifiedEvent.ItemUpdated>(aliasedWebSearch).item
+        assertEquals(ItemKind.TOOL_CALL, webSearchItem.kind)
+        assertEquals("web_search", webSearchItem.name)
+        assertEquals("compose", webSearchItem.text)
+
+        val userMessageItem = assertIs<UnifiedEvent.ItemUpdated>(userMessage).item
+        assertEquals(ItemKind.NARRATIVE, userMessageItem.kind)
+        assertEquals(ItemStatus.SUCCESS, userMessageItem.status)
+        assertEquals("user_message", userMessageItem.name)
+        assertEquals("Please continue", userMessageItem.text)
+    }
+
+    @Test
+    fun parsesMcpToolCallLifecycle() {
+        val started = CodexUnifiedEventParser.parseLine(
+            """{"method":"item/started","params":{"item":{"type":"mcpToolCall","id":"call_mcp_1","server":"cloudview-gray","tool":"get_figma_node","status":"inProgress","arguments":{"fileKey":"kUYVH0Cp30Bt1KyItM2JtO","nodeId":"12:182","depth":2},"result":null,"error":null},"threadId":"thread-1","turnId":"turn-1"}}""",
+        )
+        val completed = CodexUnifiedEventParser.parseLine(
+            """{"method":"item/completed","params":{"item":{"type":"mcpToolCall","id":"call_mcp_1","server":"cloudview-gray","tool":"get_figma_node","status":"completed","arguments":{"fileKey":"kUYVH0Cp30Bt1KyItM2JtO","nodeId":"12:182","depth":2},"result":{"content":[{"type":"text","text":"{\"name\":\"多窗口\"}"}]},"error":null},"threadId":"thread-1","turnId":"turn-1"}}""",
+        )
+
+        val startedItem = assertIs<UnifiedEvent.ItemUpdated>(started).item
+        assertEquals(ItemKind.TOOL_CALL, startedItem.kind)
+        assertEquals(ItemStatus.RUNNING, startedItem.status)
+        assertEquals("mcp:cloudview-gray", startedItem.name)
+
+        val completedItem = assertIs<UnifiedEvent.ItemUpdated>(completed).item
+        assertEquals(ItemKind.TOOL_CALL, completedItem.kind)
+        assertEquals(ItemStatus.SUCCESS, completedItem.status)
+        assertEquals("mcp:cloudview-gray", completedItem.name)
+        assertTrue(completedItem.text.orEmpty().contains("{\"name\":\"多窗口\"}"))
+    }
+
+    @Test
+    fun parsesFileChangeLifecycleWithDiffSummary() {
         val event = CodexUnifiedEventParser.parseLine(
-            """{"method":"item/completed","params":{"item":{"type":"webSearch","id":"ws_123","query":"kotlin compose ime","action":{"type":"search"}}}}""",
+            """{"method":"item/completed","params":{"item":{"type":"fileChange","id":"call_fc","status":"completed","changes":[{"path":"/tmp/a.kt","kind":{"type":"update","move_path":null},"old_content":"a\nb\n","new_content":"a\nb2\n"},{"path":"/tmp/b.kt","kind":{"type":"create","move_path":null}}]},"threadId":"thread-1","turnId":"turn-1"}}""",
         )
 
         val item = assertIs<UnifiedEvent.ItemUpdated>(event).item
-        assertEquals("ws_123", item.id)
-        assertEquals(ItemKind.TOOL_CALL, item.kind)
+        assertEquals(ItemKind.DIFF_APPLY, item.kind)
         assertEquals(ItemStatus.SUCCESS, item.status)
-        assertNull(item.name)
-        assertEquals("kotlin compose ime", item.text)
+        assertEquals(2, item.fileChanges.size)
+        assertEquals("update /tmp/a.kt\ncreate /tmp/b.kt", item.text)
     }
 
     @Test
-    fun `parses web_search item as tool call for legacy type payload`() {
+    fun parsesContextCompactionLifecycleAndCompactedSignal() {
+        CodexUnifiedEventParser.parseLine(
+            """{"method":"item/started","params":{"item":{"type":"contextCompaction","id":"ctx_1"},"threadId":"thread-1","turnId":"turn-1"}}""",
+        )
+
+        val compacted = CodexUnifiedEventParser.parseLine(
+            """{"method":"thread/compacted","params":{"threadId":"thread-1","turnId":"turn-1"}}""",
+        )
+
+        val item = assertIs<UnifiedEvent.ItemUpdated>(compacted).item
+        assertEquals(ItemKind.CONTEXT_COMPACTION, item.kind)
+        assertEquals(ItemStatus.SUCCESS, item.status)
+        assertEquals("Context compacted", item.text)
+    }
+
+    @Test
+    fun parsesNarrativeAndActivityDeltasWithAccumulation() {
+        CodexUnifiedEventParser.parseLine(
+            """{"method":"item/agentMessage/delta","params":{"threadId":"thread-1","turnId":"turn-1","itemId":"msg_1","delta":"Hel"}}""",
+        )
+        val messageEvent = CodexUnifiedEventParser.parseLine(
+            """{"method":"item/agentMessage/delta","params":{"threadId":"thread-1","turnId":"turn-1","itemId":"msg_1","delta":"lo"}}""",
+        )
+
+        CodexUnifiedEventParser.parseLine(
+            """{"method":"item/commandExecution/outputDelta","params":{"threadId":"thread-1","turnId":"turn-1","itemId":"call_1","delta":"line1"}}""",
+        )
+        val outputEvent = CodexUnifiedEventParser.parseLine(
+            """{"method":"item/commandExecution/outputDelta","params":{"threadId":"thread-1","turnId":"turn-1","itemId":"call_1","delta":"\nline2"}}""",
+        )
+
+        val messageItem = assertIs<UnifiedEvent.ItemUpdated>(messageEvent).item
+        assertEquals(ItemKind.NARRATIVE, messageItem.kind)
+        assertEquals("Hello", messageItem.text)
+
+        val outputItem = assertIs<UnifiedEvent.ItemUpdated>(outputEvent).item
+        assertEquals(ItemKind.COMMAND_EXEC, outputItem.kind)
+        assertEquals("line1\nline2", outputItem.text)
+    }
+
+    @Test
+    fun parsesPlanDeltaWithAccumulation() {
+        CodexUnifiedEventParser.parseLine(
+            """{"method":"item/plan/delta","params":{"threadId":"thread-1","turnId":"turn-plan","itemId":"turn-plan-plan","delta":"#"}}""",
+        )
         val event = CodexUnifiedEventParser.parseLine(
-            """{"type":"item.started","item":{"type":"web_search","id":"ws_legacy","input":"query: kotlin coroutines"}}""",
+            """{"method":"item/plan/delta","params":{"threadId":"thread-1","turnId":"turn-plan","itemId":"turn-plan-plan","delta":" Plan"}}""",
         )
 
         val item = assertIs<UnifiedEvent.ItemUpdated>(event).item
-        assertEquals("ws_legacy", item.id)
-        assertEquals(ItemKind.TOOL_CALL, item.kind)
-        assertEquals(ItemStatus.RUNNING, item.status)
-        assertNull(item.name)
-        assertEquals("query: kotlin coroutines", item.text)
+        assertEquals(ItemKind.PLAN_UPDATE, item.kind)
+        assertEquals("# Plan", item.text)
     }
 
     @Test
-    fun `preserves unknown item type as name for easier diagnostics`() {
-        val event = CodexUnifiedEventParser.parseLine(
-            """{"type":"item.started","item":{"id":"it_unknown","type":"fooBarBaz","status":"running"}}""",
+    fun parsesErrorEventAndRetrySemantics() {
+        val retryable = CodexUnifiedEventParser.parseLine(
+            """{"method":"error","params":{"error":{"message":"Transport disconnected"},"willRetry":true}}""",
+        )
+        val terminal = CodexUnifiedEventParser.parseLine(
+            """{"method":"error","params":{"message":"Turn failed because command exited with 1"}}""",
         )
 
-        val item = assertIs<UnifiedEvent.ItemUpdated>(event).item
-        assertEquals(ItemKind.UNKNOWN, item.kind)
-        assertEquals("fooBarBaz", item.name)
-        assertNull(item.text)
+        val retryableError = assertIs<UnifiedEvent.Error>(retryable)
+        assertEquals("Transport disconnected", retryableError.message)
+        assertEquals(false, retryableError.terminal)
+
+        val terminalError = assertIs<UnifiedEvent.Error>(terminal)
+        assertEquals("Turn failed because command exited with 1", terminalError.message)
+        assertEquals(true, terminalError.terminal)
     }
 
     @Test
-    fun `returns null for unsupported content`() {
+    fun returnsNullForOldTypeFormatAndInvalidContent() {
+        assertNull(CodexUnifiedEventParser.parseLine("""{"type":"thread.started","thread_id":"th_123"}"""))
+        assertNull(CodexUnifiedEventParser.parseLine("""{"method":"item/started","params":{"item":{"id":"missing_type"}}}"""))
         assertNull(CodexUnifiedEventParser.parseLine("WARNING: partial status"))
     }
 }

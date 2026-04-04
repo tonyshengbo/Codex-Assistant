@@ -70,6 +70,13 @@ internal object ActivityTitleFormatter {
         if (isWebSearchTool(explicitName = candidate)) {
             return TitlePresentation(title = webSearchTitle(status))
         }
+        mcpServerName(candidate)?.let { server ->
+            val tool = mcpToolName(body)
+            return TitlePresentation(
+                title = listOfNotNull("Call MCP", server, tool)
+                    .joinToString(" · "),
+            )
+        }
         if (candidate.isShellLikeToolName()) {
             return commandPresentation(
                 explicitName = null,
@@ -91,6 +98,38 @@ internal object ActivityTitleFormatter {
     ): Boolean {
         val normalizedName = explicitName?.trim()?.lowercase().orEmpty()
         return normalizedName == "web_search" || normalizedName == "websearch" || normalizedName == "web-search"
+    }
+
+    internal fun isMcpTool(
+        explicitName: String? = null,
+    ): Boolean = mcpServerName(explicitName) != null
+
+    internal fun isMcpToolTitle(
+        title: String?,
+    ): Boolean = title?.trim()?.startsWith("Call MCP") == true
+
+    internal fun mcpServerName(
+        explicitName: String? = null,
+    ): String? {
+        val normalizedName = explicitName?.trim().orEmpty()
+        return normalizedName.removePrefix("mcp:").takeIf {
+            normalizedName.startsWith("mcp:") && it.isNotBlank()
+        }
+    }
+
+    internal fun mcpToolName(
+        body: String?,
+    ): String? {
+        return body
+            ?.lineSequence()
+            ?.map { it.trim() }
+            ?.firstOrNull {
+                it.startsWith("Tool:", ignoreCase = true) || it.startsWith("- Tool:", ignoreCase = true)
+            }
+            ?.substringAfter(':')
+            ?.trim()
+            ?.trim('`')
+            ?.takeIf { it.isNotBlank() }
     }
 
     internal fun webSearchTitle(status: ItemStatus?): String {

@@ -1,8 +1,10 @@
-{"type":"turn.started","turn_id":"tu_2","thread_id":"th_123"}
-{"type":"item.started","item":{"id":"it_10","type":"approval_request","target_type":"command","payload":{"command":"./gradlew test","cwd":"."},"decision":"pending"}}
-{"type":"item.completed","item":{"id":"it_10","type":"approval_request","target_type":"command","payload":{"command":"./gradlew test","cwd":"."},"decision":"approved"}}
-{"type":"item.started","item":{"id":"it_11","type":"command_exec","command":"./gradlew test","cwd":"."}}
-{"type":"item.completed","item":{"id":"it_11","type":"command_exec","stdout":"BUILD SUCCESSFUL","stderr":"","exit_code":0}}
-{"type":"item.started","item":{"id":"it_12","type":"diff_apply","file_path":"src/main/kotlin/App.kt","patch":"@@ -1 +1 @@\n-old\n+new"}}
-{"type":"item.completed","item":{"id":"it_12","type":"diff_apply","status":"success"}}
-{"type":"turn.completed","turn_id":"tu_2","usage":{"input_tokens":980,"cached_input_tokens":210,"output_tokens":162}}
+{"method":"turn/started","params":{"threadId":"th_123","turn":{"id":"tu_2","items":[],"status":"inProgress","error":null}}}
+{"method":"item/started","params":{"item":{"type":"commandExecution","id":"call_11","command":"./gradlew test","cwd":".","status":"inProgress","aggregatedOutput":null,"exitCode":null},"threadId":"th_123","turnId":"tu_2"}}
+{"method":"item/commandExecution/outputDelta","params":{"threadId":"th_123","turnId":"tu_2","itemId":"call_11","delta":"> Task :test\n"}}
+{"method":"item/commandExecution/outputDelta","params":{"threadId":"th_123","turnId":"tu_2","itemId":"call_11","delta":"BUILD SUCCESSFUL\n"}}
+{"method":"item/completed","params":{"item":{"type":"commandExecution","id":"call_11","command":"./gradlew test","cwd":".","status":"completed","aggregatedOutput":"> Task :test\nBUILD SUCCESSFUL\n","exitCode":0},"threadId":"th_123","turnId":"tu_2"}}
+{"method":"item/started","params":{"item":{"type":"fileChange","id":"call_12","changes":[{"path":"src/main/kotlin/App.kt","kind":{"type":"update","move_path":null},"old_content":"old\n","new_content":"new\n","diff":"@@ -1 +1 @@\\n-old\\n+new\\n"}],"status":"inProgress"},"threadId":"th_123","turnId":"tu_2"}}
+{"method":"item/fileChange/outputDelta","params":{"threadId":"th_123","turnId":"tu_2","itemId":"call_12","delta":"Success. Updated the following files:\nM src/main/kotlin/App.kt\n"}}
+{"method":"turn/diff/updated","params":{"threadId":"th_123","turnId":"tu_2","diff":"diff --git a/src/main/kotlin/App.kt b/src/main/kotlin/App.kt\n@@ -1 +1 @@\n-old\n+new\n"}}
+{"method":"item/completed","params":{"item":{"type":"fileChange","id":"call_12","changes":[{"path":"src/main/kotlin/App.kt","kind":{"type":"update","move_path":null},"old_content":"old\n","new_content":"new\n","diff":"@@ -1 +1 @@\\n-old\\n+new\\n"}],"status":"completed"},"threadId":"th_123","turnId":"tu_2"}}
+{"method":"turn/completed","params":{"threadId":"th_123","turn":{"id":"tu_2","items":[],"status":"completed","error":null},"usage":{"inputTokens":980,"cachedInputTokens":210,"outputTokens":162}}}

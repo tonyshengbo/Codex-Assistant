@@ -11,6 +11,7 @@ import com.auracode.assistant.model.AgentRequest
 import com.auracode.assistant.provider.AgentProvider
 import com.auracode.assistant.provider.CodexProviderFactory
 import com.auracode.assistant.protocol.ApprovalDecision
+import com.auracode.assistant.protocol.CodexMcpToolContentFormatter
 import com.auracode.assistant.protocol.FileChangeMetrics
 import com.auracode.assistant.protocol.ItemKind
 import com.auracode.assistant.protocol.ItemStatus
@@ -523,6 +524,18 @@ internal class CodexAppServerProvider(
                     text = extractWebSearchText(item),
                 )
 
+                isMcpToolCallType(normalizedType) -> UnifiedItem(
+                    id = sourceId,
+                    kind = ItemKind.TOOL_CALL,
+                    status = status,
+                    name = item.string("server")
+                        ?.trim()
+                        ?.takeIf { it.isNotBlank() }
+                        ?.let { "mcp:$it" }
+                        ?: "mcp",
+                    text = CodexMcpToolContentFormatter.formatBody(item),
+                )
+
                 normalizedType.contains("commandexecution") -> {
                     val previousOutput = activityOutputBuffers[sourceId]?.toString().orEmpty()
                     UnifiedItem(
@@ -706,6 +719,12 @@ internal class CodexAppServerProvider(
             return normalizedType == "websearch" ||
                 normalizedType == "web_search" ||
                 normalizedType == "web-search"
+        }
+
+        private fun isMcpToolCallType(normalizedType: String): Boolean {
+            return normalizedType == "mcptoolcall" ||
+                normalizedType == "mcp_tool_call" ||
+                normalizedType == "mcp-tool-call"
         }
 
         private fun extractText(item: JsonObject): String {

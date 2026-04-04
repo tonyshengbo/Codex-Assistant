@@ -232,6 +232,9 @@ internal object TimelineNodeMapper {
         if (ActivityTitleFormatter.isWebSearchTool(explicitName = candidate)) {
             return candidate
         }
+        if (ActivityTitleFormatter.isMcpTool(explicitName = candidate)) {
+            return candidate
+        }
         if (candidate.isNotBlank()) {
             if (kind == ItemKind.UNKNOWN) {
                 return candidate

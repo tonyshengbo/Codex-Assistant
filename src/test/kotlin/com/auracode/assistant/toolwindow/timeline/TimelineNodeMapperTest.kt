@@ -171,6 +171,36 @@ class TimelineNodeMapperTest {
     }
 
     @Test
+    fun `mcp tool item maps to mcp specific title instead of generic tool call`() {
+        val mutation = TimelineNodeMapper.fromUnifiedEvent(
+            UnifiedEvent.ItemUpdated(
+                UnifiedItem(
+                    id = "request-1:item-mcp",
+                    kind = ItemKind.TOOL_CALL,
+                    status = ItemStatus.SUCCESS,
+                    name = "mcp:cloudview-gray",
+                    text = """
+                        - Server: `cloudview-gray`
+                        - Tool: `get_figma_node`
+                        
+                        **Result**
+
+                        ```json
+                        {"name":"多窗口"}
+                        ```
+                    """.trimIndent(),
+                ),
+            ),
+        )
+
+        val tool = assertIs<TimelineMutation.UpsertToolCall>(mutation)
+        assertEquals("Call MCP · cloudview-gray · get_figma_node", tool.title)
+        assertEquals(null, tool.titleTargetLabel)
+        assertEquals(null, tool.titleTargetPath)
+        assertEquals(true, tool.body.contains("**Result**"))
+    }
+
+    @Test
     fun `skill file read command exposes clickable title target`() {
         val mutation = TimelineNodeMapper.fromUnifiedEvent(
             UnifiedEvent.ItemUpdated(
