@@ -1,0 +1,5 @@
+{"method":"thread/started","params":{"thread":{"id":"th_mcp_1","preview":"","ephemeral":false,"status":{"type":"idle"}}}}
+{"method":"turn/started","params":{"threadId":"th_mcp_1","turn":{"id":"tu_mcp_1","items":[],"status":"inProgress","error":null}}}
+{"method":"item/started","params":{"item":{"type":"mcpToolCall","id":"call_mcp_1","server":"cloudview-gray","tool":"get_figma_node","status":"inProgress","arguments":{"fileKey":"kUYVH0Cp30Bt1KyItM2JtO","nodeId":"12:182","depth":2},"result":null,"error":null,"durationMs":null},"threadId":"th_mcp_1","turnId":"tu_mcp_1"}}
+{"method":"item/completed","params":{"item":{"type":"mcpToolCall","id":"call_mcp_1","server":"cloudview-gray","tool":"get_figma_node","status":"completed","arguments":{"fileKey":"kUYVH0Cp30Bt1KyItM2JtO","nodeId":"12:182","depth":2},"result":{"content":[{"type":"text","text":"{\"name\":\"多窗口\"}"}]},"error":null,"durationMs":1450},"threadId":"th_mcp_1","turnId":"tu_mcp_1"}}
+{"method":"turn/completed","params":{"threadId":"th_mcp_1","turn":{"id":"tu_mcp_1","items":[],"status":"completed","error":null},"usage":{"inputTokens":1234,"cachedInputTokens":321,"outputTokens":88}}}
