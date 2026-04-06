@@ -18,6 +18,12 @@ repositories {
     }
 }
 
+configurations.matching { configuration ->
+    configuration.isCanBeResolved && configuration.name.contains("runtimeClasspath", ignoreCase = true)
+}.configureEach {
+    resolutionStrategy.sortArtifacts(org.gradle.api.artifacts.ResolutionStrategy.SortOrder.DEPENDENCY_FIRST)
+}
+
 dependencies {
     implementation(compose.desktop.currentOs)
     implementation("com.mikepenz:multiplatform-markdown-renderer:0.31.0")

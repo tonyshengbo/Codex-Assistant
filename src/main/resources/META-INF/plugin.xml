@@ -21,6 +21,12 @@
     <depends>com.intellij.modules.java</depends>
     <depends>Git4Idea</depends>
 
+    <applicationListeners>
+        <listener
+                class="com.auracode.assistant.toolwindow.bootstrap.InitializeSkikoLibraryPathEarly"
+                topic="com.intellij.ide.AppLifecycleListener"/>
+    </applicationListeners>
+
     <extensions defaultExtensionNs="com.intellij">
         <toolWindow
                 id="Aura Code"
