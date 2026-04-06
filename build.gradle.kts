@@ -8,7 +8,7 @@ plugins {
 }
 
 group = "com.auracode.assistant"
-version = "1.0.0"
+version = "1.0.0-beta.1"
 
 repositories {
     google()
@@ -49,6 +49,11 @@ intellijPlatform {
     pluginConfiguration {
         ideaVersion {
             sinceBuild = "233"
+        }
+    }
+    pluginVerification {
+        ides {
+            create("IU", "2024.3.4.1")
         }
     }
 }

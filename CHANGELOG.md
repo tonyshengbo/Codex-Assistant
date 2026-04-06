@@ -2,6 +2,26 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.0.0-beta.1] - 2026-04-07
+
+### Added
+
+- Japanese and Korean UI localization across the core plugin surfaces.
+- An About settings page to make runtime and product information easier to discover.
+- More IDE entry points, including selected-code and current-file actions that route context directly into Aura Code.
+- AI-assisted commit message generation from the IntelliJ VCS workflow.
+
+### Changed
+
+- Improved the tool window coordination architecture by splitting event handling into more focused components.
+- Hardened Codex protocol parsing and local environment detection for the app-server based runtime flow.
+- Expanded the documented install path for this beta release to focus on GitHub-distributed ZIP artifacts.
+
+### Fixed
+
+- Added earlier Skiko library path initialization to reduce Windows startup issues in desktop rendering.
+- Improved Gradle runtime classpath artifact ordering to make plugin packaging more predictable.
+
 ## [0.1.0-alpha.1] - 2026-03-31
 
 ### Added
