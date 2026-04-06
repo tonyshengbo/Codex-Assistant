@@ -84,6 +84,12 @@ internal fun SettingsOverlay(
                 iconPath = "/icons/usage.svg",
                 description = AuraCodeBundle.message("settings.section.usage"),
             ) { onIntent(UiIntent.SelectSettingsSection(SettingsSection.TOKEN_USAGE)) }
+            SettingsRailItem(
+                p = p,
+                selected = state.settingsSection == SettingsSection.ABOUT,
+                iconPath = "/icons/about.svg",
+                description = AuraCodeBundle.message("settings.section.about"),
+            ) { onIntent(UiIntent.SelectSettingsSection(SettingsSection.ABOUT)) }
         }
 
         Box(
@@ -153,6 +159,15 @@ internal fun SettingsOverlay(
                         title = AuraCodeBundle.message("settings.placeholder.usage.title"),
                         body = AuraCodeBundle.message("settings.placeholder.usage.body"),
                     )
+                    SettingsSection.ABOUT -> {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .verticalScroll(rememberScrollState()),
+                        ) {
+                            AboutSettingsPage(p = p)
+                        }
+                    }
                 }
             }
         }

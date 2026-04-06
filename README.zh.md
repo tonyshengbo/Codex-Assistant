@@ -1,9 +1,10 @@
 # Aura Code
 
-[English README](README.md)
+[English](README.md) | [中文](README.zh.md) | [日本語](README.ja.md) | [한국어](README.ko.md)
 
 Aura Code 是一个 IntelliJ IDEA 插件，用来把本地 Codex 运行时直接带进 IDE。它希望把对话、计划、审批、Diff 审阅、工具调用和本地开发流整合到同一个项目内工作台里，减少在终端、浏览器和编辑器之间来回切换。
-
+![Aura Code Preview](docs/img.png)
+![Aura Code Preview](docs/img_1.png)
 ## 当前能力
 
 - IntelliJ IDEA 内原生 `Aura Code` 工具窗口
@@ -18,7 +19,7 @@ Aura Code 是一个 IntelliJ IDEA 插件，用来把本地 Codex 运行时直接
 - 从 IntelliJ Problems 视图通过 `Ask Aura` 直接分析构建错误
 - 会话在后台完成时可触发 IDE 通知提醒
 - 会话导出为 Markdown
-- 中英文界面，以及浅色 / 深色 / 跟随 IDE 主题
+- 中英日韩界面，以及浅色 / 深色 / 跟随 IDE 主题
 
 ## 当前项目形态
 
@@ -150,4 +151,4 @@ src/test/kotlin/com/auracode/assistant/
 
 ## License
 
-正式开源前，请在这里补充项目许可证信息。
+Aura Code 基于 Apache License 2.0 开源发布。完整许可证内容请查看项目根目录下的 `LICENSE` 文件。

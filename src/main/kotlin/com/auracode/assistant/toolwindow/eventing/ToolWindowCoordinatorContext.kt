@@ -64,13 +64,4 @@ internal class ToolWindowCoordinatorContext(
     fun pendingSubmissionQueue(sessionId: String): ArrayDeque<PendingComposerSubmission> {
         return pendingSubmissionsBySessionId.getOrPut(sessionId) { ArrayDeque() }
     }
-
-    fun planRunContext(sessionId: String): ActivePlanRunContext {
-        return activePlanRunContexts.getOrPut(sessionId) {
-            ActivePlanRunContext(
-                localTurnId = "",
-                preferredExecutionMode = composerStore.state.value.executionMode,
-            )
-        }
-    }
 }

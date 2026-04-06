@@ -6,6 +6,7 @@ internal enum class SettingsSection {
     SKILLS,
     MCP,
     TOKEN_USAGE,
+    ABOUT,
 }
 
 internal data class SettingsSectionPresentation(
@@ -35,5 +36,9 @@ internal fun SettingsSection.presentation(): SettingsSectionPresentation = when 
     SettingsSection.TOKEN_USAGE -> SettingsSectionPresentation(
         titleKey = "settings.section.usage",
         subtitleKey = "settings.section.usage.subtitle",
+    )
+    SettingsSection.ABOUT -> SettingsSectionPresentation(
+        titleKey = "settings.section.about",
+        subtitleKey = "settings.section.about.subtitle",
     )
 }

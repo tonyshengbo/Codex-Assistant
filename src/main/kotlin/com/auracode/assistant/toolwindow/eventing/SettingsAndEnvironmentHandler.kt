@@ -587,6 +587,7 @@ internal class SettingsAndEnvironmentHandler(
             SettingsSection.GENERAL -> detectCodexEnvironment()
             SettingsSection.AGENTS,
             SettingsSection.TOKEN_USAGE,
+            SettingsSection.ABOUT,
             -> Unit
         }
     }
@@ -602,6 +603,7 @@ internal class SettingsAndEnvironmentHandler(
             }
             SettingsSection.AGENTS,
             SettingsSection.TOKEN_USAGE,
+            SettingsSection.ABOUT,
             -> Unit
         }
     }

@@ -1,10 +1,11 @@
 # Aura Code
 
-[中文文档](README.zh.md)
+[English](README.md) | [中文](README.zh.md) | [日本語](README.ja.md) | [한국어](README.ko.md)
 
 Aura Code is an IntelliJ IDEA plugin that brings the local Codex runtime into the IDE. It is designed for developers who want chat, planning, approvals, diff review, and local tool orchestration in one project-scoped workflow instead of bouncing between terminal, browser, and editor.
 
 ![Aura Code Preview](docs/img.png)
+![Aura Code Preview](docs/img_1.png)
 
 ## What It Does
 
@@ -20,7 +21,7 @@ Aura Code is an IntelliJ IDEA plugin that brings the local Codex runtime into th
 - Build error handoff from IntelliJ Problems view through `Ask Aura`
 - Background completion notifications when a session finishes out of focus
 - Conversation export to Markdown
-- Chinese/English UI support and light/dark/follow-IDE theme modes
+- Chinese/English/Japanese/Korean UI support and light/dark/follow-IDE theme modes
 
 ## Current Product Shape
 
@@ -152,4 +153,4 @@ If history or resume looks wrong:
 
 ## License
 
-Add your project license here before public release.
+Aura Code is licensed under the Apache License 2.0. See the root `LICENSE` file for the full license text.

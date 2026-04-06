@@ -15,6 +15,8 @@ enum class UiLanguageMode {
     FOLLOW_IDE,
     ZH,
     EN,
+    JA,
+    KO,
 }
 
 enum class UiThemeMode {

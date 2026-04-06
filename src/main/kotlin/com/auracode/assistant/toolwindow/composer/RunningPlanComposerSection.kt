@@ -192,9 +192,9 @@ private fun RowScope.RunningPlanProgressBadge(
     val t = assistantUiTokens()
     Box(
         modifier = Modifier
-            .background(p.accent.copy(alpha = 0.1f), RoundedCornerShape(999.dp))
-            .border(1.dp, p.accent.copy(alpha = 0.18f), RoundedCornerShape(999.dp))
-            .padding(horizontal = 6.dp, vertical = 2.dp),
+            .background(p.accent.copy(alpha = 0.1f), RoundedCornerShape(8.dp))
+            .border(1.dp, p.accent.copy(alpha = 0.18f), RoundedCornerShape(8.dp))
+            .padding(horizontal = 5.dp, vertical = 1.dp),
     ) {
         Text(
             text = label,

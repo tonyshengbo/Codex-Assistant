@@ -119,6 +119,12 @@ private fun LanguageModeDropdown(
         DropdownMenuItem(onClick = { expanded = false; onSelect(UiLanguageMode.EN) }) {
             Text(AuraCodeBundle.message("settings.language.en"))
         }
+        DropdownMenuItem(onClick = { expanded = false; onSelect(UiLanguageMode.JA) }) {
+            Text(AuraCodeBundle.message("settings.language.ja"))
+        }
+        DropdownMenuItem(onClick = { expanded = false; onSelect(UiLanguageMode.KO) }) {
+            Text(AuraCodeBundle.message("settings.language.ko"))
+        }
     }
 }
 
@@ -153,6 +159,8 @@ private fun languageModeLabel(mode: UiLanguageMode): String = when (mode) {
     UiLanguageMode.FOLLOW_IDE -> AuraCodeBundle.message("settings.language.followIde")
     UiLanguageMode.ZH -> AuraCodeBundle.message("settings.language.zh")
     UiLanguageMode.EN -> AuraCodeBundle.message("settings.language.en")
+    UiLanguageMode.JA -> AuraCodeBundle.message("settings.language.ja")
+    UiLanguageMode.KO -> AuraCodeBundle.message("settings.language.ko")
 }
 
 private fun themeModeLabel(mode: UiThemeMode): String = when (mode) {

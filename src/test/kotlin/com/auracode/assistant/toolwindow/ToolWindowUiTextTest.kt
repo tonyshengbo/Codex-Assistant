@@ -38,4 +38,10 @@ class ToolWindowUiTextTest {
         )
         assertEquals("Codex App Server", AuraCodeBundle.message("settings.environment.appServer"))
     }
+
+    @Test
+    fun `language labels expose japanese and korean options`() {
+        assertEquals("日本語", AuraCodeBundle.message("settings.language.ja"))
+        assertEquals("한국어", AuraCodeBundle.message("settings.language.ko"))
+    }
 }

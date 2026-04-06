@@ -21,18 +21,8 @@ internal object AuraCodeBundle {
     }
 
     private fun resolveLocale(): Locale {
-        return when (resolveUiLanguageMode()) {
-            UiLanguageMode.ZH -> Locale.SIMPLIFIED_CHINESE
-            UiLanguageMode.EN -> Locale.ENGLISH
-            UiLanguageMode.FOLLOW_IDE -> {
-                val ideLocale = runCatching { DynamicBundle.getLocale() }.getOrElse { Locale.getDefault() }
-                if (ideLocale.language.startsWith("zh", ignoreCase = true)) {
-                    Locale.SIMPLIFIED_CHINESE
-                } else {
-                    Locale.ENGLISH
-                }
-            }
-        }
+        val ideLocale = runCatching { DynamicBundle.getLocale() }.getOrElse { Locale.getDefault() }
+        return AuraCodeLocaleResolver.resolveLocale(resolveUiLanguageMode(), ideLocale)
     }
 
     private fun resolveUiLanguageMode(): UiLanguageMode {
@@ -44,11 +34,7 @@ internal object AuraCodeBundle {
 
     private fun resolveBundle(locale: Locale): ResourceBundle {
         val loader = javaClass.classLoader
-        val candidateNames = when (locale.language.lowercase(Locale.ROOT)) {
-            Locale.SIMPLIFIED_CHINESE.language -> listOf("${BUNDLE_NAME}_zh", BUNDLE_NAME)
-            Locale.ENGLISH.language -> listOf(BUNDLE_NAME)
-            else -> listOf("${BUNDLE_NAME}_${locale.language.lowercase(Locale.ROOT)}", BUNDLE_NAME)
-        }
+        val candidateNames = AuraCodeLocaleResolver.bundleCandidates(BUNDLE_NAME, locale)
         candidateNames.forEach { bundleName ->
             try {
                 return ResourceBundle.getBundle(bundleName, Locale.ROOT, loader)

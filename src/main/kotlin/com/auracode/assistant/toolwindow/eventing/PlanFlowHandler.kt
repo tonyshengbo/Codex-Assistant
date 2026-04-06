@@ -62,13 +62,13 @@ internal class PlanFlowHandler(
             }
 
             is UnifiedEvent.ThreadStarted -> {
-                context.activePlanRunContexts[sessionId] = context.planRunContext(sessionId).apply {
+                context.activePlanRunContexts[sessionId]?.apply {
                     threadId = event.threadId
                 }
             }
 
             is UnifiedEvent.TurnStarted -> {
-                context.activePlanRunContexts[sessionId] = context.planRunContext(sessionId).apply {
+                context.activePlanRunContexts[sessionId]?.apply {
                     remoteTurnId = event.turnId
                     threadId = event.threadId ?: threadId
                 }
@@ -90,7 +90,8 @@ internal class PlanFlowHandler(
             }
 
             is UnifiedEvent.RunningPlanUpdated -> {
-                context.activePlanRunContexts[sessionId] = context.planRunContext(sessionId).apply {
+                val activePlanContext = context.activePlanRunContexts[sessionId] ?: return
+                activePlanContext.apply {
                     latestPlanBody = event.body.trim().takeIf { it.isNotBlank() } ?: latestPlanBody
                     threadId = event.threadId ?: threadId
                     remoteTurnId = event.turnId.takeIf { it.isNotBlank() } ?: remoteTurnId
@@ -99,7 +100,7 @@ internal class PlanFlowHandler(
                     sessionId,
                     AppEvent.RunningPlanUpdated(
                         plan = ComposerRunningPlanState(
-                            threadId = event.threadId ?: context.activePlanRunContexts[sessionId]?.threadId,
+                            threadId = event.threadId ?: activePlanContext.threadId,
                             turnId = event.turnId,
                             explanation = event.explanation,
                             steps = event.steps.map { step ->
@@ -115,7 +116,7 @@ internal class PlanFlowHandler(
 
             is UnifiedEvent.ItemUpdated -> {
                 if (event.item.kind == com.auracode.assistant.protocol.ItemKind.PLAN_UPDATE) {
-                    context.activePlanRunContexts[sessionId] = context.planRunContext(sessionId).apply {
+                    context.activePlanRunContexts[sessionId]?.apply {
                         latestPlanBody = event.item.text?.trim()?.takeIf { it.isNotBlank() } ?: latestPlanBody
                     }
                 }
@@ -142,7 +143,10 @@ internal class PlanFlowHandler(
 
     fun executeApprovedPlan() {
         val prompt = context.composerStore.state.value.planCompletion ?: return
-        context.eventHub.publish(AppEvent.PlanCompletionPromptUpdated(prompt = null))
+        val sessionId = context.activeSessionId()
+        context.activePlanRunContexts.remove(sessionId)
+        context.eventDispatcher.dispatchSessionEvent(sessionId, AppEvent.RunningPlanUpdated(plan = null))
+        context.eventDispatcher.dispatchSessionEvent(sessionId, AppEvent.PlanCompletionPromptUpdated(prompt = null))
         context.eventHub.publishUiIntent(UiIntent.SelectMode(prompt.preferredExecutionMode))
         if (context.composerStore.state.value.planEnabled) {
             context.eventHub.publishUiIntent(UiIntent.TogglePlanMode)

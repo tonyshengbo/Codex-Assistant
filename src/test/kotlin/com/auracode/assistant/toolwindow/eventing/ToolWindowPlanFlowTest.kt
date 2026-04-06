@@ -159,7 +159,10 @@ class ToolWindowPlanFlowTest {
 
         harness.eventHub.publishUiIntent(UiIntent.ExecuteApprovedPlan)
 
-        harness.waitUntil { harness.provider.requests.size == 2 }
+        harness.waitUntil {
+            harness.provider.requests.size == 2 &&
+                harness.composerStore.state.value.planCompletion == null
+        }
         val executionRequest = harness.provider.requests.last()
         assertEquals("thread-1", executionRequest.remoteConversationId)
         assertEquals(AgentCollaborationMode.DEFAULT, executionRequest.collaborationMode)
@@ -167,6 +170,34 @@ class ToolWindowPlanFlowTest {
         assertTrue(executionRequest.prompt.contains("approved the latest plan", ignoreCase = true))
         assertEquals(ComposerMode.APPROVAL, harness.composerStore.state.value.executionMode)
         assertEquals(false, harness.composerStore.state.value.planEnabled)
+        assertNull(harness.composerStore.state.value.runningPlan)
+        harness.waitUntil { harness.timelineStore.state.value.isRunning }
+
+        harness.provider.emitRunningPlanUpdate(
+            UnifiedEvent.RunningPlanUpdated(
+                threadId = "thread-1",
+                turnId = "turn-1",
+                explanation = "Working through execution",
+                steps = listOf(
+                    com.auracode.assistant.protocol.UnifiedRunningPlanStep(step = "Apply patch", status = "inProgress"),
+                ),
+                body = "- [inProgress] Apply patch",
+            ),
+        )
+        harness.provider.emitPlanUpdate(
+            UnifiedItem(
+                id = "req-2:plan:turn-1",
+                kind = ItemKind.PLAN_UPDATE,
+                status = ItemStatus.SUCCESS,
+                name = "Plan Update",
+                text = "- [completed] Apply patch",
+            ),
+        )
+        harness.provider.completeTurn()
+        harness.waitUntil { !harness.timelineStore.state.value.isRunning }
+
+        assertNull(harness.composerStore.state.value.runningPlan)
+        assertNull(harness.composerStore.state.value.planCompletion)
 
         harness.dispose()
     }
