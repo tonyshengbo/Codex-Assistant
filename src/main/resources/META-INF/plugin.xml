@@ -1,20 +1,22 @@
 <idea-plugin>
     <id>com.auracode.assistant</id>
-    <name>Aura Code</name>
+    <name>Aura Code - Codex AI Assistant</name>
     <vendor email ="tonyshengbo@foxmail.com">Aura Code</vendor>
 
     <resource-bundle>messages.AuraCodeBundle</resource-bundle>
     <description><![CDATA[
-        <p><b>Aura Code</b> brings the Aura Code runtime directly into IntelliJ IDEA, so you can plan, discuss, and execute coding tasks without leaving the IDE.</p>
+        <p><b>Aura Code-Codex AI Assistant</b> is a Codex AI assistant for IntelliJ IDEA, built around local CLI workflows and integrated directly into the IDE.</p>
+        <p>It helps you plan, discuss, and execute coding tasks with the context of your local project, tools, and development environment.</p>
         <p><b>Core capabilities</b></p>
         <ul>
             <li>Native chat tool window for in-IDE collaboration</li>
+            <li>Local CLI based task planning and execution</li>
             <li>Project-scoped multi-tab sessions with resumable history</li>
             <li>Rich context input with file mentions and attachments</li>
-            <li>Built-in plan/approval workflows with diff review</li>
+            <li>Built-in approval and diff review workflows</li>
             <li>MCP-aware environment and server management</li>
         </ul>
-        <p><b>Outcome:</b> Ship changes faster while keeping control inside existing development workflows.</p>
+        <p><b>Outcome:</b> Use Codex AI inside IntelliJ IDEA while keeping the control, context, and execution model of your local CLI workflow.</p>
     ]]></description>
 
     <depends>com.intellij.modules.platform</depends>
