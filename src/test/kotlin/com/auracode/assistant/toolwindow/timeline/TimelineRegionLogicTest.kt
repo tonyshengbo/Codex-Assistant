@@ -129,7 +129,94 @@ class TimelineRegionLogicTest {
         assertEquals("Shell", panel.label)
         assertEquals("./gradlew --no-daemon test", panel.commandText)
         assertEquals("> Task :prepareTest\n> Task :test", panel.outputText)
-        assertEquals("Copy", panel.copyActionLabel)
+    }
+
+    @Test
+    fun `timeline copy text returns plain text for supported node types`() {
+        val message = TimelineNode.MessageNode(
+            id = "message",
+            sourceId = "message",
+            role = MessageRole.USER,
+            text = "ship timeline copy",
+            status = ItemStatus.SUCCESS,
+            timestamp = null,
+            turnId = null,
+            cursor = null,
+        )
+        val plan = TimelineNode.PlanNode(
+            id = "plan",
+            sourceId = "plan",
+            title = "Plan",
+            body = "- [ ] Add copy action\n- [ ] Polish hover state",
+            status = ItemStatus.SUCCESS,
+            turnId = null,
+        )
+        val command = TimelineNode.CommandNode(
+            id = "command",
+            sourceId = "command",
+            title = "Run tests",
+            body = "",
+            commandText = "./gradlew test",
+            outputText = "> Task :test",
+            collapsedSummary = null,
+            status = ItemStatus.SUCCESS,
+            turnId = null,
+        )
+
+        assertEquals("ship timeline copy", timelineNodeCopyText(message))
+        assertEquals("- [ ] Add copy action\n- [ ] Polish hover state", timelineNodeCopyText(plan))
+        assertEquals(
+            "Run tests\n\n./gradlew test\n\n> Task :test",
+            timelineNodeCopyText(command),
+        )
+    }
+
+    @Test
+    fun `timeline copy text skips unsupported or blank nodes`() {
+        val fileChange = TimelineNode.FileChangeNode(
+            id = "diff",
+            sourceId = "diff",
+            title = "Diff",
+            changes = emptyList(),
+            collapsedSummary = null,
+            status = ItemStatus.SUCCESS,
+            turnId = null,
+        )
+        val blankMessage = TimelineNode.MessageNode(
+            id = "blank-message",
+            sourceId = "blank-message",
+            role = MessageRole.USER,
+            text = "   ",
+            status = ItemStatus.SUCCESS,
+            timestamp = null,
+            turnId = null,
+            cursor = null,
+        )
+        val loadMore = TimelineNode.LoadMoreNode(isLoading = false)
+
+        assertEquals(null, timelineNodeCopyText(fileChange))
+        assertEquals(null, timelineNodeCopyText(blankMessage))
+        assertEquals(null, timelineNodeCopyText(loadMore))
+    }
+
+    @Test
+    fun `command copy body joins only non blank sections with blank lines`() {
+        assertEquals(
+            "Plan command\n\n./gradlew test\n\n> Task :test",
+            timelineCommandCopyBody(
+                title = "Plan command",
+                commandText = "./gradlew test",
+                outputText = "> Task :test",
+            ),
+        )
+        assertEquals(
+            "./gradlew test",
+            timelineCommandCopyBody(
+                title = null,
+                commandText = "./gradlew test",
+                outputText = "   ",
+            ),
+        )
     }
 
     @Test

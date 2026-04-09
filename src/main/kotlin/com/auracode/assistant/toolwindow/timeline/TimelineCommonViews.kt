@@ -3,6 +3,9 @@ package com.auracode.assistant.toolwindow.timeline
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.hoverable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
@@ -19,6 +22,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
@@ -78,9 +83,12 @@ internal fun TimelineExpandableCard(
     cardBackground: androidx.compose.ui.graphics.Color? = null,
     bodyBackground: androidx.compose.ui.graphics.Color? = null,
     useBodyContainer: Boolean = true,
+    copyText: String? = null,
     content: @Composable () -> Unit,
 ) {
     val t = assistantUiTokens()
+    val interactionSource = remember { MutableInteractionSource() }
+    val hovered by interactionSource.collectIsHoveredAsState()
     val statusColor = when (status) {
         ItemStatus.FAILED -> palette.danger
         ItemStatus.RUNNING -> palette.accent
@@ -91,77 +99,93 @@ internal fun TimelineExpandableCard(
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(cardBackground ?: palette.timelineCardBg, RoundedCornerShape(t.spacing.sm))
-                .border(
-                    width = 1.dp,
-                    color = (accentColor ?: palette.markdownDivider).copy(alpha = if (accentColor != null) 0.26f else 0.42f),
-                    shape = RoundedCornerShape(t.spacing.sm),
-                )
-                .clickable(enabled = !expanded, onClick = onToggleExpanded)
-                .padding(horizontal = t.spacing.sm + 2.dp, vertical = t.spacing.xs + 3.dp),
+                .hoverable(interactionSource),
         ) {
-            Column {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.clickable(onClick = onToggleExpanded),
-                ) {
-                    Box(
-                        modifier = Modifier.size(22.dp),
-                        contentAlignment = Alignment.Center,
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(cardBackground ?: palette.timelineCardBg, RoundedCornerShape(t.spacing.sm))
+                    .border(
+                        width = 1.dp,
+                        color = (accentColor ?: palette.markdownDivider).copy(alpha = if (accentColor != null) 0.26f else 0.42f),
+                        shape = RoundedCornerShape(t.spacing.sm),
+                    )
+                    .clickable(enabled = !expanded, onClick = onToggleExpanded)
+                    .padding(horizontal = t.spacing.sm + 2.dp, vertical = t.spacing.xs + 3.dp),
+            ) {
+                Column {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.clickable(onClick = onToggleExpanded),
                     ) {
-                        TimelineChevronGlyph(
-                            expanded = expanded,
+                        Box(
+                            modifier = Modifier.size(22.dp),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            TimelineChevronGlyph(
+                                expanded = expanded,
+                                palette = palette,
+                            )
+                        }
+                        TimelineExpandableCardTitle(
+                            title = title,
+                            titleTargetLabel = titleTargetLabel,
+                            titleTargetPath = titleTargetPath,
                             palette = palette,
+                            onOpenTitleTarget = onOpenTitleTarget,
+                        )
+                        if (!headerBadge.isNullOrBlank()) {
+                            Spacer(Modifier.width(t.spacing.xs))
+                            TimelineHeaderBadge(
+                                text = headerBadge,
+                                palette = palette,
+                                accentColor = accentColor ?: palette.accent,
+                            )
+                        }
+                        Spacer(Modifier.weight(1f))
+                        Box(
+                            modifier = Modifier
+                                .size(t.spacing.sm)
+                                .background(indicatorColor, CircleShape),
                         )
                     }
-                    TimelineExpandableCardTitle(
-                        title = title,
-                        titleTargetLabel = titleTargetLabel,
-                        titleTargetPath = titleTargetPath,
-                        palette = palette,
-                        onOpenTitleTarget = onOpenTitleTarget,
-                    )
-                    if (!headerBadge.isNullOrBlank()) {
-                        Spacer(Modifier.width(t.spacing.xs))
-                        TimelineHeaderBadge(
-                            text = headerBadge,
+                    if (expanded) {
+                        Spacer(Modifier.height(t.spacing.xs + 2.dp))
+                        TimelineExpandableCardBody(
                             palette = palette,
-                            accentColor = accentColor ?: palette.accent,
+                            accentColor = accentColor,
+                            bodyBackground = bodyBackground,
+                            expandedBodyMaxHeight = expandedBodyMaxHeight,
+                            useBodyContainer = useBodyContainer,
+                            content = content,
                         )
-                    }
-                    Spacer(Modifier.weight(1f))
-                    Box(
-                        modifier = Modifier
-                            .size(t.spacing.sm)
-                            .background(indicatorColor, CircleShape),
-                    )
-                }
-                if (expanded) {
-                    Spacer(Modifier.height(t.spacing.xs + 2.dp))
-                    TimelineExpandableCardBody(
-                        palette = palette,
-                        accentColor = accentColor,
-                        bodyBackground = bodyBackground,
-                        expandedBodyMaxHeight = expandedBodyMaxHeight,
-                        useBodyContainer = useBodyContainer,
-                        content = content,
-                    )
-                } else if (!collapsedSummary.isNullOrBlank()) {
-                    Spacer(Modifier.height(t.spacing.xs))
-                    TimelineSelectableText {
-                        Text(
-                            text = collapsedSummary,
-                            color = palette.textSecondary.copy(alpha = 0.92f),
-                            style = androidx.compose.material.MaterialTheme.typography.caption,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.padding(
-                                start = 30.dp,
-                                end = t.spacing.md,
-                            ),
-                        )
+                    } else if (!collapsedSummary.isNullOrBlank()) {
+                        Spacer(Modifier.height(t.spacing.xs))
+                        TimelineSelectableText {
+                            Text(
+                                text = collapsedSummary,
+                                color = palette.textSecondary.copy(alpha = 0.92f),
+                                style = androidx.compose.material.MaterialTheme.typography.caption,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.padding(
+                                    start = 30.dp,
+                                    end = t.spacing.md,
+                                ),
+                            )
+                        }
                     }
                 }
+            }
+            copyText?.let { text ->
+                TimelineCopyActionButton(
+                    visible = hovered,
+                    copyText = text,
+                    palette = palette,
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(top = 4.dp, end = 4.dp),
+                )
             }
         }
     }
@@ -186,6 +210,7 @@ internal fun TimelineMarkdownActivityBody(
     cardBackground: androidx.compose.ui.graphics.Color? = null,
     bodyBackground: androidx.compose.ui.graphics.Color? = null,
     useBodyContainer: Boolean = true,
+    copyText: String? = body.takeIf { it.isNotBlank() },
 ) {
     TimelineExpandableCard(
         title = title,
@@ -203,6 +228,7 @@ internal fun TimelineMarkdownActivityBody(
         cardBackground = cardBackground,
         bodyBackground = bodyBackground,
         useBodyContainer = useBodyContainer,
+        copyText = copyText,
     ) {
         TimelineMarkdown(
             text = body,

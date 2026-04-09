@@ -3,6 +3,9 @@ package com.auracode.assistant.toolwindow.timeline
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.hoverable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -21,6 +24,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.Icon
 import androidx.compose.material.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.Modifier
@@ -40,6 +45,9 @@ internal fun TimelineMessageItem(
     onOpenMarkdownFilePath: ((String) -> Unit)? = null,
 ) {
     val t = assistantUiTokens()
+    val copyText = timelineNodeCopyText(node)
+    val interactionSource = remember(node.id) { MutableInteractionSource() }
+    val hovered by interactionSource.collectIsHoveredAsState()
     if (isUserMessageNode(node)) {
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -48,18 +56,34 @@ internal fun TimelineMessageItem(
             Box(
                 modifier = Modifier
                     .wrapContentWidth()
-                    .background(palette.userBubbleBg, RoundedCornerShape(t.spacing.sm + t.spacing.xs))
-                    .padding(horizontal = t.spacing.md, vertical = t.spacing.xs + t.spacing.xs),
+                    .hoverable(interactionSource),
             ) {
-                TimelineCollapsibleMessageContent(
-                    messageId = node.id,
-                    palette = palette,
+                Box(
+                    modifier = Modifier
+                        .wrapContentWidth()
+                        .background(palette.userBubbleBg, RoundedCornerShape(t.spacing.sm + t.spacing.xs))
+                        .padding(horizontal = t.spacing.md, vertical = t.spacing.xs + t.spacing.xs),
                 ) {
-                    TimelineMessageContent(
-                        node = node,
+                    TimelineCollapsibleMessageContent(
+                        messageId = node.id,
                         palette = palette,
-                        onPreviewAttachment = onPreviewAttachment,
-                        onOpenMarkdownFilePath = onOpenMarkdownFilePath,
+                    ) {
+                        TimelineMessageContent(
+                            node = node,
+                            palette = palette,
+                            onPreviewAttachment = onPreviewAttachment,
+                            onOpenMarkdownFilePath = onOpenMarkdownFilePath,
+                        )
+                    }
+                }
+                copyText?.let { text ->
+                    TimelineCopyActionButton(
+                        visible = hovered,
+                        copyText = text,
+                        palette = palette,
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .padding(top = 4.dp, end = 4.dp),
                     )
                 }
             }
@@ -68,23 +92,39 @@ internal fun TimelineMessageItem(
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(
-                    palette.timelineCardBg.copy(alpha = 0.72f),
-                    RoundedCornerShape(t.spacing.md),
-                )
-                .border(
-                    width = 1.dp,
-                    color = palette.markdownDivider.copy(alpha = 0.26f),
-                    shape = RoundedCornerShape(t.spacing.md),
-                )
-                .padding(horizontal = t.spacing.md, vertical = t.spacing.sm),
+                .hoverable(interactionSource),
         ) {
-            TimelineMessageContent(
-                node = node,
-                palette = palette,
-                onPreviewAttachment = onPreviewAttachment,
-                onOpenMarkdownFilePath = onOpenMarkdownFilePath,
-            )
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(
+                        palette.timelineCardBg.copy(alpha = 0.72f),
+                        RoundedCornerShape(t.spacing.md),
+                    )
+                    .border(
+                        width = 1.dp,
+                        color = palette.markdownDivider.copy(alpha = 0.26f),
+                        shape = RoundedCornerShape(t.spacing.md),
+                    )
+                    .padding(horizontal = t.spacing.md, vertical = t.spacing.sm),
+            ) {
+                TimelineMessageContent(
+                    node = node,
+                    palette = palette,
+                    onPreviewAttachment = onPreviewAttachment,
+                    onOpenMarkdownFilePath = onOpenMarkdownFilePath,
+                )
+            }
+            copyText?.let { text ->
+                TimelineCopyActionButton(
+                    visible = hovered,
+                    copyText = text,
+                    palette = palette,
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(top = 4.dp, end = 4.dp),
+                )
+            }
         }
     }
 }

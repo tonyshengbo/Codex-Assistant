@@ -69,6 +69,7 @@ internal fun TimelineCommandItem(
         // auto-follow without competing against the outer timeline activity container.
         expandedBodyMaxHeight = null,
         bodyBackground = palette.topStripBg.copy(alpha = 0.24f),
+        copyText = timelineNodeCopyText(node),
     ) {
         TimelineCommandExecutionPanel(
             commandText = node.commandText,

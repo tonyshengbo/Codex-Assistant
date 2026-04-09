@@ -2,13 +2,11 @@ package com.auracode.assistant.toolwindow.timeline
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
@@ -31,8 +29,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.auracode.assistant.toolwindow.shared.DesignPalette
 import com.auracode.assistant.toolwindow.shared.assistantUiTokens
-import java.awt.Toolkit
-import java.awt.datatransfer.StringSelection
 
 private const val TIMELINE_COMMAND_NEAR_BOTTOM_THRESHOLD_PX: Int = 40
 
@@ -40,7 +36,6 @@ internal data class TimelineCommandPanelContent(
     val label: String,
     val commandText: String,
     val outputText: String?,
-    val copyActionLabel: String,
 )
 
 internal data class TimelineCommandScrollSnapshot(
@@ -56,7 +51,6 @@ internal fun timelineCommandPanelContent(
         label = "Shell",
         commandText = commandText?.trim().orEmpty(),
         outputText = outputText?.trim()?.takeIf { it.isNotEmpty() },
-        copyActionLabel = "Copy",
     )
 }
 
@@ -130,25 +124,12 @@ internal fun TimelineCommandExecutionPanel(
             .padding(horizontal = t.spacing.sm + 2.dp, vertical = t.spacing.sm),
         verticalArrangement = Arrangement.spacedBy(t.spacing.sm),
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                text = panel.label,
-                color = palette.textMuted,
-                style = MaterialTheme.typography.caption,
-                fontWeight = FontWeight.Medium,
-            )
-            Box(modifier = Modifier.weight(1f))
-            Text(
-                text = panel.copyActionLabel,
-                color = palette.textSecondary,
-                style = MaterialTheme.typography.caption,
-                fontWeight = FontWeight.Medium,
-                modifier = Modifier.clickable { copyTimelineCommandPanelBody(panel.commandText, panel.outputText) },
-            )
-        }
+        Text(
+            text = panel.label,
+            color = palette.textMuted,
+            style = MaterialTheme.typography.caption,
+            fontWeight = FontWeight.Medium,
+        )
 
         Box(
             modifier = Modifier
@@ -198,31 +179,6 @@ internal fun TimelineCommandExecutionPanel(
                 )
             }
         }
-    }
-}
-
-private fun timelineCommandCopyBody(
-    commandText: String,
-    outputText: String?,
-): String {
-    return buildString {
-        append(commandText)
-        outputText?.takeIf { it.isNotBlank() }?.let {
-            append("\n")
-            append(it)
-        }
-    }
-}
-
-private fun copyTimelineCommandPanelBody(
-    commandText: String,
-    outputText: String?,
-) {
-    runCatching {
-        Toolkit.getDefaultToolkit().systemClipboard.setContents(
-            StringSelection(timelineCommandCopyBody(commandText = commandText, outputText = outputText)),
-            null,
-        )
     }
 }
 
