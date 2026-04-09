@@ -36,6 +36,12 @@ class AgentSettingsService : PersistentStateComponent<AgentSettingsService.State
         var uiTheme: String = UiThemeMode.FOLLOW_IDE.name,
         var autoContextEnabled: Boolean = true,
         var backgroundCompletionNotificationsEnabled: Boolean = true,
+        var codexCliAutoUpdateCheckEnabled: Boolean = true,
+        var codexCliIgnoredVersion: String = "",
+        var codexCliLastCheckAt: Long = 0L,
+        var codexCliLastKnownCurrentVersion: String = "",
+        var codexCliLastKnownLatestVersion: String = "",
+        var codexCliLastNotifiedVersion: String = "",
         var savedAgents: MutableList<SavedAgentDefinition> = mutableListOf(),
         // Persist selected composer agents independently so selections survive resets and restarts.
         var selectedAgentIds: LinkedHashSet<String> = linkedSetOf(),
@@ -100,6 +106,42 @@ class AgentSettingsService : PersistentStateComponent<AgentSettingsService.State
 
     fun setBackgroundCompletionNotificationsEnabled(enabled: Boolean) {
         state.backgroundCompletionNotificationsEnabled = enabled
+    }
+
+    fun codexCliAutoUpdateCheckEnabled(): Boolean = state.codexCliAutoUpdateCheckEnabled
+
+    fun setCodexCliAutoUpdateCheckEnabled(enabled: Boolean) {
+        state.codexCliAutoUpdateCheckEnabled = enabled
+    }
+
+    fun codexCliIgnoredVersion(): String = state.codexCliIgnoredVersion.trim()
+
+    fun setCodexCliIgnoredVersion(version: String) {
+        state.codexCliIgnoredVersion = version.trim()
+    }
+
+    fun codexCliLastCheckAt(): Long = state.codexCliLastCheckAt
+
+    fun setCodexCliLastCheckAt(value: Long) {
+        state.codexCliLastCheckAt = value.coerceAtLeast(0L)
+    }
+
+    fun codexCliLastKnownCurrentVersion(): String = state.codexCliLastKnownCurrentVersion.trim()
+
+    fun setCodexCliLastKnownCurrentVersion(version: String) {
+        state.codexCliLastKnownCurrentVersion = version.trim()
+    }
+
+    fun codexCliLastKnownLatestVersion(): String = state.codexCliLastKnownLatestVersion.trim()
+
+    fun setCodexCliLastKnownLatestVersion(version: String) {
+        state.codexCliLastKnownLatestVersion = version.trim()
+    }
+
+    fun codexCliLastNotifiedVersion(): String = state.codexCliLastNotifiedVersion.trim()
+
+    fun setCodexCliLastNotifiedVersion(version: String) {
+        state.codexCliLastNotifiedVersion = version.trim()
     }
 
     fun nodeExecutablePath(): String = state.nodeExecutablePath.trim()

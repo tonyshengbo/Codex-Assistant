@@ -19,6 +19,9 @@ import com.auracode.assistant.settings.mcp.McpValidationErrors
 import com.auracode.assistant.settings.skills.SkillRuntimeEntry
 import com.auracode.assistant.provider.codex.CodexEnvironmentCheckResult
 import com.auracode.assistant.provider.codex.CodexEnvironmentStatus
+import com.auracode.assistant.provider.codex.CodexCliUpgradeSource
+import com.auracode.assistant.provider.codex.CodexCliVersionCheckStatus
+import com.auracode.assistant.provider.codex.CodexCliVersionSnapshot
 import com.auracode.assistant.conversation.ConversationCapabilities
 import com.auracode.assistant.toolwindow.composer.ComposerAreaStore
 import com.auracode.assistant.toolwindow.composer.ContextEntry
@@ -361,6 +364,7 @@ class AreaStoresTest {
                 themeMode = UiThemeMode.DARK,
                 autoContextEnabled = true,
                 backgroundCompletionNotificationsEnabled = true,
+                codexCliAutoUpdateCheckEnabled = true,
                 savedAgents = emptyList(),
                 customModelIds = emptyList(),
             ),
@@ -373,10 +377,12 @@ class AreaStoresTest {
         store.onEvent(AppEvent.UiIntentPublished(UiIntent.EditSettingsThemeMode(UiThemeMode.LIGHT)))
         store.onEvent(AppEvent.UiIntentPublished(UiIntent.EditSettingsAutoContextEnabled(false)))
         store.onEvent(AppEvent.UiIntentPublished(UiIntent.EditSettingsBackgroundCompletionNotificationsEnabled(false)))
+        store.onEvent(AppEvent.UiIntentPublished(UiIntent.EditSettingsCodexCliAutoUpdateCheckEnabled(false)))
 
         assertEquals(UiThemeMode.LIGHT, store.state.value.themeMode)
         assertFalse(store.state.value.autoContextEnabled)
         assertFalse(store.state.value.backgroundCompletionNotificationsEnabled)
+        assertFalse(store.state.value.codexCliAutoUpdateCheckEnabled)
     }
 
     @Test
@@ -510,6 +516,65 @@ class AreaStoresTest {
             ),
         )
         assertFalse(store.state.value.isEnvironmentSaveVisible)
+    }
+
+    @Test
+    fun `settings snapshot carries codex cli version state`() {
+        val store = RightDrawerAreaStore()
+        val snapshot = CodexCliVersionSnapshot(
+            checkStatus = CodexCliVersionCheckStatus.UPDATE_AVAILABLE,
+            currentVersion = "0.34.0",
+            latestVersion = "0.35.0",
+            ignoredVersion = "",
+            upgradeSource = CodexCliUpgradeSource.NPM,
+            displayCommand = "npm install -g @openai/codex@latest",
+            lastCheckedAt = 123L,
+        )
+
+        store.onEvent(
+            AppEvent.SettingsSnapshotUpdated(
+                codexCliPath = "codex",
+                nodePath = "",
+                languageMode = com.auracode.assistant.settings.UiLanguageMode.FOLLOW_IDE,
+                themeMode = UiThemeMode.DARK,
+                autoContextEnabled = true,
+                savedAgents = emptyList(),
+                customModelIds = emptyList(),
+                codexCliVersionSnapshot = snapshot,
+            ),
+        )
+
+        assertEquals(snapshot, store.state.value.codexCliVersionSnapshot)
+    }
+
+    @Test
+    fun `version update event replaces codex cli version state without touching environment draft`() {
+        val store = RightDrawerAreaStore()
+        store.onEvent(
+            AppEvent.SettingsSnapshotUpdated(
+                codexCliPath = "codex",
+                nodePath = "/opt/homebrew/bin/node",
+                languageMode = com.auracode.assistant.settings.UiLanguageMode.FOLLOW_IDE,
+                themeMode = UiThemeMode.DARK,
+                autoContextEnabled = true,
+                savedAgents = emptyList(),
+                customModelIds = emptyList(),
+            ),
+        )
+
+        val snapshot = CodexCliVersionSnapshot(
+            checkStatus = CodexCliVersionCheckStatus.CHECKING,
+            currentVersion = "0.34.0",
+            latestVersion = "",
+            ignoredVersion = "",
+            upgradeSource = CodexCliUpgradeSource.UNKNOWN,
+            displayCommand = "npm install -g @openai/codex@latest",
+        )
+        store.onEvent(AppEvent.CodexCliVersionSnapshotUpdated(snapshot))
+
+        assertEquals(snapshot, store.state.value.codexCliVersionSnapshot)
+        assertEquals("codex", store.state.value.codexCliPath)
+        assertEquals("/opt/homebrew/bin/node", store.state.value.nodePath)
     }
 
     @Test

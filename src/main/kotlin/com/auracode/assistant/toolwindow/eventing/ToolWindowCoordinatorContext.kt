@@ -1,6 +1,7 @@
 package com.auracode.assistant.toolwindow.eventing
 
 import com.auracode.assistant.notification.ChatCompletionNotificationService
+import com.auracode.assistant.provider.codex.CodexCliVersionService
 import com.auracode.assistant.provider.codex.CodexEnvironmentDetector
 import com.auracode.assistant.service.AgentChatService
 import com.auracode.assistant.settings.AgentSettingsService
@@ -34,6 +35,7 @@ internal class ToolWindowCoordinatorContext(
     val mcpAdapterRegistry: McpManagementAdapterRegistry,
     val skillsRuntimeService: SkillsRuntimeService,
     val codexEnvironmentDetector: CodexEnvironmentDetector,
+    val codexCliVersionService: CodexCliVersionService,
     val pickAttachments: () -> List<String>,
     val pickExportPath: (String) -> String?,
     val searchProjectFiles: (String, Int) -> List<String>,

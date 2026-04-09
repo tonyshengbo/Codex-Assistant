@@ -68,6 +68,7 @@ internal fun GeneralSettingsPage(
             description = AuraCodeBundle.message("settings.group.environment.subtitle"),
         )
         GeneralEnvironmentSettingsSection(p = p, state = state, onIntent = onIntent)
+        CodexCliVersionSettingsSection(p = p, state = state, onIntent = onIntent)
         SettingsField(
             p = p,
             title = AuraCodeBundle.message("settings.autoContext.label"),

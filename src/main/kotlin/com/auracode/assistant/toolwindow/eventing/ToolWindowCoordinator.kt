@@ -2,6 +2,7 @@ package com.auracode.assistant.toolwindow.eventing
 
 import com.auracode.assistant.context.MentionFileWhitelist
 import com.auracode.assistant.notification.ChatCompletionNotificationService
+import com.auracode.assistant.provider.codex.CodexCliVersionService
 import com.auracode.assistant.provider.codex.CodexEnvironmentDetector
 import com.auracode.assistant.protocol.UnifiedEvent
 import com.auracode.assistant.service.AgentChatService
@@ -52,6 +53,7 @@ internal class ToolWindowCoordinator(
         adapterRegistry = com.auracode.assistant.settings.skills.SkillsManagementAdapterRegistry(settingsService),
     ),
     private val codexEnvironmentDetector: CodexEnvironmentDetector = CodexEnvironmentDetector(),
+    private val codexCliVersionService: CodexCliVersionService = CodexCliVersionService(settingsService, codexEnvironmentDetector),
     private val pickAttachments: () -> List<String> = { emptyList() },
     private val pickExportPath: (String) -> String? = { null },
     private val searchProjectFiles: (String, Int) -> List<String> = { _, _ -> emptyList() },
@@ -130,6 +132,7 @@ internal class ToolWindowCoordinator(
         mcpAdapterRegistry = mcpAdapterRegistry,
         skillsRuntimeService = skillsRuntimeService,
         codexEnvironmentDetector = codexEnvironmentDetector,
+        codexCliVersionService = codexCliVersionService,
         pickAttachments = pickAttachments,
         pickExportPath = pickExportPath,
         searchProjectFiles = searchProjectFiles,
@@ -206,6 +209,7 @@ internal class ToolWindowCoordinator(
         publishConversationCapabilities()
         historyHandler.restoreCurrentSessionHistory()
         settingsHandler.warmSkillsRuntimeCache()
+        settingsHandler.warmCodexCliVersionState()
     }
 
     private fun handleUiIntent(intent: UiIntent) {
@@ -267,6 +271,9 @@ internal class ToolWindowCoordinator(
             is UiIntent.EditSettingsBackgroundCompletionNotificationsEnabled -> {
                 settingsHandler.applyBackgroundCompletionNotificationPreference(intent.enabled)
             }
+            is UiIntent.EditSettingsCodexCliAutoUpdateCheckEnabled -> {
+                settingsHandler.applyCodexCliAutoUpdatePreference(intent.enabled)
+            }
             is UiIntent.SubmitApprovalAction -> {
                 planHandler.submitApprovalDecision(intent.action)
             }
@@ -324,6 +331,9 @@ internal class ToolWindowCoordinator(
             is UiIntent.LogoutMcpServer -> settingsHandler.authenticateMcpServer(intent.name, login = false)
             UiIntent.DetectCodexEnvironment -> settingsHandler.detectCodexEnvironment()
             UiIntent.TestCodexEnvironment -> settingsHandler.testCodexEnvironment()
+            UiIntent.CheckCodexCliVersion -> settingsHandler.refreshCodexCliVersion(force = true)
+            UiIntent.UpgradeCodexCli -> settingsHandler.upgradeCodexCli()
+            is UiIntent.IgnoreCodexCliVersion -> settingsHandler.ignoreCodexCliVersion(intent.version)
             UiIntent.SaveSettings -> settingsHandler.saveSettings()
             else -> Unit
         }
@@ -364,11 +374,13 @@ internal class ToolWindowCoordinator(
                 themeMode = settingsService.uiThemeMode(),
                 autoContextEnabled = settingsService.autoContextEnabled(),
                 backgroundCompletionNotificationsEnabled = settingsService.backgroundCompletionNotificationsEnabled(),
+                codexCliAutoUpdateCheckEnabled = settingsService.codexCliAutoUpdateCheckEnabled(),
                 savedAgents = state.savedAgents.toList(),
                 selectedAgentIds = settingsService.selectedAgentIds(),
                 customModelIds = settingsService.customModelIds(),
                 selectedModel = settingsService.selectedComposerModel(),
                 selectedReasoning = settingsService.selectedComposerReasoning(),
+                codexCliVersionSnapshot = codexCliVersionService.snapshot(),
             ),
         )
     }

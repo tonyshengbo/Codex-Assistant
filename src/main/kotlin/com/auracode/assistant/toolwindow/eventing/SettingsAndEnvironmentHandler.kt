@@ -1,6 +1,9 @@
 package com.auracode.assistant.toolwindow.eventing
 
 import com.auracode.assistant.i18n.AuraCodeBundle
+import com.auracode.assistant.notification.AuraNotificationGroup
+import com.auracode.assistant.provider.codex.CodexCliVersionCheckStatus
+import com.auracode.assistant.provider.codex.CodexCliVersionSnapshot
 import com.auracode.assistant.provider.codex.CodexModelCatalog
 import com.auracode.assistant.settings.SavedAgentDefinition
 import com.auracode.assistant.settings.mcp.McpAuthActionResult
@@ -13,6 +16,8 @@ import com.auracode.assistant.settings.mcp.validate
 import com.auracode.assistant.settings.skills.SkillSelector
 import com.auracode.assistant.toolwindow.drawer.SettingsSection
 import com.auracode.assistant.toolwindow.shared.UiText
+import com.intellij.notification.NotificationAction
+import com.intellij.notification.NotificationType
 import java.util.UUID
 import kotlinx.coroutines.launch
 
@@ -45,6 +50,12 @@ internal class SettingsAndEnvironmentHandler(
         context.publishSettingsSnapshot()
     }
 
+    fun applyCodexCliAutoUpdatePreference(enabled: Boolean) {
+        if (context.settingsService.codexCliAutoUpdateCheckEnabled() == enabled) return
+        context.settingsService.setCodexCliAutoUpdateCheckEnabled(enabled)
+        context.publishSettingsSnapshot()
+    }
+
     fun saveSettings() {
         val drawerState = context.rightDrawerStore.state.value
         val oldLanguage = context.settingsService.uiLanguageMode()
@@ -58,6 +69,7 @@ internal class SettingsAndEnvironmentHandler(
         context.settingsService.setBackgroundCompletionNotificationsEnabled(
             drawerState.backgroundCompletionNotificationsEnabled,
         )
+        context.settingsService.setCodexCliAutoUpdateCheckEnabled(drawerState.codexCliAutoUpdateCheckEnabled)
         if (oldLanguage != context.settingsService.uiLanguageMode()) {
             context.settingsService.notifyLanguageChanged()
         }
@@ -116,6 +128,76 @@ internal class SettingsAndEnvironmentHandler(
                 )
             }
         }
+    }
+
+    /** Refreshes the Codex CLI version snapshot and publishes the latest UI state. */
+    fun refreshCodexCliVersion(force: Boolean = false) {
+        val checking = context.codexCliVersionService.snapshot().copy(
+            checkStatus = CodexCliVersionCheckStatus.CHECKING,
+            message = "Checking Codex CLI version...",
+        )
+        context.eventHub.publish(AppEvent.CodexCliVersionSnapshotUpdated(checking))
+        context.coroutineLauncher.launch("refreshCodexCliVersion(force=$force)") {
+            runCatching {
+                context.codexCliVersionService.refresh(force = force)
+            }.onSuccess { snapshot ->
+                context.eventHub.publish(AppEvent.CodexCliVersionSnapshotUpdated(snapshot))
+                context.publishSettingsSnapshot()
+                context.eventHub.publish(AppEvent.StatusTextUpdated(UiText.raw(snapshot.message)))
+                notifyCodexCliUpdateIfNeeded(snapshot)
+            }.onFailure { error ->
+                val failed = CodexCliVersionSnapshot(
+                    checkStatus = CodexCliVersionCheckStatus.REMOTE_CHECK_FAILED,
+                    currentVersion = context.codexCliVersionService.snapshot().currentVersion,
+                    latestVersion = context.codexCliVersionService.snapshot().latestVersion,
+                    ignoredVersion = context.codexCliVersionService.snapshot().ignoredVersion,
+                    upgradeSource = context.codexCliVersionService.snapshot().upgradeSource,
+                    displayCommand = context.codexCliVersionService.snapshot().displayCommand,
+                    isUpgradeSupported = context.codexCliVersionService.snapshot().isUpgradeSupported,
+                    lastCheckedAt = context.codexCliVersionService.snapshot().lastCheckedAt,
+                    message = error.message ?: "Failed to check Codex CLI version.",
+                )
+                context.eventHub.publish(AppEvent.CodexCliVersionSnapshotUpdated(failed))
+                context.eventHub.publish(AppEvent.StatusTextUpdated(UiText.raw(failed.message)))
+            }
+        }
+    }
+
+    /** Executes the best-effort Codex CLI upgrade flow and republishes the version snapshot. */
+    fun upgradeCodexCli() {
+        context.eventHub.publish(
+            AppEvent.CodexCliVersionSnapshotUpdated(
+                context.codexCliVersionService.snapshot().copy(
+                    checkStatus = CodexCliVersionCheckStatus.UPGRADE_IN_PROGRESS,
+                    message = "Upgrading Codex CLI...",
+                ),
+            ),
+        )
+        context.coroutineLauncher.launch("upgradeCodexCli") {
+            runCatching {
+                context.codexCliVersionService.upgrade()
+            }.onSuccess { snapshot ->
+                context.eventHub.publish(AppEvent.CodexCliVersionSnapshotUpdated(snapshot))
+                context.publishSettingsSnapshot()
+                context.eventHub.publish(AppEvent.StatusTextUpdated(UiText.raw(snapshot.message)))
+            }.onFailure { error ->
+                val failed = context.codexCliVersionService.snapshot().copy(
+                    checkStatus = CodexCliVersionCheckStatus.UPGRADE_FAILED,
+                    message = error.message ?: "Failed to upgrade Codex CLI.",
+                )
+                context.eventHub.publish(AppEvent.CodexCliVersionSnapshotUpdated(failed))
+                context.eventHub.publish(AppEvent.StatusTextUpdated(UiText.raw(failed.message)))
+            }
+        }
+    }
+
+    /** Ignores the provided Codex CLI version and republishes the cached snapshot. */
+    fun ignoreCodexCliVersion(version: String) {
+        if (version.isBlank()) return
+        val snapshot = context.codexCliVersionService.ignoreVersion(version)
+        context.eventHub.publish(AppEvent.CodexCliVersionSnapshotUpdated(snapshot))
+        context.publishSettingsSnapshot()
+        context.eventHub.publish(AppEvent.StatusTextUpdated(UiText.raw("Ignored Codex CLI version '$version'.")))
     }
 
     fun saveAgentDraft() {
@@ -224,6 +306,30 @@ internal class SettingsAndEnvironmentHandler(
         context.coroutineLauncher.launch("warmSkillsRuntimeCache") {
             runCatching {
                 publishSkillsSnapshot(forceReload = false)
+            }
+        }
+    }
+
+    /** Preloads the latest Codex CLI version snapshot for settings and about views. */
+    fun warmCodexCliVersionState() {
+        context.coroutineLauncher.launch("warmCodexCliVersionState") {
+            runCatching {
+                if (context.codexCliVersionService.shouldRefresh(force = false)) {
+                    context.eventHub.publish(
+                        AppEvent.CodexCliVersionSnapshotUpdated(
+                            context.codexCliVersionService.snapshot().copy(
+                                checkStatus = CodexCliVersionCheckStatus.CHECKING,
+                                message = "Checking Codex CLI version...",
+                            ),
+                        ),
+                    )
+                    val snapshot = context.codexCliVersionService.refresh(force = false)
+                    context.eventHub.publish(AppEvent.CodexCliVersionSnapshotUpdated(snapshot))
+                    context.publishSettingsSnapshot()
+                    notifyCodexCliUpdateIfNeeded(snapshot)
+                } else {
+                    context.eventHub.publish(AppEvent.CodexCliVersionSnapshotUpdated(context.codexCliVersionService.snapshot()))
+                }
             }
         }
     }
@@ -584,11 +690,14 @@ internal class SettingsAndEnvironmentHandler(
         when (context.rightDrawerStore.state.value.settingsSection) {
             SettingsSection.MCP -> loadMcpServers()
             SettingsSection.SKILLS -> loadSkills()
-            SettingsSection.GENERAL -> detectCodexEnvironment()
+            SettingsSection.GENERAL -> {
+                detectCodexEnvironment()
+                refreshCodexCliVersion(force = false)
+            }
             SettingsSection.AGENTS,
             SettingsSection.TOKEN_USAGE,
-            SettingsSection.ABOUT,
             -> Unit
+            SettingsSection.ABOUT -> refreshCodexCliVersion(force = false)
         }
     }
 
@@ -599,16 +708,47 @@ internal class SettingsAndEnvironmentHandler(
             SettingsSection.GENERAL -> {
                 if (context.rightDrawerStore.state.value.kind == com.auracode.assistant.toolwindow.drawer.RightDrawerKind.SETTINGS) {
                     detectCodexEnvironment()
+                    refreshCodexCliVersion(force = false)
                 }
             }
             SettingsSection.AGENTS,
             SettingsSection.TOKEN_USAGE,
-            SettingsSection.ABOUT,
             -> Unit
+            SettingsSection.ABOUT -> refreshCodexCliVersion(force = false)
         }
     }
 
     fun mcpContextSnapshotForLog(): String = mcpContextSnapshot()
+
+    private fun notifyCodexCliUpdateIfNeeded(snapshot: CodexCliVersionSnapshot) {
+        if (!context.codexCliVersionService.shouldNotify(snapshot)) return
+        AuraNotificationGroup.codexCliVersion()
+            .createNotification(
+                AuraCodeBundle.message("notification.codexCliVersion.title"),
+                AuraCodeBundle.message(
+                    "notification.codexCliVersion.content",
+                    snapshot.currentVersion.ifBlank { AuraCodeBundle.message("settings.codexVersion.unknown") },
+                    snapshot.latestVersion.ifBlank { AuraCodeBundle.message("settings.codexVersion.unknown") },
+                ),
+                NotificationType.INFORMATION,
+            )
+            .addAction(
+                NotificationAction.createSimpleExpiring(
+                    AuraCodeBundle.message("notification.codexCliVersion.openSettings"),
+                ) {
+                    context.eventHub.publishUiIntent(UiIntent.SelectSettingsSection(SettingsSection.GENERAL))
+                },
+            )
+            .addAction(
+                NotificationAction.createSimpleExpiring(
+                    AuraCodeBundle.message("notification.codexCliVersion.ignore"),
+                ) {
+                    ignoreCodexCliVersion(snapshot.latestVersion)
+                },
+            )
+            .notify(null)
+        context.codexCliVersionService.markNotified(snapshot.latestVersion)
+    }
 
     private fun runMcpServerTest(name: String) {
         updateMcpBusy { copy(testingName = name) }

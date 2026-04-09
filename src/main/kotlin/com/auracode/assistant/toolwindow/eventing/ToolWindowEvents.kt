@@ -19,6 +19,7 @@ import com.auracode.assistant.settings.mcp.McpServerSummary
 import com.auracode.assistant.settings.mcp.McpTestResult
 import com.auracode.assistant.settings.mcp.McpValidationErrors
 import com.auracode.assistant.provider.codex.CodexEnvironmentCheckResult
+import com.auracode.assistant.provider.codex.CodexCliVersionSnapshot
 import com.auracode.assistant.toolwindow.approval.ApprovalAction
 import com.auracode.assistant.toolwindow.composer.ComposerRunningPlanState
 import com.auracode.assistant.toolwindow.composer.PlanCompletionAction
@@ -131,8 +132,12 @@ internal sealed interface UiIntent {
     data class EditSettingsThemeMode(val mode: UiThemeMode) : UiIntent
     data class EditSettingsAutoContextEnabled(val enabled: Boolean) : UiIntent
     data class EditSettingsBackgroundCompletionNotificationsEnabled(val enabled: Boolean) : UiIntent
+    data class EditSettingsCodexCliAutoUpdateCheckEnabled(val enabled: Boolean) : UiIntent
     data object DetectCodexEnvironment : UiIntent
     data object TestCodexEnvironment : UiIntent
+    data object CheckCodexCliVersion : UiIntent
+    data object UpgradeCodexCli : UiIntent
+    data class IgnoreCodexCliVersion(val version: String) : UiIntent
     data object CreateNewAgentDraft : UiIntent
     data object ShowAgentSettingsList : UiIntent
     data class SelectSavedAgentForEdit(val id: String) : UiIntent
@@ -220,11 +225,13 @@ internal sealed interface AppEvent {
         val themeMode: UiThemeMode,
         val autoContextEnabled: Boolean,
         val backgroundCompletionNotificationsEnabled: Boolean = true,
+        val codexCliAutoUpdateCheckEnabled: Boolean = true,
         val savedAgents: List<SavedAgentDefinition>,
         val selectedAgentIds: List<String> = emptyList(),
         val customModelIds: List<String> = emptyList(),
         val selectedModel: String = com.auracode.assistant.provider.codex.CodexModelCatalog.defaultModel,
         val selectedReasoning: String = ComposerReasoning.MEDIUM.effort,
+        val codexCliVersionSnapshot: CodexCliVersionSnapshot = CodexCliVersionSnapshot(),
     ) : AppEvent
     data class CodexEnvironmentCheckRunning(
         val running: Boolean,
@@ -232,6 +239,9 @@ internal sealed interface AppEvent {
     data class CodexEnvironmentCheckUpdated(
         val result: CodexEnvironmentCheckResult,
         val updateDraftPaths: Boolean = false,
+    ) : AppEvent
+    data class CodexCliVersionSnapshotUpdated(
+        val snapshot: CodexCliVersionSnapshot,
     ) : AppEvent
     data class ConversationCapabilitiesUpdated(
         val capabilities: ConversationCapabilities,

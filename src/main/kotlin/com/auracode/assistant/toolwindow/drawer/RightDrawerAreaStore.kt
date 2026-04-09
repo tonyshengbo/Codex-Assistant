@@ -13,6 +13,7 @@ import com.auracode.assistant.settings.mcp.McpRuntimeStatus
 import com.auracode.assistant.settings.mcp.McpTestResult
 import com.auracode.assistant.settings.mcp.McpValidationErrors
 import com.auracode.assistant.provider.codex.CodexEnvironmentCheckResult
+import com.auracode.assistant.provider.codex.CodexCliVersionSnapshot
 import com.auracode.assistant.toolwindow.eventing.AppEvent
 import com.auracode.assistant.toolwindow.eventing.UiIntent
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -49,6 +50,8 @@ internal data class RightDrawerAreaState(
     val themeMode: UiThemeMode = UiThemeMode.FOLLOW_IDE,
     val autoContextEnabled: Boolean = true,
     val backgroundCompletionNotificationsEnabled: Boolean = true,
+    val codexCliAutoUpdateCheckEnabled: Boolean = true,
+    val codexCliVersionSnapshot: CodexCliVersionSnapshot = CodexCliVersionSnapshot(),
     val environmentCheckRunning: Boolean = false,
     val environmentCheckResult: CodexEnvironmentCheckResult? = null,
     val settingsSection: SettingsSection = SettingsSection.GENERAL,
@@ -168,6 +171,12 @@ internal class RightDrawerAreaStore {
                     is UiIntent.EditSettingsBackgroundCompletionNotificationsEnabled -> {
                         _state.value = _state.value.copy(
                             backgroundCompletionNotificationsEnabled = event.intent.enabled,
+                        )
+                    }
+
+                    is UiIntent.EditSettingsCodexCliAutoUpdateCheckEnabled -> {
+                        _state.value = _state.value.copy(
+                            codexCliAutoUpdateCheckEnabled = event.intent.enabled,
                         )
                     }
 
@@ -297,6 +306,8 @@ internal class RightDrawerAreaStore {
                     themeMode = event.themeMode,
                     autoContextEnabled = event.autoContextEnabled,
                     backgroundCompletionNotificationsEnabled = event.backgroundCompletionNotificationsEnabled,
+                    codexCliAutoUpdateCheckEnabled = event.codexCliAutoUpdateCheckEnabled,
+                    codexCliVersionSnapshot = event.codexCliVersionSnapshot,
                     savedAgents = event.savedAgents,
                     editingAgentId = selected?.id ?: _state.value.editingAgentId?.takeIf { id ->
                         event.savedAgents.any { it.id == id }
@@ -326,6 +337,10 @@ internal class RightDrawerAreaStore {
                     environmentCheckResult = event.result,
                     environmentCheckRunning = false,
                 )
+            }
+
+            is AppEvent.CodexCliVersionSnapshotUpdated -> {
+                _state.value = _state.value.copy(codexCliVersionSnapshot = event.snapshot)
             }
 
             is AppEvent.McpServersLoaded -> {
