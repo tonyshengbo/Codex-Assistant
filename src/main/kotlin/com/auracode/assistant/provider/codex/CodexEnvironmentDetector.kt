@@ -34,6 +34,7 @@ internal data class CodexEnvironmentResolution(
 /** Detects Codex and Node executables and prepares environment overrides for launches. */
 internal class CodexEnvironmentDetector(
     private val shellEnvironmentLoader: () -> Map<String, String> = ::loadShellEnvironment,
+    private val shellEnvironmentCandidatesLoader: (() -> List<Map<String, String>>)? = ::loadShellEnvironmentCandidates,
     private val commonSearchPaths: List<String> = defaultCodexCommonSearchPaths(System.getProperty("os.name").orEmpty()),
     private val executableResolver: CodexExecutableResolver = CodexExecutableResolver(commonSearchPaths = commonSearchPaths),
     private val launchEnvironmentBuilder: CodexLaunchEnvironmentBuilder = CodexLaunchEnvironmentBuilder(),
@@ -70,7 +71,11 @@ internal class CodexEnvironmentDetector(
         configuredCodexPath: String,
         configuredNodePath: String,
     ): CodexEnvironmentResolution {
-        val shellEnvironment = shellEnvironment(refresh = false)
+        val shellEnvironment = shellEnvironment(
+            configuredCodexPath = configuredCodexPath,
+            configuredNodePath = configuredNodePath,
+            refresh = false,
+        )
         val codex = executableResolver.resolve(
             configuredPath = configuredCodexPath,
             commandName = "codex",
@@ -100,7 +105,11 @@ internal class CodexEnvironmentDetector(
         refreshShellEnvironment: Boolean,
         testAppServer: Boolean,
     ): CodexEnvironmentCheckResult {
-        val shellEnvironment = shellEnvironment(refresh = refreshShellEnvironment)
+        val shellEnvironment = shellEnvironment(
+            configuredCodexPath = configuredCodexPath,
+            configuredNodePath = configuredNodePath,
+            refresh = refreshShellEnvironment,
+        )
         val codex = executableResolver.resolve(
             configuredPath = configuredCodexPath,
             commandName = "codex",
@@ -154,13 +163,86 @@ internal class CodexEnvironmentDetector(
         )
     }
 
-    private fun shellEnvironment(refresh: Boolean): Map<String, String> {
+    private fun shellEnvironment(
+        configuredCodexPath: String,
+        configuredNodePath: String,
+        refresh: Boolean,
+    ): Map<String, String> {
         if (refresh) {
             cachedShellEnvironment = null
         }
-        return cachedShellEnvironment ?: runCatching(shellEnvironmentLoader).getOrNull().orEmpty().also {
+        return cachedShellEnvironment ?: chooseShellEnvironment(
+            configuredCodexPath = configuredCodexPath,
+            configuredNodePath = configuredNodePath,
+        ).also {
             cachedShellEnvironment = it
         }
+    }
+
+    private fun chooseShellEnvironment(
+        configuredCodexPath: String,
+        configuredNodePath: String,
+    ): Map<String, String> {
+        val fallback = runCatching(shellEnvironmentLoader).getOrNull().orEmpty()
+        val candidates = buildList {
+            add(fallback)
+            shellEnvironmentCandidatesLoader?.let { loader ->
+                addAll(runCatching(loader).getOrNull().orEmpty())
+            }
+        }.distinctBy { environmentSignature(it) }
+            .filter { it.isNotEmpty() }
+        if (candidates.isEmpty()) {
+            return fallback
+        }
+        return candidates.mapIndexed { index, environment ->
+            candidateScore(
+                environment = environment,
+                configuredCodexPath = configuredCodexPath,
+                configuredNodePath = configuredNodePath,
+                index = index,
+            )
+        }.maxWithOrNull(
+            compareBy<CandidateEnvironmentScore> { it.codexResolved }
+                .thenBy { it.nodeResolved }
+                .thenBy { it.pathEntryCount }
+                .thenByDescending { it.index },
+        )?.environment ?: fallback
+    }
+
+    private fun environmentSignature(environment: Map<String, String>): String {
+        val path = environment["PATH"].orEmpty()
+        val home = environment["HOME"].orEmpty()
+        val shell = environment["SHELL"].orEmpty()
+        return "$path\n$home\n$shell"
+    }
+
+    private fun candidateScore(
+        environment: Map<String, String>,
+        configuredCodexPath: String,
+        configuredNodePath: String,
+        index: Int,
+    ): CandidateEnvironmentScore {
+        val codexResolved = executableResolver.resolve(
+            configuredPath = configuredCodexPath,
+            commandName = "codex",
+            shellEnvironment = environment,
+        ).path != null
+        val nodeResolved = executableResolver.resolve(
+            configuredPath = configuredNodePath,
+            commandName = "node",
+            shellEnvironment = environment,
+        ).path != null
+        val pathEntryCount = environment["PATH"]
+            ?.split(File.pathSeparator)
+            ?.count { it.isNotBlank() }
+            ?: 0
+        return CandidateEnvironmentScore(
+            environment = environment,
+            codexResolved = codexResolved,
+            nodeResolved = nodeResolved,
+            pathEntryCount = pathEntryCount,
+            index = index,
+        )
     }
 
     private fun buildSummary(
@@ -180,6 +262,14 @@ internal class CodexEnvironmentDetector(
         CodexEnvironmentStatus.MISSING -> "missing"
         CodexEnvironmentStatus.FAILED -> "failed"
     }
+
+    private data class CandidateEnvironmentScore(
+        val environment: Map<String, String>,
+        val codexResolved: Boolean,
+        val nodeResolved: Boolean,
+        val pathEntryCount: Int,
+        val index: Int,
+    )
 }
 
 internal fun buildLaunchEnvironmentOverrides(
@@ -193,14 +283,39 @@ internal fun buildLaunchEnvironmentOverrides(
 }
 
 private fun loadShellEnvironment(): Map<String, String> {
+    return loadShellEnvironmentCandidates().firstOrNull().orEmpty().ifEmpty { System.getenv() }
+}
+
+private fun loadShellEnvironmentCandidates(): List<Map<String, String>> {
     val systemEnvironment = System.getenv()
     val operatingSystemName = System.getProperty("os.name").orEmpty()
     if (operatingSystemName.contains("win", ignoreCase = true)) {
-        return systemEnvironment
+        return listOf(systemEnvironment)
     }
     val shell = systemEnvironment["SHELL"].takeUnless { it.isNullOrBlank() } ?: "/bin/zsh"
-    val process = runCatching { ProcessBuilder(shell, "-lc", "env").start() }.getOrNull()
-        ?: return systemEnvironment
+    val commands = listOf(
+        listOf(shell, "-lc", "env"),
+        listOf(shell, "-ilc", "env"),
+    )
+    return buildList {
+        add(systemEnvironment)
+        commands.forEach { command ->
+            loadShellEnvironmentCandidate(command)?.let(::add)
+        }
+    }.distinctBy { environment ->
+        buildString {
+            append(environment["PATH"].orEmpty())
+            append('\n')
+            append(environment["HOME"].orEmpty())
+            append('\n')
+            append(environment["SHELL"].orEmpty())
+        }
+    }
+}
+
+private fun loadShellEnvironmentCandidate(command: List<String>): Map<String, String>? {
+    val systemEnvironment = System.getenv()
+    val process = runCatching { ProcessBuilder(command).start() }.getOrNull() ?: return null
     return try {
         process.inputStream.bufferedReader().useLines { lines ->
             lines.mapNotNull { line ->

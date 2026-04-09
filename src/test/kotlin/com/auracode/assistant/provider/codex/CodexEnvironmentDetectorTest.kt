@@ -119,6 +119,40 @@ class CodexEnvironmentDetectorTest {
     }
 
     @Test
+    fun `auto detect prefers interactive shell environment when it resolves codex`() {
+        val tempDir = createTempDirectory("codex-env-interactive")
+        val codex = createExecutable(tempDir.toFile(), "codex")
+        val detector = CodexEnvironmentDetector(
+            shellEnvironmentLoader = { emptyMap() },
+            shellEnvironmentCandidatesLoader = {
+                listOf(
+                    mapOf("PATH" to "/usr/bin:/bin"),
+                    mapOf("PATH" to "${tempDir.absolutePathString()}:/usr/bin:/bin"),
+                )
+            },
+            commonSearchPaths = emptyList(),
+            executableResolver = CodexExecutableResolver(
+                commonSearchPaths = emptyList(),
+                operatingSystemName = "Mac OS X",
+                pathExt = "",
+            ),
+            appServerProbe = CodexAppServerProbe(
+                runner = { _, _ ->
+                    CodexAppServerProbeExecution(initialized = true)
+                },
+            ),
+        )
+
+        val result = detector.autoDetect(
+            configuredCodexPath = "",
+            configuredNodePath = "",
+        )
+
+        assertEquals(codex.absolutePath, result.codexPath)
+        assertEquals(CodexEnvironmentStatus.DETECTED, result.codexStatus)
+    }
+
+    @Test
     fun `auto detect fails when configured node path is invalid`() {
         val tempDir = createTempDirectory("codex-env-invalid-node")
         createExecutable(tempDir.toFile(), "codex")
@@ -149,6 +183,35 @@ class CodexEnvironmentDetectorTest {
     }
 
     @Test
+    fun `resolve for launch keeps richer shell path when interactive environment wins`() {
+        val tempDir = createTempDirectory("codex-env-launch")
+        createExecutable(tempDir.toFile(), "codex")
+        val detector = CodexEnvironmentDetector(
+            shellEnvironmentLoader = { emptyMap() },
+            shellEnvironmentCandidatesLoader = {
+                listOf(
+                    mapOf("PATH" to "/usr/bin:/bin", "HOME" to "/tmp/home"),
+                    mapOf("PATH" to "${tempDir.absolutePathString()}:/usr/bin:/bin", "HOME" to "/tmp/home"),
+                )
+            },
+            commonSearchPaths = emptyList(),
+            executableResolver = CodexExecutableResolver(
+                commonSearchPaths = emptyList(),
+                operatingSystemName = "Mac OS X",
+                pathExt = "",
+            ),
+        )
+
+        val result = detector.resolveForLaunch(
+            configuredCodexPath = "",
+            configuredNodePath = "",
+        )
+
+        assertTrue(result.environmentOverrides["PATH"].orEmpty().startsWith(tempDir.absolutePathString()))
+        assertEquals(CodexEnvironmentStatus.DETECTED, result.codexStatus)
+    }
+
+    @Test
     fun `resolve for launch keeps codex status when executable is missing`() {
         val detector = CodexEnvironmentDetector(
             shellEnvironmentLoader = { emptyMap() },
@@ -167,6 +230,13 @@ class CodexEnvironmentDetectorTest {
 
         assertEquals("codex", result.codexPath)
         assertEquals(CodexEnvironmentStatus.MISSING, result.codexStatus)
+    }
+
+    @Test
+    fun `default mac search paths include bun install bin`() {
+        val searchPaths = defaultCodexCommonSearchPaths("Mac OS X")
+
+        assertTrue(searchPaths.contains("${System.getProperty("user.home")}/.bun/bin"))
     }
 
     private fun createExecutable(directory: File, name: String): File {

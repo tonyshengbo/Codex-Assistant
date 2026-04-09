@@ -111,6 +111,9 @@ internal fun defaultCodexCommonSearchPaths(operatingSystemName: String): List<St
         )
     } else {
         listOf(
+            "$home/.bun/bin",
+            "$home/.volta/bin",
+            "$home/.local/bin",
             "/opt/homebrew/bin",
             "/usr/local/bin",
             "/usr/bin",
