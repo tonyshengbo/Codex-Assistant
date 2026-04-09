@@ -1,0 +1,167 @@
+package com.auracode.assistant.toolwindow.drawer.settings
+
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.material.MaterialTheme
+import androidx.compose.material.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import com.auracode.assistant.i18n.AuraCodeBundle
+import com.auracode.assistant.provider.codex.CodexCliVersionCheckStatus
+import com.auracode.assistant.provider.codex.CodexCliVersionSnapshot
+import com.auracode.assistant.toolwindow.drawer.RightDrawerAreaState
+import com.auracode.assistant.toolwindow.eventing.UiIntent
+import com.auracode.assistant.toolwindow.shared.DesignPalette
+import com.auracode.assistant.toolwindow.shared.assistantUiTokens
+
+@Composable
+internal fun CodexCliVersionSettingsSection(
+    p: DesignPalette,
+    state: RightDrawerAreaState,
+    onIntent: (UiIntent) -> Unit,
+) {
+    val model = buildCodexCliVersionPanelModel(state.codexCliVersionSnapshot)
+    val t = assistantUiTokens()
+    SettingsField(
+        p = p,
+        title = AuraCodeBundle.message("settings.codexVersion.label"),
+        description = AuraCodeBundle.message("settings.codexVersion.hint"),
+    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(t.spacing.md)) {
+            VersionRow(
+                p = p,
+                title = AuraCodeBundle.message("settings.codexVersion.current"),
+                value = model.currentVersionText,
+            )
+            model.latestVersionText?.let {
+                VersionRow(
+                    p = p,
+                    title = AuraCodeBundle.message("settings.codexVersion.latest"),
+                    value = it,
+                )
+            }
+            if (model.showManualUpgradeHint) {
+                Text(
+                    text = AuraCodeBundle.message("settings.codexVersion.manual"),
+                    color = p.textMuted,
+                    style = MaterialTheme.typography.body2,
+                )
+            }
+            if (model.showVersionCommand) {
+                Text(
+                    text = model.displayCommand,
+                    color = p.textSecondary,
+                    style = MaterialTheme.typography.body2,
+                )
+            }
+
+            if (model.showPrimaryAction) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    SettingsActionButton(
+                        p = p,
+                        text = model.primaryActionLabel,
+                        emphasized = model.isPrimaryActionEmphasized,
+                        enabled = !model.isBusy,
+                        onClick = {
+                            when (model.primaryActionIntent) {
+                                UiIntent.CheckCodexCliVersion -> onIntent(UiIntent.CheckCodexCliVersion)
+                                UiIntent.UpgradeCodexCli -> onIntent(UiIntent.UpgradeCodexCli)
+                                else -> Unit
+                            }
+                        },
+                    )
+                }
+            }
+        }
+    }
+}
+
+internal data class CodexCliVersionPanelModel(
+    val currentVersionText: String,
+    val latestVersionText: String?,
+    val displayCommand: String,
+    val showPrimaryAction: Boolean,
+    val primaryActionLabel: String,
+    val primaryActionIntent: UiIntent?,
+    val isPrimaryActionEmphasized: Boolean,
+    val showManualUpgradeHint: Boolean,
+    val showVersionCommand: Boolean,
+    val showStatusBadge: Boolean,
+    val showAutoCheckToggle: Boolean,
+    val isBusy: Boolean,
+)
+
+internal fun buildCodexCliVersionPanelModel(
+    snapshot: CodexCliVersionSnapshot,
+): CodexCliVersionPanelModel {
+    val currentVersionText = snapshot.currentVersion.ifBlank {
+        AuraCodeBundle.message("settings.codexVersion.unknown")
+    }
+    val latestVersionText = snapshot.latestVersion.trim().ifBlank { null }
+    val isBusy = snapshot.checkStatus == CodexCliVersionCheckStatus.CHECKING ||
+        snapshot.checkStatus == CodexCliVersionCheckStatus.UPGRADE_IN_PROGRESS
+    val showUpgradeAction = snapshot.checkStatus == CodexCliVersionCheckStatus.UPDATE_AVAILABLE &&
+        snapshot.isUpgradeSupported
+    val showManualUpgradeHint = snapshot.checkStatus == CodexCliVersionCheckStatus.UPDATE_AVAILABLE &&
+        !snapshot.isUpgradeSupported
+    val showVersionCommand = showManualUpgradeHint && snapshot.displayCommand.isNotBlank()
+    val primaryActionLabel = when {
+        snapshot.checkStatus == CodexCliVersionCheckStatus.CHECKING -> AuraCodeBundle.message("settings.codexVersion.action.checking")
+        snapshot.checkStatus == CodexCliVersionCheckStatus.UPGRADE_IN_PROGRESS -> AuraCodeBundle.message("settings.codexVersion.action.upgrading")
+        showUpgradeAction -> AuraCodeBundle.message("settings.codexVersion.upgrade")
+        snapshot.checkStatus == CodexCliVersionCheckStatus.UP_TO_DATE ||
+            snapshot.checkStatus == CodexCliVersionCheckStatus.UPGRADE_SUCCEEDED -> AuraCodeBundle.message("settings.codexVersion.action.upToDate")
+        else -> AuraCodeBundle.message("settings.codexVersion.check")
+    }
+    val primaryActionIntent = when {
+        snapshot.checkStatus == CodexCliVersionCheckStatus.CHECKING -> null
+        snapshot.checkStatus == CodexCliVersionCheckStatus.UPGRADE_IN_PROGRESS -> null
+        showUpgradeAction -> UiIntent.UpgradeCodexCli
+        else -> UiIntent.CheckCodexCliVersion
+    }
+    return CodexCliVersionPanelModel(
+        currentVersionText = currentVersionText,
+        latestVersionText = latestVersionText,
+        displayCommand = snapshot.displayCommand,
+        showPrimaryAction = true,
+        primaryActionLabel = primaryActionLabel,
+        primaryActionIntent = primaryActionIntent,
+        isPrimaryActionEmphasized = showUpgradeAction,
+        showManualUpgradeHint = showManualUpgradeHint,
+        showVersionCommand = showVersionCommand,
+        showStatusBadge = false,
+        showAutoCheckToggle = false,
+        isBusy = isBusy,
+    )
+}
+
+@Composable
+private fun VersionRow(
+    p: DesignPalette,
+    title: String,
+    value: String,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = title,
+            color = p.textPrimary,
+            style = MaterialTheme.typography.body2,
+        )
+        Text(
+            text = value,
+            color = p.textSecondary,
+            style = MaterialTheme.typography.body2,
+        )
+    }
+}
