@@ -20,6 +20,7 @@ import androidx.compose.ui.unit.dp
 import com.auracode.assistant.i18n.AuraCodeBundle
 import com.auracode.assistant.toolwindow.eventing.UiIntent
 import com.auracode.assistant.toolwindow.shared.DesignPalette
+import com.auracode.assistant.toolwindow.shared.HoverTooltip
 import com.auracode.assistant.toolwindow.shared.assistantUiTokens
 import com.auracode.assistant.toolwindow.toolinput.ToolUserInputAnswerDraftUiModel
 import com.auracode.assistant.toolwindow.toolinput.ToolUserInputChoiceKind
@@ -192,33 +193,35 @@ internal fun ToolUserInputComposerSection(
                         },
                     )
                 } else {
-                    ComposerCardAction(
-                        label = freeformChoiceDisplayText(
-                            label = choice.label,
-                            kind = choice.kind,
-                            textValue = draft.textValue,
-                            placeholder = otherPlaceholder,
-                        ),
-                        description = "",
-                        emphasized = index == state.activeChoiceIndex,
-                        p = p,
-                        emphasisStyle = ComposerCardActionEmphasisStyle.SUBTLE_HIGHLIGHT,
-                        showKeyboardHintIcon = shouldShowToolUserInputKeyboardHint(
-                            kind = choice.kind,
-                            index = index,
-                            activeChoiceIndex = state.activeChoiceIndex,
-                        ),
-                        modifier = Modifier.fillMaxWidth(),
-                        compactVerticalPadding = 8.dp,
-                        onClick = {
-                            commitToolUserInputChoice(
-                                state = state,
-                                questionId = question.id,
-                                optionLabel = choice.label,
-                                onIntent = onIntent,
-                            )
-                        },
-                    )
+                    HoverTooltip(text = if (choice.kind == ToolUserInputChoiceKind.FIXED) choice.description else "") {
+                        ComposerCardAction(
+                            label = freeformChoiceDisplayText(
+                                label = choice.label,
+                                kind = choice.kind,
+                                textValue = draft.textValue,
+                                placeholder = otherPlaceholder,
+                            ),
+                            description = "",
+                            emphasized = index == state.activeChoiceIndex,
+                            p = p,
+                            emphasisStyle = ComposerCardActionEmphasisStyle.SUBTLE_HIGHLIGHT,
+                            showKeyboardHintIcon = shouldShowToolUserInputKeyboardHint(
+                                kind = choice.kind,
+                                index = index,
+                                activeChoiceIndex = state.activeChoiceIndex,
+                            ),
+                            modifier = Modifier.fillMaxWidth(),
+                            compactVerticalPadding = 8.dp,
+                            onClick = {
+                                commitToolUserInputChoice(
+                                    state = state,
+                                    questionId = question.id,
+                                    optionLabel = choice.label,
+                                    onIntent = onIntent,
+                                )
+                            },
+                        )
+                    }
                 }
             }
         }
