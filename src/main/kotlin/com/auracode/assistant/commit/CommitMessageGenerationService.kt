@@ -1,5 +1,7 @@
 package com.auracode.assistant.commit
 
+import com.auracode.assistant.coroutine.AppCoroutineManager
+import com.auracode.assistant.coroutine.ManagedCoroutineScope
 import com.auracode.assistant.i18n.AuraCodeBundle
 import com.auracode.assistant.model.AgentApprovalMode
 import com.auracode.assistant.model.AgentRequest
@@ -15,16 +17,9 @@ import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.vcs.CommitMessageI
-import com.intellij.openapi.vcs.changes.Change
-import com.intellij.vcs.commit.CommitMessageUi
 import com.intellij.vcs.commit.CommitWorkflowUi
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.collect
-import kotlinx.coroutines.launch
 import java.util.concurrent.atomic.AtomicBoolean
 
 @Service(Service.Level.PROJECT)
@@ -70,7 +65,15 @@ internal class CommitMessageGenerationService private constructor(
         failureNotifier = {},
     )
 
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val scope: ManagedCoroutineScope = AppCoroutineManager.createScope(
+        scopeName = "CommitMessageGenerationService",
+        dispatcher = Dispatchers.IO,
+        failureReporter = { _, label, error ->
+            failureNotifier(
+                error.message ?: "Coroutine failed${label?.let { " ($it)" }.orEmpty()}.",
+            )
+        },
+    )
     private val running = AtomicBoolean(false)
 
     fun isRunning(): Boolean = running.get()
@@ -84,7 +87,7 @@ internal class CommitMessageGenerationService private constructor(
         commitMessageUi.startLoading()
         val includedChanges = commitWorkflowUi.getIncludedChanges().toList()
         val includedUnversioned = commitWorkflowUi.getIncludedUnversionedFiles().map { it.path }
-        scope.launch {
+        scope.launch(label = "generateAndApply") {
             val result = runCatching {
                 val collector = contextService
                     ?: error("Commit message context service is unavailable.")

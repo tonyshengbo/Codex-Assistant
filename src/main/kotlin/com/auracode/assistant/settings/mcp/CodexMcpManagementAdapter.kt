@@ -1,5 +1,7 @@
 package com.auracode.assistant.settings.mcp
 
+import com.auracode.assistant.coroutine.AppCoroutineManager
+import com.auracode.assistant.coroutine.ManagedCoroutineScope
 import com.auracode.assistant.provider.CodexProviderFactory
 import com.auracode.assistant.provider.codex.CodexEnvironmentDetector
 import com.auracode.assistant.provider.codex.CodexEnvironmentResolution
@@ -9,10 +11,7 @@ import com.intellij.execution.configurations.GeneralCommandLine
 import com.intellij.execution.process.CapturingProcessHandler
 import com.intellij.openapi.diagnostic.Logger
 import kotlinx.coroutines.CompletableDeferred
-import kotlinx.coroutines.DelicateCoroutinesApi
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.GlobalScope
-import kotlinx.coroutines.launch
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
@@ -417,7 +416,7 @@ internal interface CodexMcpAppServerClient : AutoCloseable {
     suspend fun startOAuthLogin(name: String): String?
 }
 
-@OptIn(ExperimentalSerializationApi::class, DelicateCoroutinesApi::class)
+@OptIn(ExperimentalSerializationApi::class)
 private class RealCodexMcpAppServerClient(
     binary: String,
     environmentOverrides: Map<String, String>,
@@ -435,6 +434,15 @@ private class RealCodexMcpAppServerClient(
     private val writer = process.outputStream.bufferedWriter(Charsets.UTF_8)
     private val nextId = AtomicInteger(1)
     private val pending = ConcurrentHashMap<String, CompletableDeferred<JsonElement>>()
+    private val managedScope: ManagedCoroutineScope = AppCoroutineManager.createScope(
+        scopeName = "CodexMcpAppServerClient",
+        dispatcher = Dispatchers.IO,
+        failureReporter = { scopeName, label, error ->
+            diagnosticLogger(
+                "$scopeName coroutine failed${label?.let { ": $it" }.orEmpty()}: ${error.message}\n${error.stackTraceToString()}",
+            )
+        },
+    )
 
     init {
         startReader()
@@ -538,11 +546,12 @@ private class RealCodexMcpAppServerClient(
     }
 
     override fun close() {
+        managedScope.cancel()
         process.destroy()
     }
 
     private fun startReader() {
-        GlobalScope.launch(Dispatchers.IO) {
+        managedScope.launch(label = "stderrReader") {
             process.errorStream.bufferedReader(Charsets.UTF_8).useLines { lines ->
                 lines.forEach { line ->
                     if (line.isNotBlank()) {
@@ -551,24 +560,18 @@ private class RealCodexMcpAppServerClient(
                 }
             }
         }
-        GlobalScope.launch(Dispatchers.IO) {
-            runCatching {
-                process.inputStream.bufferedReader(Charsets.UTF_8).useLines { lines ->
-                    lines.forEach { line ->
-                        val trimmed = line.trim()
-                        if (trimmed.isBlank()) return@forEach
-                        diagnosticLogger("Codex MCP app-server recv: ${trimmed.take(4000)}")
-                        val obj = runCatching { json.parseToJsonElement(trimmed).jsonObject }.getOrNull() ?: return@forEach
-                        val id = obj.string("id") ?: return@forEach
-                        if (obj.containsKey("result") || obj.containsKey("error")) {
-                            pending.remove(id)?.complete(obj)
-                        }
+        managedScope.launch(label = "stdoutReader") {
+            process.inputStream.bufferedReader(Charsets.UTF_8).useLines { lines ->
+                lines.forEach { line ->
+                    val trimmed = line.trim()
+                    if (trimmed.isBlank()) return@forEach
+                    diagnosticLogger("Codex MCP app-server recv: ${trimmed.take(4000)}")
+                    val obj = runCatching { json.parseToJsonElement(trimmed).jsonObject }.getOrNull() ?: return@forEach
+                    val id = obj.string("id") ?: return@forEach
+                    if (obj.containsKey("result") || obj.containsKey("error")) {
+                        pending.remove(id)?.complete(obj)
                     }
                 }
-            }.onFailure { error ->
-                diagnosticLogger(
-                    "Codex MCP app-server reader failed: ${error.message}\n${error.stackTraceToString()}",
-                )
             }
         }
     }

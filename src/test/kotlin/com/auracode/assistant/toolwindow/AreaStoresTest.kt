@@ -5,6 +5,7 @@ import androidx.compose.ui.text.input.TextFieldValue
 import com.auracode.assistant.model.TurnUsageSnapshot
 import com.auracode.assistant.protocol.ItemStatus
 import com.auracode.assistant.service.AgentChatService
+import com.auracode.assistant.settings.UiScaleMode
 import com.auracode.assistant.settings.UiThemeMode
 import com.auracode.assistant.settings.SavedAgentDefinition
 import com.auracode.assistant.conversation.ConversationSummary
@@ -362,6 +363,7 @@ class AreaStoresTest {
                 nodePath = "/opt/homebrew/bin/node",
                 languageMode = com.auracode.assistant.settings.UiLanguageMode.FOLLOW_IDE,
                 themeMode = UiThemeMode.DARK,
+                uiScaleMode = UiScaleMode.P100,
                 autoContextEnabled = true,
                 backgroundCompletionNotificationsEnabled = true,
                 codexCliAutoUpdateCheckEnabled = true,
@@ -375,11 +377,13 @@ class AreaStoresTest {
         assertEquals("/opt/homebrew/bin/node", store.state.value.nodePath)
 
         store.onEvent(AppEvent.UiIntentPublished(UiIntent.EditSettingsThemeMode(UiThemeMode.LIGHT)))
+        store.onEvent(AppEvent.UiIntentPublished(UiIntent.EditSettingsUiScaleMode(UiScaleMode.P120)))
         store.onEvent(AppEvent.UiIntentPublished(UiIntent.EditSettingsAutoContextEnabled(false)))
         store.onEvent(AppEvent.UiIntentPublished(UiIntent.EditSettingsBackgroundCompletionNotificationsEnabled(false)))
         store.onEvent(AppEvent.UiIntentPublished(UiIntent.EditSettingsCodexCliAutoUpdateCheckEnabled(false)))
 
         assertEquals(UiThemeMode.LIGHT, store.state.value.themeMode)
+        assertEquals(UiScaleMode.P120, store.state.value.uiScaleMode)
         assertFalse(store.state.value.autoContextEnabled)
         assertFalse(store.state.value.backgroundCompletionNotificationsEnabled)
         assertFalse(store.state.value.codexCliAutoUpdateCheckEnabled)

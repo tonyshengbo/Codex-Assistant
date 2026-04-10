@@ -1,5 +1,7 @@
 package com.auracode.assistant.toolwindow.eventing
 
+import com.auracode.assistant.coroutine.AppCoroutineManager
+import com.auracode.assistant.coroutine.ManagedCoroutineScope
 import com.auracode.assistant.context.MentionFileWhitelist
 import com.auracode.assistant.notification.ChatCompletionNotificationService
 import com.auracode.assistant.provider.codex.CodexCliVersionService
@@ -23,10 +25,7 @@ import com.auracode.assistant.toolwindow.timeline.TimelineMutation
 import com.auracode.assistant.toolwindow.toolinput.ToolUserInputPromptStore
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.diagnostic.Logger
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.collect
 import java.awt.Desktop
 import java.net.URI
@@ -92,7 +91,13 @@ internal class ToolWindowCoordinator(
             "The user approved the latest plan. Execute it now. Unless blocked, do not re-plan."
     }
 
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    private val scope: ManagedCoroutineScope = AppCoroutineManager.createScope(
+        scopeName = "ToolWindowCoordinator",
+        dispatcher = Dispatchers.Default,
+        failureReporter = { _, label, error ->
+            LOG.error("ToolWindowCoordinator coroutine failed${label?.let { ": $it" }.orEmpty()}", error)
+        },
+    )
     private val recentFocusedFiles = ArrayDeque<String>()
     private val sessionUiStateCache = SessionUiStateCache()
     private val pendingSubmissionsBySessionId = linkedMapOf<String, ArrayDeque<com.auracode.assistant.toolwindow.composer.PendingComposerSubmission>>()
@@ -147,7 +152,7 @@ internal class ToolWindowCoordinator(
         diagnosticLog = diagnosticLog,
         onSessionSnapshotPublished = onSessionSnapshotPublished,
         historyPageSize = historyPageSize,
-        scope = scope,
+        scope = scope.coroutineScope,
         recentFocusedFiles = recentFocusedFiles,
         pendingSubmissionsBySessionId = pendingSubmissionsBySessionId,
         activePlanRunContexts = activePlanRunContexts,
@@ -267,6 +272,7 @@ internal class ToolWindowCoordinator(
             is UiIntent.UpdateFocusedContextFile -> workspaceHandler.recordFocusedFile(intent.snapshot?.path)
             is UiIntent.EditSettingsLanguageMode -> settingsHandler.applyLanguagePreview(intent.mode)
             is UiIntent.EditSettingsThemeMode -> settingsHandler.applyThemePreview(intent.mode)
+            is UiIntent.EditSettingsUiScaleMode -> settingsHandler.applyUiScalePreview(intent.mode)
             is UiIntent.EditSettingsAutoContextEnabled -> settingsHandler.applyAutoContextPreference(intent.enabled)
             is UiIntent.EditSettingsBackgroundCompletionNotificationsEnabled -> {
                 settingsHandler.applyBackgroundCompletionNotificationPreference(intent.enabled)
@@ -372,6 +378,7 @@ internal class ToolWindowCoordinator(
                 nodePath = settingsService.nodeExecutablePath(),
                 languageMode = settingsService.uiLanguageMode(),
                 themeMode = settingsService.uiThemeMode(),
+                uiScaleMode = settingsService.uiScaleMode(),
                 autoContextEnabled = settingsService.autoContextEnabled(),
                 backgroundCompletionNotificationsEnabled = settingsService.backgroundCompletionNotificationsEnabled(),
                 codexCliAutoUpdateCheckEnabled = settingsService.codexCliAutoUpdateCheckEnabled(),

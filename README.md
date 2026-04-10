@@ -106,7 +106,7 @@ Useful commands during development:
 
 ### Context And File Changes
 
-- Auto-context can follow the active editor file and selected text
+- Auto-context can follow the active editor file and selected text‰
 - Manual file context, file mentions, and attachments are supported
 - Changed files are collected per chat and surfaced with diff/open/revert actions
 

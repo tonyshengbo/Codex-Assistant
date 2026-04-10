@@ -19,7 +19,6 @@ import com.auracode.assistant.toolwindow.shared.UiText
 import com.intellij.notification.NotificationAction
 import com.intellij.notification.NotificationType
 import java.util.UUID
-import kotlinx.coroutines.launch
 
 internal class SettingsAndEnvironmentHandler(
     private val context: ToolWindowCoordinatorContext,
@@ -34,6 +33,13 @@ internal class SettingsAndEnvironmentHandler(
     fun applyThemePreview(mode: com.auracode.assistant.settings.UiThemeMode) {
         if (context.settingsService.uiThemeMode() == mode) return
         context.settingsService.setUiThemeMode(mode)
+        context.settingsService.notifyAppearanceChanged()
+        context.publishSettingsSnapshot()
+    }
+
+    fun applyUiScalePreview(mode: com.auracode.assistant.settings.UiScaleMode) {
+        if (context.settingsService.uiScaleMode() == mode) return
+        context.settingsService.setUiScaleMode(mode)
         context.settingsService.notifyAppearanceChanged()
         context.publishSettingsSnapshot()
     }
@@ -60,11 +66,13 @@ internal class SettingsAndEnvironmentHandler(
         val drawerState = context.rightDrawerStore.state.value
         val oldLanguage = context.settingsService.uiLanguageMode()
         val oldTheme = context.settingsService.uiThemeMode()
+        val oldUiScale = context.settingsService.uiScaleMode()
         val state = context.settingsService.state
         state.setExecutablePathFor("codex", drawerState.codexCliPath.trim())
         context.settingsService.setNodeExecutablePath(drawerState.nodePath.trim())
         context.settingsService.setUiLanguageMode(drawerState.languageMode)
         context.settingsService.setUiThemeMode(drawerState.themeMode)
+        context.settingsService.setUiScaleMode(drawerState.uiScaleMode)
         context.settingsService.setAutoContextEnabled(drawerState.autoContextEnabled)
         context.settingsService.setBackgroundCompletionNotificationsEnabled(
             drawerState.backgroundCompletionNotificationsEnabled,
@@ -73,7 +81,7 @@ internal class SettingsAndEnvironmentHandler(
         if (oldLanguage != context.settingsService.uiLanguageMode()) {
             context.settingsService.notifyLanguageChanged()
         }
-        if (oldTheme != context.settingsService.uiThemeMode()) {
+        if (oldTheme != context.settingsService.uiThemeMode() || oldUiScale != context.settingsService.uiScaleMode()) {
             context.settingsService.notifyAppearanceChanged()
         }
         context.publishSettingsSnapshot()
@@ -82,7 +90,7 @@ internal class SettingsAndEnvironmentHandler(
     fun detectCodexEnvironment() {
         val drawerState = context.rightDrawerStore.state.value
         context.eventHub.publish(AppEvent.CodexEnvironmentCheckRunning(true))
-        context.scope.launch {
+        context.coroutineLauncher.launch("detectCodexEnvironment") {
             runCatching {
                 context.codexEnvironmentDetector.autoDetect(
                     configuredCodexPath = drawerState.codexCliPath,
@@ -110,7 +118,7 @@ internal class SettingsAndEnvironmentHandler(
     fun testCodexEnvironment() {
         val drawerState = context.rightDrawerStore.state.value
         context.eventHub.publish(AppEvent.CodexEnvironmentCheckRunning(true))
-        context.scope.launch {
+        context.coroutineLauncher.launch("testCodexEnvironment") {
             runCatching {
                 context.codexEnvironmentDetector.testEnvironment(
                     configuredCodexPath = drawerState.codexCliPath,

@@ -16,6 +16,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.auracode.assistant.i18n.AuraCodeBundle
 import com.auracode.assistant.settings.UiLanguageMode
+import com.auracode.assistant.settings.UiScaleMode
 import com.auracode.assistant.settings.UiThemeMode
 import com.auracode.assistant.toolwindow.drawer.RightDrawerAreaState
 import com.auracode.assistant.toolwindow.eventing.UiIntent
@@ -62,6 +63,18 @@ internal fun GeneralSettingsPage(
                 modifier = Modifier.width(220.dp),
             )
         }
+        SettingsField(
+            p = p,
+            title = AuraCodeBundle.message("settings.fontScale.label"),
+            description = AuraCodeBundle.message("settings.fontScale.hint"),
+        ) {
+            UiScaleModeDropdown(
+                p = p,
+                value = state.uiScaleMode,
+                onSelect = { onIntent(UiIntent.EditSettingsUiScaleMode(it)) },
+                modifier = Modifier.width(220.dp),
+            )
+        }
         SettingsGroupHeader(
             p = p,
             title = AuraCodeBundle.message("settings.group.environment"),
@@ -92,6 +105,39 @@ internal fun GeneralSettingsPage(
                     onIntent(UiIntent.EditSettingsBackgroundCompletionNotificationsEnabled(it))
                 },
             )
+        }
+    }
+}
+
+@Composable
+private fun UiScaleModeDropdown(
+    p: DesignPalette,
+    value: UiScaleMode,
+    onSelect: (UiScaleMode) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    var expanded by remember { mutableStateOf(false) }
+    SettingsSelectField(
+        p = p,
+        text = uiScaleModeLabel(value),
+        modifier = modifier,
+        onClick = { expanded = true },
+    )
+    DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+        DropdownMenuItem(onClick = { expanded = false; onSelect(UiScaleMode.P80) }) {
+            Text(AuraCodeBundle.message("settings.fontScale.80"))
+        }
+        DropdownMenuItem(onClick = { expanded = false; onSelect(UiScaleMode.P90) }) {
+            Text(AuraCodeBundle.message("settings.fontScale.90"))
+        }
+        DropdownMenuItem(onClick = { expanded = false; onSelect(UiScaleMode.P100) }) {
+            Text(AuraCodeBundle.message("settings.fontScale.100"))
+        }
+        DropdownMenuItem(onClick = { expanded = false; onSelect(UiScaleMode.P110) }) {
+            Text(AuraCodeBundle.message("settings.fontScale.110"))
+        }
+        DropdownMenuItem(onClick = { expanded = false; onSelect(UiScaleMode.P120) }) {
+            Text(AuraCodeBundle.message("settings.fontScale.120"))
         }
     }
 }
@@ -168,4 +214,12 @@ private fun themeModeLabel(mode: UiThemeMode): String = when (mode) {
     UiThemeMode.FOLLOW_IDE -> AuraCodeBundle.message("settings.theme.followIde")
     UiThemeMode.LIGHT -> AuraCodeBundle.message("settings.theme.light")
     UiThemeMode.DARK -> AuraCodeBundle.message("settings.theme.dark")
+}
+
+private fun uiScaleModeLabel(mode: UiScaleMode): String = when (mode) {
+    UiScaleMode.P80 -> AuraCodeBundle.message("settings.fontScale.80")
+    UiScaleMode.P90 -> AuraCodeBundle.message("settings.fontScale.90")
+    UiScaleMode.P100 -> AuraCodeBundle.message("settings.fontScale.100")
+    UiScaleMode.P110 -> AuraCodeBundle.message("settings.fontScale.110")
+    UiScaleMode.P120 -> AuraCodeBundle.message("settings.fontScale.120")
 }

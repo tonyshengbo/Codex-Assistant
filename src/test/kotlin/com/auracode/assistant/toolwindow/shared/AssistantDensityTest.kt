@@ -2,6 +2,7 @@ package com.auracode.assistant.toolwindow.shared
 
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.auracode.assistant.settings.UiScaleMode
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -33,5 +34,25 @@ class AssistantDensityTest {
         assertEquals(8.dp, tokens.markdown.codePadding)
         assertEquals(8.dp, tokens.markdown.quoteIndent)
         assertEquals(8.dp, tokens.markdown.tableCellPadding)
+    }
+
+    @Test
+    fun `small scale mode shrinks body typography and spacing`() {
+        val base = assistantUiTokens(UiScaleMode.P100)
+        val small = assistantUiTokens(UiScaleMode.P80)
+
+        assertTrue(small.type.body < base.type.body)
+        assertTrue(small.spacing.md < base.spacing.md)
+        assertTrue(small.controls.sendButton < base.controls.sendButton)
+    }
+
+    @Test
+    fun `large scale mode expands body typography and spacing`() {
+        val base = assistantUiTokens(UiScaleMode.P100)
+        val large = assistantUiTokens(UiScaleMode.P120)
+
+        assertTrue(large.type.body > base.type.body)
+        assertTrue(large.spacing.md > base.spacing.md)
+        assertTrue(large.controls.sendButton > base.controls.sendButton)
     }
 }

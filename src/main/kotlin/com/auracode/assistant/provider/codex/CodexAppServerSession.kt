@@ -1,12 +1,9 @@
 package com.auracode.assistant.provider.codex
 
+import com.auracode.assistant.coroutine.AppCoroutineManager
+import com.auracode.assistant.coroutine.ManagedCoroutineScope
 import kotlinx.coroutines.CompletableDeferred
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.DelicateCoroutinesApi
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.GlobalScope
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.launch
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
@@ -51,19 +48,22 @@ internal class CodexProcessAppServerSession(
     private val writer = process.outputStream.bufferedWriter(Charsets.UTF_8)
     private val nextId = AtomicInteger(1)
     private val pending = ConcurrentHashMap<String, CompletableDeferred<JsonElement>>()
-    private val callbackScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val callbackScope: ManagedCoroutineScope = AppCoroutineManager.createScope(
+        scopeName = "CodexProcessAppServerSession",
+        dispatcher = Dispatchers.IO,
+        failureReporter = { scopeName, label, error ->
+            diagnosticLogger(
+                "$scopeName coroutine failed${label?.let { ": $it" }.orEmpty()}: ${error.message}\n${error.stackTraceToString()}",
+            )
+        },
+    )
 
-    @OptIn(DelicateCoroutinesApi::class)
     override fun start() {
-        GlobalScope.launch(Dispatchers.IO) {
-            runCatching {
-                process.inputStream.bufferedReader(Charsets.UTF_8).useLines { lines ->
-                    lines.forEach { line ->
-                        handleLine(line)
-                    }
+        callbackScope.launch(label = "processInput") {
+            process.inputStream.bufferedReader(Charsets.UTF_8).useLines { lines ->
+                lines.forEach { line ->
+                    handleLine(line)
                 }
-            }.onFailure { error ->
-                diagnosticLogger("Codex app-server reader coroutine failed: ${error.message}\n${error.stackTraceToString()}")
             }
         }
     }
@@ -132,13 +132,13 @@ internal class CodexProcessAppServerSession(
             return
         }
         if (method != null && rawId != null) {
-            callbackScope.launch {
+            callbackScope.launch(label = "serverRequest:$method") {
                 onServerRequest(rawId, method, obj.objectValue("params") ?: buildJsonObject {})
             }
             return
         }
         if (method != null) {
-            callbackScope.launch {
+            callbackScope.launch(label = "notification:$method") {
                 onNotification(method, obj.objectValue("params") ?: buildJsonObject {})
             }
         }

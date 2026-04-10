@@ -2,6 +2,8 @@ package com.auracode.assistant.service
 
 import com.auracode.assistant.conversation.ConversationHistoryPage
 import com.auracode.assistant.conversation.ConversationRef
+import com.auracode.assistant.conversation.ConversationSummary
+import com.auracode.assistant.conversation.ConversationSummaryPage
 import com.auracode.assistant.i18n.AuraCodeBundle
 import com.auracode.assistant.model.AgentRequest
 import com.auracode.assistant.model.MessageRole
@@ -166,6 +168,40 @@ class AgentChatServicePersistenceTest {
         reloaded.dispose()
     }
 
+    @Test
+    fun `falls back to unfiltered remote history summaries when cwd-scoped query is empty`() = runBlocking {
+        val dbPath = createTempDirectory("chat-service-history-summary-fallback").resolve("chat.db")
+        val settings = AgentSettingsService().apply { loadState(AgentSettingsService.State()) }
+        val provider = CwdSensitiveHistorySummaryProvider(
+            expectedCwd = "/project/current",
+            fallbackPage = ConversationSummaryPage(
+                conversations = listOf(
+                    ConversationSummary(
+                        remoteConversationId = "thread-1",
+                        title = "历史会话",
+                        createdAt = 1L,
+                        updatedAt = 2L,
+                        status = "idle",
+                    ),
+                ),
+                nextCursor = null,
+            ),
+        )
+        val service = AgentChatService(
+            repository = SQLiteChatSessionRepository(dbPath),
+            registry = registry(provider),
+            settings = settings,
+            workingDirectoryProvider = { "/project/current" },
+        )
+
+        val page = service.loadRemoteConversationSummaries(limit = 20)
+
+        assertEquals(listOf("/project/current", null), provider.recordedCwds)
+        assertEquals(listOf("thread-1"), page.conversations.map { it.remoteConversationId })
+
+        service.dispose()
+    }
+
     private fun registry(provider: AgentProvider): ProviderRegistry {
         return ProviderRegistry(
             descriptors = listOf(
@@ -296,6 +332,31 @@ class AgentChatServicePersistenceTest {
                 add(UnifiedEvent.TurnCompleted(turnId = turnId, outcome = TurnOutcome.SUCCESS))
             }
         }
+    }
+
+    private class CwdSensitiveHistorySummaryProvider(
+        private val expectedCwd: String,
+        private val fallbackPage: ConversationSummaryPage,
+    ) : AgentProvider {
+        val recordedCwds = mutableListOf<String?>()
+
+        override fun stream(request: AgentRequest): Flow<UnifiedEvent> = flow { }
+
+        override suspend fun listRemoteConversations(
+            pageSize: Int,
+            cursor: String?,
+            cwd: String?,
+            searchTerm: String?,
+        ): ConversationSummaryPage {
+            recordedCwds += cwd
+            return if (cwd == expectedCwd) {
+                ConversationSummaryPage(conversations = emptyList(), nextCursor = null)
+            } else {
+                fallbackPage
+            }
+        }
+
+        override fun cancel(requestId: String) = Unit
     }
 
     private fun List<UnifiedEvent>.narrativeTexts(): List<Pair<MessageRole, String>> {

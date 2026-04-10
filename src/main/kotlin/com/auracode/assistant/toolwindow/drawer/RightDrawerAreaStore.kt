@@ -4,6 +4,7 @@ import com.auracode.assistant.conversation.ConversationSummary
 import com.auracode.assistant.service.AgentChatService
 import com.auracode.assistant.settings.SavedAgentDefinition
 import com.auracode.assistant.settings.UiLanguageMode
+import com.auracode.assistant.settings.UiScaleMode
 import com.auracode.assistant.settings.UiThemeMode
 import com.auracode.assistant.settings.skills.SkillRuntimeEntry
 import com.auracode.assistant.settings.mcp.McpBusyState
@@ -48,6 +49,7 @@ internal data class RightDrawerAreaState(
     val environmentDraft: EnvironmentDraftState = EnvironmentDraftState(),
     val languageMode: UiLanguageMode = UiLanguageMode.FOLLOW_IDE,
     val themeMode: UiThemeMode = UiThemeMode.FOLLOW_IDE,
+    val uiScaleMode: UiScaleMode = UiScaleMode.P100,
     val autoContextEnabled: Boolean = true,
     val backgroundCompletionNotificationsEnabled: Boolean = true,
     val codexCliAutoUpdateCheckEnabled: Boolean = true,
@@ -162,6 +164,10 @@ internal class RightDrawerAreaStore {
 
                     is UiIntent.EditSettingsThemeMode -> {
                         _state.value = _state.value.copy(themeMode = event.intent.mode)
+                    }
+
+                    is UiIntent.EditSettingsUiScaleMode -> {
+                        _state.value = _state.value.copy(uiScaleMode = event.intent.mode)
                     }
 
                     is UiIntent.EditSettingsAutoContextEnabled -> {
@@ -304,6 +310,7 @@ internal class RightDrawerAreaStore {
                     ),
                     languageMode = event.languageMode,
                     themeMode = event.themeMode,
+                    uiScaleMode = event.uiScaleMode,
                     autoContextEnabled = event.autoContextEnabled,
                     backgroundCompletionNotificationsEnabled = event.backgroundCompletionNotificationsEnabled,
                     codexCliAutoUpdateCheckEnabled = event.codexCliAutoUpdateCheckEnabled,

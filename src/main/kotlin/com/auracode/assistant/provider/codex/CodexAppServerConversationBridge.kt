@@ -1,5 +1,7 @@
 package com.auracode.assistant.provider.codex
 
+import com.auracode.assistant.coroutine.AppCoroutineManager
+import com.auracode.assistant.coroutine.ManagedCoroutineScope
 import com.auracode.assistant.model.AgentApprovalMode
 import com.auracode.assistant.model.AgentCollaborationMode
 import com.auracode.assistant.model.AgentRequest
@@ -9,10 +11,7 @@ import com.auracode.assistant.protocol.UnifiedEvent
 import com.auracode.assistant.protocol.UnifiedToolUserInputSubmission
 import com.auracode.assistant.toolwindow.approval.ApprovalAction
 import kotlinx.coroutines.CompletableDeferred
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.launch
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
@@ -38,7 +37,15 @@ internal class CodexAppServerConversationBridge(
         requestId = request.requestId,
         diagnosticLogger = diagnosticLogger,
     )
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val scope: ManagedCoroutineScope = AppCoroutineManager.createScope(
+        scopeName = "CodexAppServerConversationBridge",
+        dispatcher = Dispatchers.IO,
+        failureReporter = { scopeName, label, error ->
+            diagnosticLogger(
+                "$scopeName coroutine failed${label?.let { ": $it" }.orEmpty()}: ${error.message}\n${error.stackTraceToString()}",
+            )
+        },
+    )
 
     /** Initializes the underlying session. */
     suspend fun initialize() {
@@ -83,7 +90,7 @@ internal class CodexAppServerConversationBridge(
                 rawRequestId = id,
                 prompt = prompt,
             )
-            scope.launch {
+            scope.launch(label = "toolUserInput:$method") {
                 runCatching {
                     emitUnified(UnifiedEvent.ToolUserInputRequested(prompt))
                     val submission = active.pendingToolUserInputs[serverRequestId]?.response?.await()
@@ -101,7 +108,7 @@ internal class CodexAppServerConversationBridge(
             return
         }
         if (method !in APPROVAL_METHODS) {
-            scope.launch {
+            scope.launch(label = "autoApprove:$method") {
                 runCatching {
                     session.respond(
                         serverRequestId = id,
@@ -120,7 +127,7 @@ internal class CodexAppServerConversationBridge(
 
         val approvalRequest = buildApprovalRequest(serverRequestId = serverRequestId, method = method, params = params)
         active.pendingApprovals[serverRequestId] = CompletableDeferred()
-        scope.launch {
+        scope.launch(label = "approval:$method") {
             runCatching {
                 emitUnified(UnifiedEvent.ApprovalRequested(approvalRequest))
                 val decision = active.pendingApprovals[serverRequestId]?.await() ?: ApprovalAction.REJECT
@@ -141,7 +148,7 @@ internal class CodexAppServerConversationBridge(
         val requestId = params["requestId"]?.let(::jsonRpcIdKey) ?: return
         val pendingToolUserInput = active.pendingToolUserInputs.remove(requestId)
         if (pendingToolUserInput != null) {
-            scope.launch {
+            scope.launch(label = "toolUserInputResolved:$requestId") {
                 emitUnified(UnifiedEvent.ToolUserInputResolved(requestId))
             }
         }

@@ -7,6 +7,11 @@ import kotlin.test.assertTrue
 
 class TimelineMarkdownTest {
     @Test
+    fun `timeline markdown body line height uses relaxed reading rhythm`() {
+        assertEquals(21f, timelineMarkdownBodyLineHeightSp(14f))
+    }
+
+    @Test
     fun `http and https links are considered safe`() {
         assertTrue(isSafeHttpUrl("https://example.com/a?b=1"))
         assertTrue(isSafeHttpUrl("http://localhost:8080/path"))

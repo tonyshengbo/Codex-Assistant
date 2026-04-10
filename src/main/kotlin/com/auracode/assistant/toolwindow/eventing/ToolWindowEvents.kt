@@ -10,6 +10,7 @@ import com.auracode.assistant.protocol.UnifiedEvent
 import com.auracode.assistant.service.AgentChatService
 import com.auracode.assistant.settings.SavedAgentDefinition
 import com.auracode.assistant.settings.UiLanguageMode
+import com.auracode.assistant.settings.UiScaleMode
 import com.auracode.assistant.settings.UiThemeMode
 import com.auracode.assistant.settings.skills.SkillRuntimeEntry
 import com.auracode.assistant.settings.mcp.McpBusyState
@@ -130,6 +131,7 @@ internal sealed interface UiIntent {
     data class EditSettingsNodePath(val value: String) : UiIntent
     data class EditSettingsLanguageMode(val mode: UiLanguageMode) : UiIntent
     data class EditSettingsThemeMode(val mode: UiThemeMode) : UiIntent
+    data class EditSettingsUiScaleMode(val mode: UiScaleMode) : UiIntent
     data class EditSettingsAutoContextEnabled(val enabled: Boolean) : UiIntent
     data class EditSettingsBackgroundCompletionNotificationsEnabled(val enabled: Boolean) : UiIntent
     data class EditSettingsCodexCliAutoUpdateCheckEnabled(val enabled: Boolean) : UiIntent
@@ -223,6 +225,7 @@ internal sealed interface AppEvent {
         val nodePath: String = "",
         val languageMode: UiLanguageMode,
         val themeMode: UiThemeMode,
+        val uiScaleMode: UiScaleMode = UiScaleMode.P100,
         val autoContextEnabled: Boolean,
         val backgroundCompletionNotificationsEnabled: Boolean = true,
         val codexCliAutoUpdateCheckEnabled: Boolean = true,

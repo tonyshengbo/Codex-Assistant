@@ -1,5 +1,7 @@
 package com.auracode.assistant.service
 
+import com.auracode.assistant.coroutine.AppCoroutineManager
+import com.auracode.assistant.coroutine.ManagedCoroutineScope
 import com.auracode.assistant.conversation.ConversationHistoryPage
 import com.auracode.assistant.conversation.ConversationCapabilities
 import com.auracode.assistant.conversation.ConversationRef
@@ -39,13 +41,9 @@ import com.intellij.openapi.components.Service
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.application.PathManager
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.collect
-import kotlinx.coroutines.launch
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.UUID
@@ -104,7 +102,19 @@ class AgentChatService private constructor(
         var usageSnapshot: TurnUsageSnapshot? = null,
     )
 
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val scope: ManagedCoroutineScope = AppCoroutineManager.createScope(
+        scopeName = "AgentChatService",
+        dispatcher = Dispatchers.IO,
+        failureReporter = { _, label, error ->
+            diagnosticLogger(
+                "AgentChatService coroutine failed${label?.let { ": $it" }.orEmpty()}: ${error.message}",
+            )
+            LOG.error(
+                "AgentChatService coroutine failed${label?.let { ": $it" }.orEmpty()}",
+                error,
+            )
+        },
+    )
     private val stateLock = Any()
     private val engineLaunchErrorPresenter = EngineLaunchErrorPresenter(
         registry = registry,
@@ -468,7 +478,7 @@ class AgentChatService private constructor(
             )
         }
         val provider = registry.providerOrDefault(engineId)
-        val job = scope.launch {
+        val job = scope.launch(label = "stream:${request.requestId}") {
             val assistantBuffer = StringBuilder()
             var activeTurnId = localTurnId?.trim().orEmpty()
             val countedAssistantItems = mutableSetOf<String>()

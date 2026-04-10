@@ -47,8 +47,8 @@ internal class ToolWindowHeaderOverflowAction(
             border = BorderFactory.createEmptyBorder(0, 0, 0, 0)
             addActionListener { showOverflowPopup(panel) }
         }
-        label.font = label.font.deriveFont(Font.BOLD, 12f)
-        arrow.font = arrow.font.deriveFont(Font.PLAIN, 12f)
+        label.font = label.font.deriveFont(Font.BOLD, tokens.type.label.value)
+        arrow.font = arrow.font.deriveFont(Font.PLAIN, tokens.type.label.value)
         panel.add(label, BorderLayout.CENTER)
         panel.add(arrow, BorderLayout.EAST)
         panel.putClientProperty("label", label)

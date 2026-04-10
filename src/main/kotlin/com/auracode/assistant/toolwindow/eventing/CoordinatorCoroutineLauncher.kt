@@ -1,32 +1,31 @@
 package com.auracode.assistant.toolwindow.eventing
 
+import com.auracode.assistant.coroutine.ManagedCoroutineScope
 import com.intellij.openapi.diagnostic.Logger
-import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.launch
 
 internal class CoordinatorCoroutineLauncher(
-    private val scope: CoroutineScope,
+    private val scope: ManagedCoroutineScope,
     private val logger: Logger,
     private val onMcpCancellation: (String) -> Unit,
     private val onMcpFailure: (String, Throwable) -> Unit,
 ) {
     fun launch(label: String, block: suspend () -> Unit) {
-        scope.launch {
-            runCatching { block() }.onFailure { error ->
-                if (error is CancellationException) {
-                    if (label.isMcpLabel()) {
-                        onMcpCancellation(label)
-                    }
-                    return@onFailure
-                }
+        scope.launch(
+            label = label,
+            onFailure = { error ->
                 if (label.isMcpLabel()) {
                     onMcpFailure(label, error)
                 } else {
                     logger.error("ToolWindowCoordinator coroutine failed: $label", error)
                 }
-            }
-        }
+            },
+            onCancellation = {
+                if (label.isMcpLabel()) {
+                    onMcpCancellation(label)
+                }
+            },
+            block = block,
+        )
     }
 
     private fun String.isMcpLabel(): Boolean {

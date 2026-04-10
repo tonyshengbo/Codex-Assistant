@@ -52,9 +52,9 @@ internal open class ToolWindowHeaderTabAction(
             isVisible = tab.closable
             addActionListener { onClose(tab.sessionId) }
         }
-        titleLabel.font = titleLabel.font.deriveFont(Font.PLAIN, 12f)
+        titleLabel.font = titleLabel.font.deriveFont(Font.PLAIN, tokens.type.label.value)
         titleLabel.toolTipText = tab.fullTitle
-        closeButton.preferredSize = java.awt.Dimension(14, 14)
+        closeButton.preferredSize = java.awt.Dimension(tokens.controls.iconMd.value.toInt(), tokens.controls.iconMd.value.toInt())
         val center = JPanel(BorderLayout(4, 0)).apply {
             isOpaque = false
             add(titleLabel, BorderLayout.CENTER)

@@ -25,6 +25,14 @@ enum class UiThemeMode {
     DARK,
 }
 
+enum class UiScaleMode {
+    P80,
+    P90,
+    P100,
+    P110,
+    P120,
+}
+
 @Service(Service.Level.APP)
 @State(name = "AuraCodeSettings", storages = [Storage("aura-code.xml")])
 class AgentSettingsService : PersistentStateComponent<AgentSettingsService.State> {
@@ -34,6 +42,7 @@ class AgentSettingsService : PersistentStateComponent<AgentSettingsService.State
         var engineExecutablePaths: MutableMap<String, String> = mutableMapOf("codex" to "codex"),
         var uiLanguage: String = UiLanguageMode.FOLLOW_IDE.name,
         var uiTheme: String = UiThemeMode.FOLLOW_IDE.name,
+        var uiScale: String = UiScaleMode.P100.name,
         var autoContextEnabled: Boolean = true,
         var backgroundCompletionNotificationsEnabled: Boolean = true,
         var codexCliAutoUpdateCheckEnabled: Boolean = true,
@@ -94,6 +103,25 @@ class AgentSettingsService : PersistentStateComponent<AgentSettingsService.State
 
     fun setUiThemeMode(mode: UiThemeMode) {
         state.uiTheme = mode.name
+    }
+
+    fun uiScaleMode(): UiScaleMode {
+        return when (state.uiScale.trim().uppercase()) {
+            UiScaleMode.P80.name -> UiScaleMode.P80
+            UiScaleMode.P90.name -> UiScaleMode.P90
+            UiScaleMode.P100.name -> UiScaleMode.P100
+            UiScaleMode.P110.name -> UiScaleMode.P110
+            UiScaleMode.P120.name -> UiScaleMode.P120
+            // Backward compatibility for persisted values from legacy 3-step scale.
+            "SMALL" -> UiScaleMode.P90
+            "NORMAL" -> UiScaleMode.P100
+            "LARGE" -> UiScaleMode.P110
+            else -> UiScaleMode.P100
+        }
+    }
+
+    fun setUiScaleMode(mode: UiScaleMode) {
+        state.uiScale = mode.name
     }
 
     fun autoContextEnabled(): Boolean = state.autoContextEnabled

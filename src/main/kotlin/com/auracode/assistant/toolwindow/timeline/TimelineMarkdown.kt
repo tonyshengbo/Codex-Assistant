@@ -32,6 +32,9 @@ internal fun TimelineMarkdown(
     onOpenFilePath: ((String) -> Unit)? = null,
 ) {
     val tokens = assistantUiTokens()
+    val typographyScale = tokens.type.body.value / 14f
+    fun scaledSp(value: Float) = (value * typographyScale).sp
+    val bodyLineHeight = timelineMarkdownBodyLineHeightSp(tokens.type.body.value)
     val externalUriHandler = LocalUriHandler.current
     val uriHandler = rememberTimelineMarkdownUriHandler(
         externalUriHandler = externalUriHandler,
@@ -56,60 +59,60 @@ internal fun TimelineMarkdown(
                     h1 = androidx.compose.material.MaterialTheme.typography.h5.copy(
                         color = palette.timelineCardText,
                         fontWeight = FontWeight.Bold,
-                        lineHeight = 24.sp,
+                        lineHeight = scaledSp(24f),
                     ),
                     h2 = androidx.compose.material.MaterialTheme.typography.h6.copy(
                         color = palette.timelineCardText,
                         fontWeight = FontWeight.SemiBold,
-                        lineHeight = 21.sp,
+                        lineHeight = scaledSp(21f),
                     ),
                     h3 = androidx.compose.material.MaterialTheme.typography.subtitle1.copy(
                         color = palette.timelineCardText,
                         fontWeight = FontWeight.Medium,
-                        lineHeight = 18.sp,
+                        lineHeight = scaledSp(18f),
                     ),
                     h4 = androidx.compose.material.MaterialTheme.typography.subtitle1.copy(
                         color = palette.timelineCardText,
                         fontWeight = FontWeight.Medium,
-                        lineHeight = 18.sp,
+                        lineHeight = scaledSp(18f),
                     ),
                     h5 = androidx.compose.material.MaterialTheme.typography.body1.copy(
                         color = palette.timelineCardText,
                         fontWeight = FontWeight.Medium,
-                        lineHeight = 20.sp,
+                        lineHeight = scaledSp(20f),
                     ),
                     h6 = androidx.compose.material.MaterialTheme.typography.body2.copy(
                         color = palette.timelineCardText,
                         fontWeight = FontWeight.Medium,
-                        lineHeight = 16.sp,
+                        lineHeight = scaledSp(16f),
                     ),
                     text = androidx.compose.material.MaterialTheme.typography.body1.copy(
                         color = palette.timelinePlainText,
-                        lineHeight = 20.sp,
+                        lineHeight = bodyLineHeight.sp,
                     ),
                     paragraph = androidx.compose.material.MaterialTheme.typography.body1.copy(
                         color = palette.timelinePlainText,
-                        lineHeight = 20.sp,
+                        lineHeight = bodyLineHeight.sp,
                     ),
                     ordered = androidx.compose.material.MaterialTheme.typography.body1.copy(
                         color = palette.timelinePlainText,
-                        lineHeight = 20.sp,
+                        lineHeight = bodyLineHeight.sp,
                     ),
                     bullet = androidx.compose.material.MaterialTheme.typography.body1.copy(
                         color = palette.timelinePlainText,
-                        lineHeight = 20.sp,
+                        lineHeight = bodyLineHeight.sp,
                     ),
                     list = androidx.compose.material.MaterialTheme.typography.body1.copy(
                         color = palette.timelinePlainText,
-                        lineHeight = 20.sp,
+                        lineHeight = bodyLineHeight.sp,
                     ),
                     quote = androidx.compose.material.MaterialTheme.typography.body2.copy(
                         color = palette.markdownQuoteText,
-                        lineHeight = 18.sp,
+                        lineHeight = scaledSp(18f),
                     ),
                     code = assistantMonospaceStyle(tokens).copy(
                         color = palette.markdownCodeText,
-                        lineHeight = 18.sp,
+                        lineHeight = scaledSp(18f),
                     ),
                     inlineCode = assistantMonospaceStyle(tokens).copy(
                         color = palette.markdownCodeText,
@@ -119,7 +122,7 @@ internal fun TimelineMarkdown(
                         color = palette.linkColor,
                         fontWeight = FontWeight.Medium,
                         textDecoration = TextDecoration.Underline,
-                        lineHeight = 20.sp,
+                        lineHeight = bodyLineHeight.sp,
                     ),
                     textLink = TextLinkStyles(
                         style = SpanStyle(
@@ -158,6 +161,10 @@ internal fun TimelineMarkdown(
             )
         }
     }
+}
+
+internal fun timelineMarkdownBodyLineHeightSp(bodyFontSizeSp: Float): Float {
+    return bodyFontSizeSp * 1.5f
 }
 
 @Composable

@@ -12,6 +12,27 @@ class AgentSettingsStateTest {
     }
 
     @Test
+    fun `state defaults ui scale mode to 100 percent`() {
+        val state = AgentSettingsService.State()
+
+        assertEquals(UiScaleMode.P100.name, state.uiScale)
+    }
+
+    @Test
+    fun `legacy persisted ui scale values map to new percentage modes`() {
+        val state = AgentSettingsService.State(uiScale = "SMALL")
+        val service = AgentSettingsService()
+        service.loadState(state)
+        assertEquals(UiScaleMode.P90, service.uiScaleMode())
+
+        service.loadState(AgentSettingsService.State(uiScale = "NORMAL"))
+        assertEquals(UiScaleMode.P100, service.uiScaleMode())
+
+        service.loadState(AgentSettingsService.State(uiScale = "LARGE"))
+        assertEquals(UiScaleMode.P110, service.uiScaleMode())
+    }
+
+    @Test
     fun `state reads codex path from engine map first`() {
         val state = AgentSettingsService.State(
             codexCliPath = "legacy-codex",
