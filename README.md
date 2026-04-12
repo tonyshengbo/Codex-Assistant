@@ -9,7 +9,7 @@ Aura Code is an IntelliJ IDEA plugin that brings the local Codex runtime into th
 
 ## Beta Release
 
-`1.0.0-beta.1` is currently distributed as a GitHub prerelease ZIP.
+`1.0.0-beta.3` is currently distributed as a GitHub prerelease ZIP.
 
 - Download the plugin ZIP from the GitHub Release assets, or build it locally with `./gradlew buildPlugin`
 - Install it from `Settings -> Plugins -> Install Plugin from Disk...`

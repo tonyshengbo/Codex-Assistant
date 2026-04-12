@@ -8,7 +8,7 @@ plugins {
 }
 
 group = "com.auracode.assistant"
-version = "1.0.0-beta.2"
+version = "1.0.0-beta.3"
 
 repositories {
     google()
@@ -51,13 +51,11 @@ intellijPlatform {
             sinceBuild = "233"
         }
         changeNotes = """
-            <p>First public beta release of Aura Code.</p>
+            <p>Aura Code 1.0.0-beta.3 improves release readiness and everyday IDE workflows.</p>
             <ul>
-              <li>Introduces a native Aura Code tool window inside IntelliJ IDEA.</li>
-              <li>Adds project-scoped chat sessions with streaming responses, cancellation, and resumable history.</li>
-              <li>Supports plan mode, approval mode, tool input prompts, and running-plan feedback.</li>
-              <li>Includes file mentions, attachments, diff review, and edited-file aggregation workflows.</li>
-              <li>Provides local Skills and MCP server management for Codex-based project workflows.</li>
+              <li>Adds Codex CLI version visibility, compatibility checks, and update notifications.</li>
+              <li>Improves timeline usability with copy actions, fixed-choice input tooltips, and smoother collapsible message transitions.</li>
+              <li>Introduces UI scaling support for better readability across different displays.</li>
             </ul>
         """.trimIndent()
     }

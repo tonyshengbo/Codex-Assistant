@@ -2,8 +2,20 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.0.0-beta.3] - 2026-04-12
+
+### Added
+
+- Codex CLI version visibility, compatibility checks, and update notifications inside the IDE workflow.
+- A `Copy content` action for timeline items to make response reuse faster.
+- Tooltips for fixed-choice tool user inputs to make constrained selections easier to understand.
+- UI scaling support for better readability across different display densities.
+
+### Changed
+
+- Improved collapsible timeline messages with animated height transitions for smoother expansion and collapse.
+
 ## [1.0.0-beta.1] - 2026-04-07
-/
 ### Added
 
 - Japanese and Korean UI localization across the core plugin surfaces.
