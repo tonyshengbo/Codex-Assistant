@@ -24,4 +24,28 @@ class TimelineCollapsibleMessageContentTest {
             ),
         )
     }
+
+    @Test
+    fun `collapsed viewport height is capped by the collapsed maximum`() {
+        kotlin.test.assertEquals(
+            220,
+            timelineMessageViewportHeightPx(
+                fullContentHeightPx = 321,
+                collapsedMaxHeightPx = 220,
+                expanded = false,
+            ),
+        )
+    }
+
+    @Test
+    fun `expanded viewport height reveals the full measured content`() {
+        kotlin.test.assertEquals(
+            321,
+            timelineMessageViewportHeightPx(
+                fullContentHeightPx = 321,
+                collapsedMaxHeightPx = 220,
+                expanded = true,
+            ),
+        )
+    }
 }
