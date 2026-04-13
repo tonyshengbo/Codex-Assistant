@@ -726,6 +726,25 @@ class ComposerAreaStoreTest {
     }
 
     @Test
+    fun `settings snapshot restores max reasoning from persisted xhigh effort`() {
+        val store = ComposerAreaStore()
+
+        store.onEvent(
+            AppEvent.SettingsSnapshotUpdated(
+                codexCliPath = "codex",
+                languageMode = com.auracode.assistant.settings.UiLanguageMode.FOLLOW_IDE,
+                themeMode = com.auracode.assistant.settings.UiThemeMode.FOLLOW_IDE,
+                autoContextEnabled = true,
+                savedAgents = emptyList(),
+                customModelIds = emptyList(),
+                selectedReasoning = "xhigh",
+            ),
+        )
+
+        assertEquals(com.auracode.assistant.toolwindow.eventing.ComposerReasoning.MAX, store.state.value.selectedReasoning)
+    }
+
+    @Test
     fun `settings snapshot restores selected agents from persisted ids`() {
         val store = ComposerAreaStore()
         val reviewer = SavedAgentDefinition(

@@ -180,7 +180,7 @@ internal enum class ComposerReasoning(
     LOW("low"),
     MEDIUM("medium"),
     HIGH("high"),
-    MAX("high"),
+    MAX("xhigh"),
 }
 
 internal fun ComposerMode.localizedLabel(): String = when (this) {
