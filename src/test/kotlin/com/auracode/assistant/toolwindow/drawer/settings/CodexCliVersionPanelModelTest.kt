@@ -24,11 +24,13 @@ class CodexCliVersionPanelModelTest {
         )
 
         assertEquals("Up to date", model.primaryActionLabel)
+        assertEquals("Up to date", model.statusText)
         assertTrue(model.showPrimaryAction)
         assertFalse(model.showManualUpgradeHint)
         assertFalse(model.showVersionCommand)
         assertFalse(model.showStatusBadge)
-        assertFalse(model.showAutoCheckToggle)
+        assertTrue(model.showAutoCheckToggle)
+        assertTrue(model.autoCheckEnabled)
     }
 
     @Test
@@ -46,6 +48,7 @@ class CodexCliVersionPanelModelTest {
         )
 
         assertEquals("Check for Updates", model.primaryActionLabel)
+        assertEquals("Update available", model.statusText)
         assertTrue(model.showPrimaryAction)
         assertTrue(model.showManualUpgradeHint)
         assertTrue(model.showVersionCommand)
@@ -67,6 +70,7 @@ class CodexCliVersionPanelModelTest {
         )
 
         assertEquals("Upgrade Now", model.primaryActionLabel)
+        assertEquals("Update available", model.statusText)
         assertTrue(model.showPrimaryAction)
         assertFalse(model.showManualUpgradeHint)
         assertFalse(model.showStatusBadge)
@@ -83,7 +87,27 @@ class CodexCliVersionPanelModelTest {
         )
 
         assertEquals("Checking...", model.primaryActionLabel)
+        assertEquals("Checking", model.statusText)
         assertTrue(model.isBusy)
         assertFalse(model.showStatusBadge)
+    }
+
+    @Test
+    fun `ignored update state surfaces ignored status text`() {
+        val model = buildCodexCliVersionPanelModel(
+            snapshot = CodexCliVersionSnapshot(
+                checkStatus = CodexCliVersionCheckStatus.UPDATE_AVAILABLE,
+                currentVersion = "0.118.0",
+                latestVersion = "0.120.0",
+                ignoredVersion = "0.120.0",
+                upgradeSource = CodexCliUpgradeSource.UNKNOWN,
+                displayCommand = "npm install -g @openai/codex@latest",
+                isUpgradeSupported = false,
+            ),
+            autoCheckEnabled = false,
+        )
+
+        assertEquals("Update available (ignored: 0.120.0)", model.statusText)
+        assertFalse(model.autoCheckEnabled)
     }
 }

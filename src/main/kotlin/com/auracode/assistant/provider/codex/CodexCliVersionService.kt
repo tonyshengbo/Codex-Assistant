@@ -23,12 +23,16 @@ internal class CodexCliVersionService(
     private val latestVersionFetcher: () -> String = ::fetchLatestCodexCliVersionFromNpm,
     private val clock: () -> Long = System::currentTimeMillis,
 ) {
+    private val cachedUpgradeAction: CodexCliUpgradeAction
+        get() = detectUpgradeAction()
+
     @Volatile
-    private var cachedSnapshot: CodexCliVersionSnapshot = CodexCliVersionSnapshot(
+    private var cachedSnapshot: CodexCliVersionSnapshot = restoreCodexCliVersionSnapshot(
         currentVersion = settingsService.codexCliLastKnownCurrentVersion(),
         latestVersion = settingsService.codexCliLastKnownLatestVersion(),
         ignoredVersion = settingsService.codexCliIgnoredVersion(),
         lastCheckedAt = settingsService.codexCliLastCheckAt(),
+        action = cachedUpgradeAction,
     )
 
     fun snapshot(): CodexCliVersionSnapshot = cachedSnapshot
@@ -44,7 +48,9 @@ internal class CodexCliVersionService(
     /** Refreshes local and remote version metadata and updates the cached snapshot. */
     fun refresh(force: Boolean = false): CodexCliVersionSnapshot {
         if (!shouldRefresh(force = force)) {
-            return snapshot()
+            val restored = restoreSnapshotFromCache(action = cachedUpgradeAction)
+            cachedSnapshot = restored
+            return restored
         }
         val resolution = environmentDetector.resolveForLaunch(
             configuredCodexPath = settingsService.state.executablePathFor("codex"),
@@ -66,7 +72,7 @@ internal class CodexCliVersionService(
                 displayCommand = action.displayCommand,
                 isUpgradeSupported = action.isUpgradeSupported,
                 lastCheckedAt = now,
-                message = "Unable to read the installed Codex CLI version.",
+                message = defaultCodexCliVersionMessage(CodexCliVersionCheckStatus.LOCAL_VERSION_UNAVAILABLE),
             )
             latestVersion.isNullOrBlank() -> CodexCliVersionSnapshot(
                 checkStatus = CodexCliVersionCheckStatus.REMOTE_CHECK_FAILED,
@@ -76,7 +82,7 @@ internal class CodexCliVersionService(
                 displayCommand = action.displayCommand,
                 isUpgradeSupported = action.isUpgradeSupported,
                 lastCheckedAt = now,
-                message = "Unable to fetch the latest Codex CLI version.",
+                message = defaultCodexCliVersionMessage(CodexCliVersionCheckStatus.REMOTE_CHECK_FAILED),
             )
             parseCodexCliSemVer(latestVersion) == null -> CodexCliVersionSnapshot(
                 checkStatus = CodexCliVersionCheckStatus.REMOTE_CHECK_FAILED,
@@ -98,7 +104,7 @@ internal class CodexCliVersionService(
                 displayCommand = action.displayCommand,
                 isUpgradeSupported = action.isUpgradeSupported,
                 lastCheckedAt = now,
-                message = "A newer Codex CLI version is available.",
+                message = defaultCodexCliVersionMessage(CodexCliVersionCheckStatus.UPDATE_AVAILABLE),
             )
             else -> CodexCliVersionSnapshot(
                 checkStatus = CodexCliVersionCheckStatus.UP_TO_DATE,
@@ -109,7 +115,7 @@ internal class CodexCliVersionService(
                 displayCommand = action.displayCommand,
                 isUpgradeSupported = action.isUpgradeSupported,
                 lastCheckedAt = now,
-                message = "Codex CLI is up to date.",
+                message = defaultCodexCliVersionMessage(CodexCliVersionCheckStatus.UP_TO_DATE),
             )
         }
         persistSnapshot(nextSnapshot)
@@ -145,6 +151,7 @@ internal class CodexCliVersionService(
             configuredNodePath = settingsService.nodeExecutablePath(),
         )
         val action = codexCliUpgradeActionFor(sourceDetector.detect(resolution.codexPath))
+        val previousVersion = parseCodexCliSemVer(cachedSnapshot.currentVersion)
         if (!action.isUpgradeSupported) {
             val unsupported = cachedSnapshot.copy(
                 checkStatus = CodexCliVersionCheckStatus.UPGRADE_FAILED,
@@ -167,10 +174,18 @@ internal class CodexCliVersionService(
             return failed
         }
         val refreshed = refresh(force = true)
-        return if (refreshed.checkStatus == CodexCliVersionCheckStatus.UP_TO_DATE) {
+        val refreshedCurrent = parseCodexCliSemVer(refreshed.currentVersion)
+        val refreshedLatest = parseCodexCliSemVer(refreshed.latestVersion)
+        val currentAdvanced = refreshedCurrent != null && previousVersion != null && refreshedCurrent > previousVersion
+        val confirmedLatest = refreshedCurrent != null && refreshedLatest != null && refreshedCurrent >= refreshedLatest
+        return if (refreshed.checkStatus == CodexCliVersionCheckStatus.UP_TO_DATE || confirmedLatest || currentAdvanced) {
             refreshed.copy(
                 checkStatus = CodexCliVersionCheckStatus.UPGRADE_SUCCEEDED,
-                message = "Codex CLI was upgraded successfully.",
+                message = if (refreshed.checkStatus == CodexCliVersionCheckStatus.REMOTE_CHECK_FAILED) {
+                    "Codex CLI was upgraded successfully, but the latest version could not be confirmed."
+                } else {
+                    defaultCodexCliVersionMessage(CodexCliVersionCheckStatus.UPGRADE_SUCCEEDED)
+                },
             ).also { cachedSnapshot = it }
         } else {
             refreshed.copy(
@@ -193,6 +208,24 @@ internal class CodexCliVersionService(
         settingsService.setCodexCliLastCheckAt(snapshot.lastCheckedAt)
         settingsService.setCodexCliLastKnownCurrentVersion(snapshot.currentVersion)
         settingsService.setCodexCliLastKnownLatestVersion(snapshot.latestVersion)
+    }
+
+    private fun restoreSnapshotFromCache(action: CodexCliUpgradeAction): CodexCliVersionSnapshot {
+        return restoreCodexCliVersionSnapshot(
+            currentVersion = settingsService.codexCliLastKnownCurrentVersion(),
+            latestVersion = settingsService.codexCliLastKnownLatestVersion(),
+            ignoredVersion = settingsService.codexCliIgnoredVersion(),
+            lastCheckedAt = settingsService.codexCliLastCheckAt(),
+            action = action,
+        )
+    }
+
+    private fun detectUpgradeAction(): CodexCliUpgradeAction {
+        val resolution = environmentDetector.resolveForLaunch(
+            configuredCodexPath = settingsService.state.executablePathFor("codex"),
+            configuredNodePath = settingsService.nodeExecutablePath(),
+        )
+        return codexCliUpgradeActionFor(sourceDetector.detect(resolution.codexPath))
     }
 
     companion object {

@@ -1,5 +1,7 @@
 package com.auracode.assistant.provider.codex
 
+import java.nio.file.Files
+import java.nio.file.Path
 import java.util.Locale
 
 /** Represents the lifecycle state of Codex CLI version checks and upgrades. */
@@ -49,6 +51,12 @@ internal data class CodexCliVersionSnapshot(
         get() = checkStatus == CodexCliVersionCheckStatus.UPDATE_AVAILABLE
 }
 
+/** Captures the executable entry path together with its resolved target when available. */
+internal data class CodexCliExecutablePaths(
+    val entryPath: String,
+    val resolvedPath: String? = null,
+)
+
 /** Parses and compares semantic versions emitted by Codex CLI and npm metadata. */
 internal data class CodexCliSemVer(
     val major: Int,
@@ -89,25 +97,120 @@ internal fun parseCodexCliSemVer(raw: String): CodexCliSemVer? {
 }
 
 /** Infers the most likely installation source for the resolved Codex executable path. */
-internal class CodexCliUpgradeSourceDetector {
+internal class CodexCliUpgradeSourceDetector(
+    private val pathInspector: CodexCliExecutablePathInspector = CodexCliExecutablePathInspector(),
+) {
     fun detect(codexPath: String): CodexCliUpgradeSource {
-        val normalized = codexPath.trim().lowercase(Locale.ROOT)
-        if (normalized.isBlank()) return CodexCliUpgradeSource.UNKNOWN
+        val inspectedPaths = pathInspector.inspect(codexPath)
+        val candidates = listOf(inspectedPaths.entryPath, inspectedPaths.resolvedPath)
+            .map { it.orEmpty().trim().lowercase(Locale.ROOT) }
+            .filter { it.isNotBlank() }
+        if (candidates.isEmpty()) return CodexCliUpgradeSource.UNKNOWN
         return when {
-            normalized.contains("/pnpm/") || normalized.contains("\\pnpm\\") -> CodexCliUpgradeSource.PNPM
-            normalized.contains("/.bun/bin/") || normalized.contains("\\.bun\\bin\\") -> CodexCliUpgradeSource.BUN
-            normalized.contains("/.nvm/versions/node/") ||
-                normalized.contains("\\.nvm\\versions\\node\\") ||
-                normalized.contains("/volta/bin/") ||
-                normalized.contains("\\volta\\bin\\") ||
-                normalized.contains("/appdata/roaming/npm/") ||
-                normalized.contains("\\appdata\\roaming\\npm\\") -> CodexCliUpgradeSource.NPM
-            normalized.startsWith("/opt/homebrew/bin/") ||
-                normalized.startsWith("/usr/local/homebrew/") ||
-                normalized.contains("/cellar/") -> CodexCliUpgradeSource.BREW
+            candidates.any { it.contains("/pnpm/") || it.contains("\\pnpm\\") } -> CodexCliUpgradeSource.PNPM
+            candidates.any { it.contains("/.bun/bin/") || it.contains("\\.bun\\bin\\") } -> CodexCliUpgradeSource.BUN
+            candidates.any(::looksLikeNpmInstall) -> CodexCliUpgradeSource.NPM
+            candidates.any(::looksLikeBrewInstall) -> CodexCliUpgradeSource.BREW
             else -> CodexCliUpgradeSource.UNKNOWN
         }
     }
+}
+
+/** Resolves the executable path so installation source inference can inspect the true target. */
+internal open class CodexCliExecutablePathInspector {
+    open fun inspect(codexPath: String): CodexCliExecutablePaths {
+        val entryPath = codexPath.trim()
+        if (entryPath.isBlank()) return CodexCliExecutablePaths(entryPath = "")
+        val resolvedPath = runCatching {
+            val path = Path.of(entryPath)
+            when {
+                Files.isSymbolicLink(path) -> path.parent.resolve(Files.readSymbolicLink(path)).normalize().toString()
+                Files.exists(path) -> path.toRealPath().toString()
+                else -> null
+            }
+        }.getOrNull()
+        return CodexCliExecutablePaths(
+            entryPath = entryPath,
+            resolvedPath = resolvedPath?.takeIf { it.isNotBlank() && it != entryPath },
+        )
+    }
+}
+
+/** Rebuilds a stable snapshot from cached values so the UI survives IDE restarts without losing state. */
+internal fun restoreCodexCliVersionSnapshot(
+    currentVersion: String,
+    latestVersion: String,
+    ignoredVersion: String,
+    lastCheckedAt: Long,
+    action: CodexCliUpgradeAction,
+): CodexCliVersionSnapshot {
+    val normalizedCurrent = currentVersion.trim()
+    val normalizedLatest = latestVersion.trim()
+    val normalizedIgnored = ignoredVersion.trim()
+    val status = deriveCodexCliVersionStatus(
+        currentVersion = normalizedCurrent,
+        latestVersion = normalizedLatest,
+        lastCheckedAt = lastCheckedAt,
+    )
+    return CodexCliVersionSnapshot(
+        checkStatus = status,
+        currentVersion = normalizedCurrent,
+        latestVersion = normalizedLatest,
+        ignoredVersion = normalizedIgnored,
+        upgradeSource = action.source,
+        displayCommand = action.displayCommand,
+        isUpgradeSupported = action.isUpgradeSupported,
+        lastCheckedAt = lastCheckedAt.coerceAtLeast(0L),
+        message = defaultCodexCliVersionMessage(status),
+    )
+}
+
+/** Produces the long-lived status used after refreshes and across IDE restarts. */
+internal fun deriveCodexCliVersionStatus(
+    currentVersion: String,
+    latestVersion: String,
+    lastCheckedAt: Long,
+): CodexCliVersionCheckStatus {
+    val normalizedCurrent = currentVersion.trim()
+    val normalizedLatest = latestVersion.trim()
+    if (normalizedCurrent.isBlank() && normalizedLatest.isBlank() && lastCheckedAt <= 0L) {
+        return CodexCliVersionCheckStatus.IDLE
+    }
+    if (normalizedCurrent.isBlank()) {
+        return if (lastCheckedAt > 0L) {
+            CodexCliVersionCheckStatus.LOCAL_VERSION_UNAVAILABLE
+        } else {
+            CodexCliVersionCheckStatus.IDLE
+        }
+    }
+    if (normalizedLatest.isBlank()) {
+        return if (lastCheckedAt > 0L) {
+            CodexCliVersionCheckStatus.REMOTE_CHECK_FAILED
+        } else {
+            CodexCliVersionCheckStatus.IDLE
+        }
+    }
+    val current = parseCodexCliSemVer(normalizedCurrent)
+    val latest = parseCodexCliSemVer(normalizedLatest)
+    return when {
+        current == null -> CodexCliVersionCheckStatus.LOCAL_VERSION_UNAVAILABLE
+        latest == null -> CodexCliVersionCheckStatus.REMOTE_CHECK_FAILED
+        latest > current -> CodexCliVersionCheckStatus.UPDATE_AVAILABLE
+        else -> CodexCliVersionCheckStatus.UP_TO_DATE
+    }
+}
+
+/** Returns the default status copy shown in the settings UI and notifications. */
+internal fun defaultCodexCliVersionMessage(status: CodexCliVersionCheckStatus): String = when (status) {
+    CodexCliVersionCheckStatus.IDLE -> ""
+    CodexCliVersionCheckStatus.CHECKING -> "Checking Codex CLI version..."
+    CodexCliVersionCheckStatus.UP_TO_DATE -> "Codex CLI is up to date."
+    CodexCliVersionCheckStatus.UPDATE_AVAILABLE -> "A newer Codex CLI version is available."
+    CodexCliVersionCheckStatus.LOCAL_VERSION_UNAVAILABLE -> "Unable to read the installed Codex CLI version."
+    CodexCliVersionCheckStatus.REMOTE_CHECK_FAILED -> "Unable to fetch the latest Codex CLI version."
+    CodexCliVersionCheckStatus.UPGRADE_IN_PROGRESS -> "Upgrading Codex CLI..."
+    CodexCliVersionCheckStatus.UPGRADE_SUCCEEDED -> "Codex CLI was upgraded successfully."
+    CodexCliVersionCheckStatus.UPGRADE_FAILED -> "Codex CLI upgrade failed."
 }
 
 /** Returns the user-facing upgrade action for the provided installation source. */
@@ -153,6 +256,26 @@ private fun comparePrerelease(left: String?, right: String?): Int {
         right == null -> -1
         else -> left.compareTo(right)
     }
+}
+
+private fun looksLikeNpmInstall(path: String): Boolean {
+    return path.contains("/.nvm/versions/node/") ||
+        path.contains("\\.nvm\\versions\\node\\") ||
+        path.contains("/volta/bin/") ||
+        path.contains("\\volta\\bin\\") ||
+        path.contains("/appdata/roaming/npm/") ||
+        path.contains("\\appdata\\roaming\\npm\\") ||
+        path.contains("/lib/node_modules/@openai/codex/") ||
+        path.contains("\\lib\\node_modules\\@openai\\codex\\") ||
+        path.contains("/node_modules/@openai/codex/") ||
+        path.contains("\\node_modules\\@openai\\codex\\")
+}
+
+private fun looksLikeBrewInstall(path: String): Boolean {
+    return path.contains("/cellar/codex/") ||
+        path.contains("\\cellar\\codex\\") ||
+        path.contains("/homebrew/cellar/codex/") ||
+        path.contains("\\homebrew\\cellar\\codex\\")
 }
 
 private val SEMVER_REGEX = Regex("""(?:^|[^0-9])v?(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?""")

@@ -33,7 +33,7 @@ dependencies {
     testRuntimeOnly("net.java.dev.jna:jna:5.14.0")
     testImplementation(kotlin("test"))
     intellijPlatform {
-        intellijIdea("2024.3.4.1")
+        intellijIdeaCommunity("2024.3.1")
         bundledPlugin("com.intellij.java")
         bundledPlugin("Git4Idea")
     }

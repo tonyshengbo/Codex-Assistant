@@ -46,8 +46,35 @@ class CodexCliVersionSupportTest {
     }
 
     @Test
+    fun `upgrade source detector recognizes homebrew node npm installs under opt homebrew bin`() {
+        val detector = CodexCliUpgradeSourceDetector(
+            pathInspector = object : CodexCliExecutablePathInspector() {
+                override fun inspect(codexPath: String): CodexCliExecutablePaths {
+                    return CodexCliExecutablePaths(
+                        entryPath = "/opt/homebrew/bin/codex",
+                        resolvedPath = "/opt/homebrew/lib/node_modules/@openai/codex/bin/codex.js",
+                    )
+                }
+            },
+        )
+
+        val source = detector.detect("/opt/homebrew/bin/codex")
+
+        assertEquals(CodexCliUpgradeSource.NPM, source)
+    }
+
+    @Test
     fun `upgrade source detector recognizes homebrew installs`() {
-        val detector = CodexCliUpgradeSourceDetector()
+        val detector = CodexCliUpgradeSourceDetector(
+            pathInspector = object : CodexCliExecutablePathInspector() {
+                override fun inspect(codexPath: String): CodexCliExecutablePaths {
+                    return CodexCliExecutablePaths(
+                        entryPath = "/opt/homebrew/bin/codex",
+                        resolvedPath = "/opt/homebrew/Cellar/codex/0.120.0/bin/codex",
+                    )
+                }
+            },
+        )
 
         val source = detector.detect("/opt/homebrew/bin/codex")
 
@@ -72,5 +99,33 @@ class CodexCliVersionSupportTest {
         assertEquals("npm install -g @openai/codex@latest", npmAction.displayCommand)
         assertFalse(unknownAction.isUpgradeSupported)
         assertTrue(unknownAction.displayCommand.isNotBlank())
+    }
+
+    @Test
+    fun `restore snapshot derives update available from cached versions`() {
+        val snapshot = restoreCodexCliVersionSnapshot(
+            currentVersion = "0.118.0",
+            latestVersion = "0.120.0",
+            ignoredVersion = "",
+            lastCheckedAt = 1L,
+            action = codexCliUpgradeActionFor(CodexCliUpgradeSource.NPM),
+        )
+
+        assertEquals(CodexCliVersionCheckStatus.UPDATE_AVAILABLE, snapshot.checkStatus)
+        assertTrue(snapshot.isUpgradeSupported)
+    }
+
+    @Test
+    fun `restore snapshot derives remote check failure when cached latest version is missing`() {
+        val snapshot = restoreCodexCliVersionSnapshot(
+            currentVersion = "0.118.0",
+            latestVersion = "",
+            ignoredVersion = "",
+            lastCheckedAt = 1L,
+            action = codexCliUpgradeActionFor(CodexCliUpgradeSource.UNKNOWN),
+        )
+
+        assertEquals(CodexCliVersionCheckStatus.REMOTE_CHECK_FAILED, snapshot.checkStatus)
+        assertFalse(snapshot.isUpgradeSupported)
     }
 }

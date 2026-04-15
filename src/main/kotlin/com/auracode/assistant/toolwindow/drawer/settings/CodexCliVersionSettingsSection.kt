@@ -23,7 +23,10 @@ internal fun CodexCliVersionSettingsSection(
     state: RightDrawerAreaState,
     onIntent: (UiIntent) -> Unit,
 ) {
-    val model = buildCodexCliVersionPanelModel(state.codexCliVersionSnapshot)
+    val model = buildCodexCliVersionPanelModel(
+        snapshot = state.codexCliVersionSnapshot,
+        autoCheckEnabled = state.codexCliAutoUpdateCheckEnabled,
+    )
     val t = assistantUiTokens()
     SettingsField(
         p = p,
@@ -42,6 +45,31 @@ internal fun CodexCliVersionSettingsSection(
                     title = AuraCodeBundle.message("settings.codexVersion.latest"),
                     value = it,
                 )
+            }
+            model.statusText?.let {
+                VersionRow(
+                    p = p,
+                    title = AuraCodeBundle.message("settings.codexVersion.status.label"),
+                    value = it,
+                )
+            }
+            if (model.showAutoCheckToggle) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = AuraCodeBundle.message("settings.codexVersion.autoCheck"),
+                        color = p.textPrimary,
+                        style = MaterialTheme.typography.body2,
+                    )
+                    SettingsToggle(
+                        p = p,
+                        checked = model.autoCheckEnabled,
+                        onCheckedChange = { onIntent(UiIntent.EditSettingsCodexCliAutoUpdateCheckEnabled(it)) },
+                    )
+                }
             }
             if (model.showManualUpgradeHint) {
                 Text(
@@ -86,6 +114,7 @@ internal fun CodexCliVersionSettingsSection(
 internal data class CodexCliVersionPanelModel(
     val currentVersionText: String,
     val latestVersionText: String?,
+    val statusText: String?,
     val displayCommand: String,
     val showPrimaryAction: Boolean,
     val primaryActionLabel: String,
@@ -95,11 +124,13 @@ internal data class CodexCliVersionPanelModel(
     val showVersionCommand: Boolean,
     val showStatusBadge: Boolean,
     val showAutoCheckToggle: Boolean,
+    val autoCheckEnabled: Boolean,
     val isBusy: Boolean,
 )
 
 internal fun buildCodexCliVersionPanelModel(
     snapshot: CodexCliVersionSnapshot,
+    autoCheckEnabled: Boolean = true,
 ): CodexCliVersionPanelModel {
     val currentVersionText = snapshot.currentVersion.ifBlank {
         AuraCodeBundle.message("settings.codexVersion.unknown")
@@ -129,6 +160,7 @@ internal fun buildCodexCliVersionPanelModel(
     return CodexCliVersionPanelModel(
         currentVersionText = currentVersionText,
         latestVersionText = latestVersionText,
+        statusText = codexCliVersionStatusText(snapshot),
         displayCommand = snapshot.displayCommand,
         showPrimaryAction = true,
         primaryActionLabel = primaryActionLabel,
@@ -137,9 +169,30 @@ internal fun buildCodexCliVersionPanelModel(
         showManualUpgradeHint = showManualUpgradeHint,
         showVersionCommand = showVersionCommand,
         showStatusBadge = false,
-        showAutoCheckToggle = false,
+        showAutoCheckToggle = true,
+        autoCheckEnabled = autoCheckEnabled,
         isBusy = isBusy,
     )
+}
+
+private fun codexCliVersionStatusText(snapshot: CodexCliVersionSnapshot): String? {
+    return when (snapshot.checkStatus) {
+        CodexCliVersionCheckStatus.IDLE -> snapshot.message.ifBlank { null }
+        CodexCliVersionCheckStatus.CHECKING -> AuraCodeBundle.message("settings.codexVersion.status.checking")
+        CodexCliVersionCheckStatus.UP_TO_DATE -> AuraCodeBundle.message("settings.codexVersion.status.upToDate")
+        CodexCliVersionCheckStatus.UPDATE_AVAILABLE -> when {
+            snapshot.ignoredVersion.isNotBlank() && snapshot.ignoredVersion == snapshot.latestVersion ->
+                AuraCodeBundle.message("settings.codexVersion.status.ignored", snapshot.latestVersion)
+            else -> AuraCodeBundle.message("settings.codexVersion.status.updateAvailable")
+        }
+        CodexCliVersionCheckStatus.LOCAL_VERSION_UNAVAILABLE -> AuraCodeBundle.message("settings.codexVersion.status.localUnavailable")
+        CodexCliVersionCheckStatus.REMOTE_CHECK_FAILED -> AuraCodeBundle.message("settings.codexVersion.status.remoteFailed")
+        CodexCliVersionCheckStatus.UPGRADE_IN_PROGRESS -> AuraCodeBundle.message("settings.codexVersion.status.upgrading")
+        CodexCliVersionCheckStatus.UPGRADE_SUCCEEDED -> AuraCodeBundle.message("settings.codexVersion.status.upgradeSucceeded")
+        CodexCliVersionCheckStatus.UPGRADE_FAILED -> snapshot.message.ifBlank {
+            AuraCodeBundle.message("settings.codexVersion.status.upgradeFailed")
+        }
+    }
 }
 
 @Composable
