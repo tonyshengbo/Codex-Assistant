@@ -1,6 +1,5 @@
 package com.auracode.assistant.commit
 
-import com.auracode.assistant.context.GitContextProvider
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.vcs.changes.Change
@@ -8,12 +7,7 @@ import com.intellij.openapi.vcs.changes.Change
 @Service(Service.Level.PROJECT)
 internal class CommitMessageContextService(
     project: Project? = null,
-    private val stagedDiffProvider: () -> String? = {
-        project?.let { GitContextProvider.getInstance(it).getStagedChanges() }
-    },
-    private val branchNameProvider: () -> String? = {
-        project?.let { GitContextProvider.getInstance(it).getCurrentBranchName() }
-    },
+    private val changeSummaryProvider: (List<Change>) -> String? = CommitChangeSummaryRenderer::fromChanges,
     private val includedFilePathsProvider: (List<Change>) -> List<String> = CommitIncludedFilesExtractor::fromChanges,
 ) {
     fun collect(
@@ -26,16 +20,12 @@ internal class CommitMessageContextService(
             .filter { it.isNotBlank() }
             .distinct()
             .sorted()
-        val stagedDiff = stagedDiffProvider()
+        val changeSummary = changeSummaryProvider(includedChanges)
             ?.trim()
             ?.takeIf { it.isNotBlank() }
-        val branchName = branchNameProvider()
-            ?.trim()
-            ?.takeIf { it.isNotBlank() }
-        if (stagedDiff == null && includedFilePaths.isEmpty()) return null
+        if (changeSummary == null && includedFilePaths.isEmpty()) return null
         return CommitMessageGenerationContext(
-            branchName = branchName,
-            stagedDiff = stagedDiff,
+            changeSummary = changeSummary,
             includedFilePaths = includedFilePaths,
         )
     }

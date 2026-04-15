@@ -3,6 +3,7 @@ package com.auracode.assistant.settings.mcp
 import com.auracode.assistant.coroutine.AppCoroutineManager
 import com.auracode.assistant.coroutine.ManagedCoroutineScope
 import com.auracode.assistant.provider.CodexProviderFactory
+import com.auracode.assistant.provider.codex.CodexAppServerJsonSupport
 import com.auracode.assistant.provider.codex.CodexEnvironmentDetector
 import com.auracode.assistant.provider.codex.CodexEnvironmentResolution
 import com.auracode.assistant.provider.codex.CodexEnvironmentStatus
@@ -451,16 +452,7 @@ private class RealCodexMcpAppServerClient(
     override suspend fun initialize() {
         request(
             method = "initialize",
-            params = buildJsonObject {
-                putJsonObject("clientInfo") {
-                    put("name", "aura_code_intellij")
-                    put("title", "Aura Code IntelliJ Plugin")
-                    put("version", "1.0.0")
-                }
-                putJsonObject("capabilities") {
-                    put("experimentalApi", true)
-                }
-            },
+            params = CodexAppServerJsonSupport.initializeParams()
         )
         notify(method = "initialized", params = buildJsonObject { })
     }

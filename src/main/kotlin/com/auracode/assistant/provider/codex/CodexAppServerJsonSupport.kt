@@ -15,9 +15,9 @@ internal object CodexAppServerJsonSupport {
     fun initializeParams(): JsonObject {
         return buildJsonObject {
             putJsonObject("clientInfo") {
-                put("name", "aura_code_intellij")
+                put("name", "codex_sdk_ts")
                 put("title", "Aura Code IntelliJ Plugin")
-                put("version", "1.0.0")
+                put("version", "0.120.0")
             }
             putJsonObject("capabilities") {
                 put("experimentalApi", true)

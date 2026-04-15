@@ -9,13 +9,21 @@ import kotlinx.coroutines.runBlocking
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertNotNull
 
 class CommitMessageGenerationServiceTest {
     @Test
-    fun `generate returns sanitized assistant commit message`() {
+    fun `generate returns sanitized assistant commit message and attaches generic vcs context files`() {
         runBlocking {
+            var capturedRequest = com.auracode.assistant.model.AgentRequest(
+                engineId = "unused",
+                prompt = "",
+                contextFiles = emptyList(),
+                workingDirectory = ".",
+            )
             val service = CommitMessageGenerationService(
                 streamProvider = {
+                    capturedRequest = it
                     flowOf(
                         UnifiedEvent.ItemUpdated(
                             UnifiedItem(
@@ -31,13 +39,16 @@ class CommitMessageGenerationServiceTest {
 
             val result = service.generate(
                 CommitMessageGenerationContext(
-                    branchName = "main",
-                    stagedDiff = "diff --git a.txt b.txt",
+                    changeSummary = "MODIFICATION: src/Main.kt\n- old\n+ new",
                     includedFilePaths = listOf("src/Main.kt"),
                 ),
             )
 
             assertEquals("feat: add commit message generation button", result)
+            val changeSummary = capturedRequest.contextFiles.firstOrNull { it.path == "vcs/change-summary.txt" }
+            val includedFiles = capturedRequest.contextFiles.firstOrNull { it.path == "vcs/included-files.txt" }
+            assertEquals("MODIFICATION: src/Main.kt\n- old\n+ new", assertNotNull(changeSummary).content)
+            assertEquals("src/Main.kt", assertNotNull(includedFiles).content)
         }
     }
 
@@ -62,8 +73,7 @@ class CommitMessageGenerationServiceTest {
             assertFailsWith<IllegalArgumentException> {
                 service.generate(
                     CommitMessageGenerationContext(
-                        branchName = "main",
-                        stagedDiff = "diff --git a.txt b.txt",
+                        changeSummary = "MODIFICATION: src/Main.kt\n- old\n+ new",
                         includedFilePaths = listOf("src/Main.kt"),
                     ),
                 )

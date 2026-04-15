@@ -153,16 +153,15 @@ internal class CommitMessageGenerationService private constructor(
 
     private fun buildContextFiles(context: CommitMessageGenerationContext): List<ContextFile> {
         return buildList {
-            context.stagedDiff?.let { add(ContextFile(path = "git/staged.diff", content = it)) }
+            context.changeSummary?.let { add(ContextFile(path = "vcs/change-summary.txt", content = it)) }
             if (context.includedFilePaths.isNotEmpty()) {
                 add(
                     ContextFile(
-                        path = "git/included-files.txt",
+                        path = "vcs/included-files.txt",
                         content = context.includedFilePaths.joinToString(separator = "\n"),
                     ),
                 )
             }
-            context.branchName?.let { add(ContextFile(path = "git/branch.txt", content = it)) }
         }
     }
 

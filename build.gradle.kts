@@ -34,8 +34,6 @@ dependencies {
     testImplementation(kotlin("test"))
     intellijPlatform {
         intellijIdeaCommunity("2024.3.1")
-        bundledPlugin("com.intellij.java")
-        bundledPlugin("Git4Idea")
     }
 }
 kotlin {
