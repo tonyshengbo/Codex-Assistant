@@ -89,6 +89,7 @@ class AgentChatService private constructor(
         val remoteConversationId: String,
         val usageSnapshot: TurnUsageSnapshot? = null,
         val isRunning: Boolean = false,
+        val providerId: String = "codex",
     )
 
     private data class SessionData(
@@ -209,6 +210,7 @@ class AgentChatService private constructor(
                         remoteConversationId = it.remoteConversationId,
                         usageSnapshot = it.usageSnapshot,
                         isRunning = sessionRuns.isRunning(it.id),
+                        providerId = it.providerId,
                     )
                 }
         }
@@ -223,15 +225,29 @@ class AgentChatService private constructor(
             sessions[currentSessionId]?.providerId ?: registry.defaultEngineId()
         }
         val provider = registry.providerOrDefault(engineId)
-        return runCatching {
+        val cwd = workingDirectoryProvider().trim().takeIf { it.isNotBlank() }
+        val scopedPage = runCatching {
             provider.listRemoteConversations(
                 pageSize = limit,
                 cursor = cursor,
-                cwd = workingDirectoryProvider(),
+                cwd = cwd,
                 searchTerm = searchTerm,
             )
         }.getOrElse {
             ConversationSummaryPage(conversations = emptyList(), nextCursor = null)
+        }
+        if (scopedPage.conversations.isNotEmpty() || cwd == null || cursor != null || !searchTerm.isNullOrBlank()) {
+            return scopedPage
+        }
+        return runCatching {
+            provider.listRemoteConversations(
+                pageSize = limit,
+                cursor = cursor,
+                cwd = null,
+                searchTerm = searchTerm,
+            )
+        }.getOrElse {
+            scopedPage
         }
     }
 
@@ -276,10 +292,10 @@ class AgentChatService private constructor(
         return ConversationHistoryPage(events = events, hasOlder = false, olderCursor = null)
     }
 
-    fun createSession(): String {
+    fun createSession(providerId: String = defaultEngineId()): String {
         val session = PersistedChatSession(
             id = UUID.randomUUID().toString(),
-            providerId = CodexProviderFactory.ENGINE_ID,
+            providerId = providerId,
             title = "",
             createdAt = System.currentTimeMillis(),
             updatedAt = System.currentTimeMillis(),
@@ -296,6 +312,27 @@ class AgentChatService private constructor(
         repository.upsertSession(session)
         repository.markActiveSession(session.id)
         return session.id
+    }
+
+    fun setSessionProviderIfEmpty(
+        sessionId: String = getCurrentSessionId(),
+        providerId: String,
+    ): Boolean {
+        val normalizedProviderId = providerId.trim()
+        if (normalizedProviderId.isBlank()) return false
+        val updated = synchronized(stateLock) {
+            val session = sessions[sessionId] ?: return@synchronized false
+            if (session.messageCount != 0 || session.remoteConversationId.isNotBlank()) {
+                return@synchronized false
+            }
+            session.providerId = normalizedProviderId
+            session.updatedAt = System.currentTimeMillis()
+            true
+        }
+        if (updated) {
+            persistSessionSnapshot(sessionId)
+        }
+        return updated
     }
 
     fun switchSession(sessionId: String): Boolean {
@@ -390,7 +427,7 @@ class AgentChatService private constructor(
         repository.deleteSession(sessionId)
         deleteSessionAssets(sessionId)
         if (fallbackSessionId == null) {
-            createSession()
+            createSession(settings.defaultEngineId())
             return true
         }
         repository.markActiveSession(fallbackSessionId)
@@ -577,7 +614,17 @@ class AgentChatService private constructor(
 
     fun availableEngines(): List<EngineDescriptor> = registry.engines()
 
-    fun defaultEngineId(): String = registry.defaultEngineId()
+    fun defaultEngineId(): String = synchronized(stateLock) {
+        sessions[currentSessionId]?.providerId?.trim()?.takeIf { it.isNotBlank() }
+            ?: settings.defaultEngineId().takeIf { it.isNotBlank() }
+            ?: registry.defaultEngineId()
+    }
+
+    fun sessionProviderId(sessionId: String = getCurrentSessionId()): String = synchronized(stateLock) {
+        sessions[sessionId]?.providerId?.trim()?.takeIf { it.isNotBlank() }
+            ?: settings.defaultEngineId().takeIf { it.isNotBlank() }
+            ?: registry.defaultEngineId()
+    }
 
     fun conversationCapabilities(engineId: String = defaultEngineId()): ConversationCapabilities {
         return registry.providerOrDefault(engineId).capabilities()
@@ -616,7 +663,7 @@ class AgentChatService private constructor(
     private fun loadFromRepository() {
         val persistedSessions = repository.listSessions()
         if (persistedSessions.isEmpty()) {
-            createSession()
+            createSession(settings.defaultEngineId())
             return
         }
 

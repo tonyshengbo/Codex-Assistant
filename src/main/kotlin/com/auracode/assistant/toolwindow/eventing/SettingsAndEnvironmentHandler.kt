@@ -4,7 +4,6 @@ import com.auracode.assistant.i18n.AuraCodeBundle
 import com.auracode.assistant.notification.AuraNotificationGroup
 import com.auracode.assistant.provider.codex.CodexCliVersionCheckStatus
 import com.auracode.assistant.provider.codex.CodexCliVersionSnapshot
-import com.auracode.assistant.provider.codex.CodexModelCatalog
 import com.auracode.assistant.settings.SavedAgentDefinition
 import com.auracode.assistant.settings.mcp.McpAuthActionResult
 import com.auracode.assistant.settings.mcp.McpBusyState
@@ -69,7 +68,9 @@ internal class SettingsAndEnvironmentHandler(
         val oldUiScale = context.settingsService.uiScaleMode()
         val state = context.settingsService.state
         state.setExecutablePathFor("codex", drawerState.codexCliPath.trim())
+        state.setExecutablePathFor("claude", drawerState.claudeCliPath.trim())
         context.settingsService.setNodeExecutablePath(drawerState.nodePath.trim())
+        context.settingsService.setSelectedComposerModel("claude", drawerState.claudeDefaultModel.trim())
         context.settingsService.setUiLanguageMode(drawerState.languageMode)
         context.settingsService.setUiThemeMode(drawerState.themeMode)
         context.settingsService.setUiScaleMode(drawerState.uiScaleMode)
@@ -251,7 +252,8 @@ internal class SettingsAndEnvironmentHandler(
             return
         }
         val existing = context.settingsService.customModelIds()
-        if (CodexModelCatalog.ids().contains(draft) || existing.contains(draft)) {
+        val currentEngineModels = context.chatService.engineDescriptor(context.chatService.defaultEngineId())?.models.orEmpty()
+        if (currentEngineModels.contains(draft) || existing.contains(draft)) {
             context.eventHub.publish(
                 AppEvent.StatusTextUpdated(UiText.raw(AuraCodeBundle.message("composer.model.custom.error.duplicate"))),
             )
@@ -271,7 +273,8 @@ internal class SettingsAndEnvironmentHandler(
         context.settingsService.setCustomModelIds(updated)
         context.publishSettingsSnapshot()
         if (context.composerStore.state.value.selectedModel == normalized) {
-            context.eventHub.publishUiIntent(UiIntent.SelectModel(CodexModelCatalog.defaultModel))
+            val fallbackModel = context.settingsService.selectedComposerModel(context.chatService.defaultEngineId())
+            context.eventHub.publishUiIntent(UiIntent.SelectModel(fallbackModel))
         }
     }
 

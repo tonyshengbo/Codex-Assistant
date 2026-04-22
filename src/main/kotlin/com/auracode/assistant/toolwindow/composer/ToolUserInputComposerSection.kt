@@ -26,6 +26,7 @@ import com.auracode.assistant.toolwindow.toolinput.ToolUserInputAnswerDraftUiMod
 import com.auracode.assistant.toolwindow.toolinput.ToolUserInputChoiceKind
 import com.auracode.assistant.toolwindow.toolinput.ToolUserInputPromptState
 import com.auracode.assistant.toolwindow.toolinput.TOOL_USER_INPUT_OTHER_OPTION
+import com.auracode.assistant.toolwindow.toolinput.inlineDescription
 import com.auracode.assistant.toolwindow.toolinput.presentedChoices
 import androidx.compose.runtime.withFrameNanos
 
@@ -201,7 +202,7 @@ internal fun ToolUserInputComposerSection(
                                 textValue = draft.textValue,
                                 placeholder = otherPlaceholder,
                             ),
-                            description = "",
+                            description = choice.inlineDescription(isFocused = index == state.activeChoiceIndex),
                             emphasized = index == state.activeChoiceIndex,
                             p = p,
                             emphasisStyle = ComposerCardActionEmphasisStyle.SUBTLE_HIGHLIGHT,

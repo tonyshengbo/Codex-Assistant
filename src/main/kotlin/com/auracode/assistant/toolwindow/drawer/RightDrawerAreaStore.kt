@@ -47,6 +47,10 @@ internal data class RightDrawerAreaState(
     val historyLoading: Boolean = false,
     val historyQuery: String = "",
     val environmentDraft: EnvironmentDraftState = EnvironmentDraftState(),
+    val claudeCliPath: String = "claude",
+    val savedClaudeCliPath: String = "claude",
+    val claudeDefaultModel: String = "",
+    val savedClaudeDefaultModel: String = "",
     val languageMode: UiLanguageMode = UiLanguageMode.FOLLOW_IDE,
     val themeMode: UiThemeMode = UiThemeMode.FOLLOW_IDE,
     val uiScaleMode: UiScaleMode = UiScaleMode.P100,
@@ -92,7 +96,9 @@ internal data class RightDrawerAreaState(
 
     /** Returns true when the environment draft needs an explicit save action. */
     val isEnvironmentSaveVisible: Boolean
-        get() = environmentDraft.isDirty
+        get() = environmentDraft.isDirty ||
+            claudeCliPath.trim() != savedClaudeCliPath.trim() ||
+            claudeDefaultModel.trim() != savedClaudeDefaultModel.trim()
 
     /**
      * Keeps agent editing modal visibility derived from the existing page mode
@@ -149,6 +155,18 @@ internal class RightDrawerAreaStore {
                     is UiIntent.EditSettingsCodexCliPath -> {
                         _state.value = _state.value.copy(
                             environmentDraft = _state.value.environmentDraft.withEditedCodexPath(event.intent.value),
+                        )
+                    }
+
+                    is UiIntent.EditSettingsClaudeCliPath -> {
+                        _state.value = _state.value.copy(
+                            claudeCliPath = event.intent.value,
+                        )
+                    }
+
+                    is UiIntent.EditSettingsClaudeDefaultModel -> {
+                        _state.value = _state.value.copy(
+                            claudeDefaultModel = event.intent.value,
                         )
                     }
 
@@ -308,6 +326,10 @@ internal class RightDrawerAreaStore {
                         codexCliPath = event.codexCliPath,
                         nodePath = event.nodePath,
                     ),
+                    claudeCliPath = event.claudeCliPath,
+                    savedClaudeCliPath = event.claudeCliPath,
+                    claudeDefaultModel = event.claudeDefaultModel,
+                    savedClaudeDefaultModel = event.claudeDefaultModel,
                     languageMode = event.languageMode,
                     themeMode = event.themeMode,
                     uiScaleMode = event.uiScaleMode,

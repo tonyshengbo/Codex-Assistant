@@ -1,0 +1,17 @@
+{"type":"system","subtype":"init","session_id":"session-123","model":"claude-sonnet-4-6"}
+{"type":"stream_event","event":{"message":{"content":[],"id":"msg_tool","model":"claude-sonnet-4-6","role":"assistant","type":"message","usage":{"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"input_tokens":32982,"output_tokens":0}},"type":"message_start"},"session_id":"session-123"}
+{"type":"stream_event","event":{"content_block":{"id":"tooluse_1","input":{},"name":"Read","type":"tool_use"},"index":0,"type":"content_block_start"},"session_id":"session-123"}
+{"type":"stream_event","event":{"delta":{"partial_json":"{\"file_path\":\"/tmp/demo.txt\"}","type":"input_json_delta"},"index":0,"type":"content_block_delta"},"session_id":"session-123"}
+{"type":"assistant","message":{"content":[{"id":"tooluse_1","input":{"file_path":"/tmp/demo.txt"},"name":"Read","type":"tool_use"}],"id":"msg_tool","model":"claude-sonnet-4-6","role":"assistant","type":"message"},"session_id":"session-123"}
+{"type":"stream_event","event":{"delta":{"stop_reason":"tool_use"},"type":"message_delta","usage":{"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"input_tokens":32982,"output_tokens":30}},"session_id":"session-123"}
+{"type":"user","message":{"role":"user","content":[{"type":"tool_result","content":"File does not exist","is_error":true,"tool_use_id":"tooluse_1"}]},"session_id":"session-123"}
+{"type":"stream_event","event":{"message":{"content":[],"id":"msg_answer","model":"claude-sonnet-4-6","role":"assistant","type":"message","usage":{"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"input_tokens":33052,"output_tokens":0}},"type":"message_start"},"session_id":"session-123"}
+{"type":"stream_event","event":{"content_block":{"thinking":"","type":"thinking"},"index":0,"type":"content_block_start"},"session_id":"session-123"}
+{"type":"stream_event","event":{"delta":{"thinking":"Inspecting repository structure","type":"thinking_delta"},"index":0,"type":"content_block_delta"},"session_id":"session-123"}
+{"type":"stream_event","event":{"index":0,"type":"content_block_stop"},"session_id":"session-123"}
+{"type":"stream_event","event":{"content_block":{"text":"","type":"text"},"index":1,"type":"content_block_start"},"session_id":"session-123"}
+{"type":"stream_event","event":{"delta":{"text":"工程已全部创建完毕。","type":"text_delta"},"index":1,"type":"content_block_delta"},"session_id":"session-123"}
+{"type":"assistant","message":{"content":[{"text":"工程已全部创建完毕。","type":"text"}],"id":"msg_answer","model":"claude-sonnet-4-6","role":"assistant","type":"message"},"session_id":"session-123"}
+{"type":"stream_event","event":{"delta":{"stop_reason":"end_turn"},"type":"message_delta","usage":{"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"input_tokens":46300,"output_tokens":808}},"session_id":"session-123"}
+{"type":"stream_event","event":{"type":"message_stop"},"session_id":"session-123"}
+{"type":"result","subtype":"success","session_id":"session-123","result":"工程已全部创建完毕。","is_error":false,"usage":{"input_tokens":539211,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"output_tokens":12125},"modelUsage":{"claude-sonnet-4-6":{"inputTokens":539211,"outputTokens":12125,"cacheReadInputTokens":0,"cacheCreationInputTokens":0,"contextWindow":200000,"maxOutputTokens":32000}}}

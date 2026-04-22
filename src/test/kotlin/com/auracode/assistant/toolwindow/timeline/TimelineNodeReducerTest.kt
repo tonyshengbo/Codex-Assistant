@@ -591,6 +591,61 @@ class TimelineNodeReducerTest {
         )
     }
 
+    @Test
+    fun `assistant messages around tool append by source id while later deltas still update in place`() {
+        val reducer = TimelineNodeReducer()
+
+        reducer.accept(TimelineMutation.TurnStarted(turnId = "turn_message_boundary", threadId = "thread_1"))
+        reducer.accept(
+            TimelineMutation.UpsertMessage(
+                sourceId = "request-1:assistant:msg_before_tool",
+                role = MessageRole.ASSISTANT,
+                text = "先说明一下。",
+                status = ItemStatus.RUNNING,
+            ),
+        )
+        reducer.accept(
+            TimelineMutation.UpsertToolCall(
+                sourceId = "request-1:tool:tooluse_1",
+                title = "Read",
+                body = "Input\n\n```json\n{\"file_path\":\"/tmp/demo.txt\"}\n```",
+                status = ItemStatus.SUCCESS,
+            ),
+        )
+        reducer.accept(
+            TimelineMutation.UpsertMessage(
+                sourceId = "request-1:assistant:msg_after_tool",
+                role = MessageRole.ASSISTANT,
+                text = "再给最终答复。",
+                status = ItemStatus.RUNNING,
+            ),
+        )
+        reducer.accept(
+            TimelineMutation.UpsertMessage(
+                sourceId = "request-1:assistant:msg_after_tool",
+                role = MessageRole.ASSISTANT,
+                text = "再给最终答复。已完成。",
+                status = ItemStatus.SUCCESS,
+            ),
+        )
+
+        assertEquals(3, reducer.state.nodes.size)
+        assertIs<TimelineNode.MessageNode>(reducer.state.nodes[0])
+        assertIs<TimelineNode.ToolCallNode>(reducer.state.nodes[1])
+        assertIs<TimelineNode.MessageNode>(reducer.state.nodes[2])
+
+        val messages = reducer.state.nodes.filterIsInstance<TimelineNode.MessageNode>()
+        assertEquals(2, messages.size)
+        assertEquals(
+            listOf("先说明一下。", "再给最终答复。已完成。"),
+            messages.map { it.text },
+        )
+        assertEquals(
+            listOf("request-1:assistant:msg_before_tool", "request-1:assistant:msg_after_tool"),
+            messages.map { it.sourceId },
+        )
+    }
+
     private fun TimelineAreaState.messageTexts(): List<String> {
         return nodes.filterIsInstance<TimelineNode.MessageNode>().map { it.text }
     }

@@ -33,6 +33,31 @@ import kotlin.test.assertTrue
 
 class AgentChatServicePersistenceTest {
     @Test
+    fun `session summaries retain provider identity across reload`() = runBlocking {
+        val dbPath = createTempDirectory("chat-service-provider-id").resolve("chat.db")
+        val settings = AgentSettingsService().apply { loadState(AgentSettingsService.State()) }
+        val provider = RecordingHistoryProvider(threadId = "thread-claude")
+        val service = AgentChatService(
+            repository = SQLiteChatSessionRepository(dbPath),
+            registry = registry(provider),
+            settings = settings,
+        )
+
+        service.createSession(providerId = "claude")
+        assertEquals("claude", service.listSessions().first { it.id == service.getCurrentSessionId() }.providerId)
+        service.dispose()
+
+        val reloaded = AgentChatService(
+            repository = SQLiteChatSessionRepository(dbPath),
+            registry = registry(provider),
+            settings = settings,
+        )
+
+        assertEquals("claude", reloaded.listSessions().first { it.id == reloaded.getCurrentSessionId() }.providerId)
+        reloaded.dispose()
+    }
+
+    @Test
     fun `new empty session keeps raw title blank and resolves localized fallback on reload`() = runBlocking {
         val dbPath = createTempDirectory("chat-service-session-title").resolve("chat.db")
         val settings = AgentSettingsService().apply { loadState(AgentSettingsService.State(uiLanguage = "EN")) }

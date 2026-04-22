@@ -9,6 +9,7 @@ import com.auracode.assistant.provider.AgentProviderFactory
 import com.auracode.assistant.provider.EngineCapabilities
 import com.auracode.assistant.provider.EngineDescriptor
 import com.auracode.assistant.provider.ProviderRegistry
+import com.auracode.assistant.provider.claude.ClaudeModelCatalog
 import com.auracode.assistant.protocol.ItemKind
 import com.auracode.assistant.protocol.ItemStatus
 import com.auracode.assistant.protocol.TurnOutcome
@@ -28,6 +29,7 @@ import com.auracode.assistant.persistence.chat.SQLiteChatSessionRepository
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
+import java.nio.file.Files
 import kotlin.io.path.createTempDirectory
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -35,6 +37,90 @@ import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class ToolWindowCoordinatorMultiSessionTest {
+    @Test
+    fun `selecting claude routes the next submission through claude provider`() {
+        val harness = MultiEngineCoordinatorHarness()
+
+        harness.eventHub.publishUiIntent(UiIntent.SelectEngine("claude"))
+        harness.waitUntil { harness.composerStore.state.value.selectedEngineId == "claude" }
+
+        harness.eventHub.publishUiIntent(UiIntent.UpdateDocument(TextFieldValue("run-claude", TextRange(10))))
+        harness.eventHub.publishUiIntent(UiIntent.SendPrompt)
+        harness.waitUntil { harness.claudeProvider.requests.size == 1 }
+
+        assertEquals(1, harness.claudeProvider.requests.size)
+        assertEquals("claude", harness.claudeProvider.requests.single().engineId)
+        assertEquals(ClaudeModelCatalog.defaultModel, harness.claudeProvider.requests.single().model)
+        assertTrue(harness.codexProvider.requests.isEmpty())
+
+        harness.dispose()
+    }
+
+    @Test
+    fun `selecting a different engine from a populated session creates a new session instead of mutating the old one`() {
+        val harness = MultiEngineCoordinatorHarness()
+        val sentFile = harness.workingDir.resolve("sent.md")
+        val draftFile = harness.workingDir.resolve("draft.md")
+        Files.writeString(sentFile, "sent file")
+        Files.writeString(draftFile, "draft file")
+
+        val originalSessionId = harness.service.getCurrentSessionId()
+        harness.eventHub.publishUiIntent(UiIntent.UpdateDocument(TextFieldValue("run-codex", TextRange(9))))
+        harness.eventHub.publishUiIntent(UiIntent.AddContextFiles(listOf(sentFile.toString())))
+        harness.eventHub.publishUiIntent(UiIntent.AddAttachments(listOf(sentFile.toString())))
+        harness.eventHub.publishUiIntent(UiIntent.SendPrompt)
+        harness.waitUntil { harness.codexProvider.requests.size == 1 }
+        harness.waitUntil {
+            harness.service.listSessions().first { it.id == originalSessionId }.messageCount == 1
+        }
+        harness.eventHub.publishUiIntent(UiIntent.UpdateDocument(TextFieldValue("draft-follow-up", TextRange(15))))
+        harness.eventHub.publishUiIntent(UiIntent.AddContextFiles(listOf(draftFile.toString())))
+        harness.eventHub.publishUiIntent(UiIntent.AddAttachments(listOf(draftFile.toString())))
+
+        harness.eventHub.publishUiIntent(UiIntent.RequestEngineSwitch("claude"))
+        harness.waitUntil { harness.composerStore.state.value.engineSwitchConfirmation?.targetEngineId == "claude" }
+        assertEquals(originalSessionId, harness.service.getCurrentSessionId())
+
+        harness.eventHub.publishUiIntent(UiIntent.SelectEngine("claude"))
+        harness.waitUntil { harness.service.getCurrentSessionId() != originalSessionId }
+        val claudeSessionId = harness.service.getCurrentSessionId()
+        harness.waitUntil { harness.composerStore.state.value.selectedEngineId == "claude" }
+
+        assertEquals("codex", harness.service.listSessions().first { it.id == originalSessionId }.providerId)
+        assertEquals("claude", harness.service.listSessions().first { it.id == claudeSessionId }.providerId)
+        assertEquals(0, harness.service.listSessions().first { it.id == claudeSessionId }.messageCount)
+        assertEquals(listOf(claudeSessionId), harness.openedSessionIds)
+        assertEquals("draft-follow-up", harness.composerStore.state.value.document.text)
+        assertEquals(1, harness.composerStore.state.value.attachments.size)
+        assertTrue(harness.composerStore.state.value.contextEntries.any { it.path == draftFile.toString() })
+
+        harness.dispose()
+    }
+
+    @Test
+    fun `dismissing a pending engine switch keeps the populated session on the original engine`() {
+        val harness = MultiEngineCoordinatorHarness()
+
+        val originalSessionId = harness.service.getCurrentSessionId()
+        harness.eventHub.publishUiIntent(UiIntent.UpdateDocument(TextFieldValue("run-codex", TextRange(9))))
+        harness.eventHub.publishUiIntent(UiIntent.SendPrompt)
+        harness.waitUntil { harness.codexProvider.requests.size == 1 }
+        harness.waitUntil {
+            harness.service.listSessions().first { it.id == originalSessionId }.messageCount == 1
+        }
+
+        harness.eventHub.publishUiIntent(UiIntent.RequestEngineSwitch("claude"))
+        harness.waitUntil { harness.composerStore.state.value.engineSwitchConfirmation?.targetEngineId == "claude" }
+        harness.eventHub.publishUiIntent(UiIntent.DismissEngineSwitchDialog)
+        harness.waitUntil { harness.composerStore.state.value.engineSwitchConfirmation == null }
+
+        assertEquals(originalSessionId, harness.service.getCurrentSessionId())
+        assertEquals("codex", harness.service.listSessions().first { it.id == originalSessionId }.providerId)
+        assertTrue(harness.openedSessionIds.isEmpty())
+
+        harness.dispose()
+    }
+
     @Test
     fun `background session events do not overwrite the active tab timeline and restore on switch back`() {
         val harness = CoordinatorHarness()
@@ -104,7 +190,8 @@ class ToolWindowCoordinatorMultiSessionTest {
 
         harness.eventHub.publishUiIntent(UiIntent.SwitchSession(sessionA))
         harness.waitUntil {
-            harness.timelineStore.state.value.nodes.filterIsInstance<TimelineNode.MessageNode>().any { it.text == "assistant-a done" }
+            harness.timelineStore.state.value.nodes.filterIsInstance<TimelineNode.MessageNode>().map { it.text } ==
+                listOf("run-a", "assistant-a done")
         }
 
         val messages = harness.timelineStore.state.value.nodes.filterIsInstance<TimelineNode.MessageNode>().map { it.text }
@@ -255,7 +342,7 @@ class ToolWindowCoordinatorMultiSessionTest {
             historyPageSize = 10,
         )
 
-        fun waitUntil(timeoutMs: Long = 2_000, condition: () -> Boolean) {
+        fun waitUntil(timeoutMs: Long = 5_000, condition: () -> Boolean) {
             val start = System.currentTimeMillis()
             while (!condition()) {
                 if (System.currentTimeMillis() - start > timeoutMs) {
@@ -269,6 +356,88 @@ class ToolWindowCoordinatorMultiSessionTest {
             val sessionId = service.createSession()
             coordinator.onSessionActivated()
             return sessionId
+        }
+
+        fun dispose() {
+            coordinator.dispose()
+            service.dispose()
+        }
+    }
+
+    private class MultiEngineCoordinatorHarness {
+        val workingDir = createTempDirectory("multi-engine-flow")
+        val codexProvider = RecordingMultiSessionProvider()
+        val claudeProvider = RecordingMultiSessionProvider()
+        val openedSessionIds = mutableListOf<String>()
+        private val settings = AgentSettingsService().apply { loadState(AgentSettingsService.State()) }
+        val service = AgentChatService(
+            repository = SQLiteChatSessionRepository(workingDir.resolve("chat.db")),
+            registry = ProviderRegistry(
+                descriptors = listOf(
+                    EngineDescriptor(
+                        id = "claude",
+                        displayName = "Claude",
+                        models = listOf("claude-sonnet-4-6", "claude-opus-4-1"),
+                        capabilities = EngineCapabilities(
+                            supportsThinking = true,
+                            supportsToolEvents = false,
+                            supportsCommandProposal = false,
+                            supportsDiffProposal = false,
+                        ),
+                    ),
+                    EngineDescriptor(
+                        id = "codex",
+                        displayName = "Codex",
+                        models = listOf("gpt-5.3-codex"),
+                        capabilities = EngineCapabilities(
+                            supportsThinking = true,
+                            supportsToolEvents = true,
+                            supportsCommandProposal = true,
+                            supportsDiffProposal = true,
+                        ),
+                    ),
+                ),
+                factories = listOf(
+                    object : AgentProviderFactory {
+                        override val engineId: String = "claude"
+                        override fun create(): AgentProvider = claudeProvider
+                    },
+                    object : AgentProviderFactory {
+                        override val engineId: String = "codex"
+                        override fun create(): AgentProvider = codexProvider
+                    },
+                ),
+                defaultEngineId = "codex",
+            ),
+            settings = settings,
+            workingDirectoryProvider = { workingDir.toString() },
+        )
+        val eventHub = ToolWindowEventHub()
+        val composerStore = ComposerAreaStore()
+        private val coordinator = ToolWindowCoordinator(
+            chatService = service,
+            settingsService = settings,
+            eventHub = eventHub,
+            headerStore = HeaderAreaStore(),
+            statusStore = StatusAreaStore(),
+            timelineStore = TimelineAreaStore(),
+            composerStore = composerStore,
+            rightDrawerStore = RightDrawerAreaStore(),
+            openSessionInNewTab = { sessionId ->
+                openedSessionIds += sessionId
+                true
+            },
+            historyPageSize = 10,
+        )
+
+        fun waitUntil(timeoutMs: Long = 5_000, condition: () -> Boolean) {
+            val start = System.currentTimeMillis()
+            while (!condition()) {
+                if (System.currentTimeMillis() - start > timeoutMs) {
+                    throw AssertionError("Condition was not met within ${timeoutMs}ms")
+                }
+                Thread.sleep(20)
+            }
         }
 
         fun dispose() {

@@ -59,6 +59,13 @@ internal class SessionUiStateCache {
         bundle(sessionId).apply(event)
     }
 
+    /**
+     * Stores only the composer state for a session while leaving other scoped stores untouched.
+     */
+    fun storeComposerState(sessionId: String, composerState: ComposerAreaState) {
+        bundle(sessionId).restoreComposerState(composerState)
+    }
+
     fun findToolUserInputPrompt(sessionId: String, requestId: String): ToolUserInputPromptUiModel? {
         return bundlesBySessionId[sessionId]?.findToolUserInputPrompt(requestId)
     }
@@ -85,6 +92,13 @@ private class SessionUiStoreBundle {
         approvalStore.restoreState(snapshot.approvals)
         toolUserInputPromptStore.restoreState(snapshot.toolUserInputs)
         statusStore.restoreState(snapshot.status)
+    }
+
+    /**
+     * Replaces the cached composer store without affecting the other cached session stores.
+     */
+    fun restoreComposerState(composerState: ComposerAreaState) {
+        composerStore.restoreState(composerState)
     }
 
     fun apply(event: AppEvent) {

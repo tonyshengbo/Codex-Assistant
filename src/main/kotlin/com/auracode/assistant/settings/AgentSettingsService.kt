@@ -1,5 +1,6 @@
 package com.auracode.assistant.settings
 
+import com.auracode.assistant.provider.claude.ClaudeModelCatalog
 import com.auracode.assistant.provider.codex.CodexModelCatalog
 import com.auracode.assistant.toolwindow.eventing.ComposerReasoning
 import com.intellij.openapi.application.ApplicationManager
@@ -37,9 +38,13 @@ enum class UiScaleMode {
 @State(name = "AuraCodeSettings", storages = [Storage("aura-code.xml")])
 class AgentSettingsService : PersistentStateComponent<AgentSettingsService.State> {
     data class State(
+        var defaultEngineId: String = "codex",
         var codexCliPath: String = "codex",
         var nodeExecutablePath: String = "",
-        var engineExecutablePaths: MutableMap<String, String> = mutableMapOf("codex" to "codex"),
+        var engineExecutablePaths: MutableMap<String, String> = mutableMapOf(
+            "codex" to "codex",
+            "claude" to "claude",
+        ),
         var uiLanguage: String = UiLanguageMode.FOLLOW_IDE.name,
         var uiTheme: String = UiThemeMode.FOLLOW_IDE.name,
         var uiScale: String = UiScaleMode.P100.name,
@@ -56,6 +61,7 @@ class AgentSettingsService : PersistentStateComponent<AgentSettingsService.State
         var selectedAgentIds: LinkedHashSet<String> = linkedSetOf(),
         var disabledSkillNames: MutableSet<String> = linkedSetOf(),
         var customModelIds: MutableList<String> = mutableListOf(),
+        var selectedComposerModelsByEngine: MutableMap<String, String> = mutableMapOf(),
         var selectedComposerModel: String = CodexModelCatalog.defaultModel,
         var selectedComposerReasoning: String = ComposerReasoning.MEDIUM.effort,
     ) {
@@ -74,6 +80,13 @@ class AgentSettingsService : PersistentStateComponent<AgentSettingsService.State
             }
             engineExecutablePaths[engineId] = normalized
         }
+
+        fun defaultModelFor(engineId: String): String {
+            return when (engineId.trim()) {
+                "claude" -> ClaudeModelCatalog.defaultModel
+                else -> CodexModelCatalog.defaultModel
+            }
+        }
     }
 
     private var state = State()
@@ -86,6 +99,7 @@ class AgentSettingsService : PersistentStateComponent<AgentSettingsService.State
 
     override fun loadState(state: State) {
         this.state = state
+        normalizePersistedState()
         notifyLanguageChanged()
     }
 
@@ -178,6 +192,12 @@ class AgentSettingsService : PersistentStateComponent<AgentSettingsService.State
         state.nodeExecutablePath = path.trim()
     }
 
+    fun defaultEngineId(): String = state.defaultEngineId.trim().ifBlank { "codex" }
+
+    fun setDefaultEngineId(engineId: String) {
+        state.defaultEngineId = engineId.trim().ifBlank { "codex" }
+    }
+
     fun notifyLanguageChanged() {
         _languageVersion.value = _languageVersion.value + 1
     }
@@ -210,10 +230,48 @@ class AgentSettingsService : PersistentStateComponent<AgentSettingsService.State
         state.customModelIds = values.toMutableList()
     }
 
-    fun selectedComposerModel(): String = state.selectedComposerModel.trim().ifBlank { CodexModelCatalog.defaultModel }
+    fun selectedComposerModel(): String = selectedComposerModel(defaultEngineId())
+
+    fun selectedComposerModel(engineId: String): String {
+        val normalizedEngineId = engineId.trim().ifBlank { defaultEngineId() }
+        val fromMap = state.selectedComposerModelsByEngine[normalizedEngineId]?.trim().orEmpty()
+        if (fromMap.isNotBlank()) return normalizeComposerModel(normalizedEngineId, fromMap)
+        return when (normalizedEngineId) {
+            "codex" -> state.selectedComposerModel.trim().ifBlank { CodexModelCatalog.defaultModel }
+            else -> state.defaultModelFor(normalizedEngineId)
+        }
+    }
 
     fun setSelectedComposerModel(model: String) {
-        state.selectedComposerModel = model.trim().ifBlank { CodexModelCatalog.defaultModel }
+        setSelectedComposerModel(defaultEngineId(), model)
+    }
+
+    fun setSelectedComposerModel(engineId: String, model: String) {
+        val normalizedEngineId = engineId.trim().ifBlank { defaultEngineId() }
+        val normalizedModel = normalizeComposerModel(
+            engineId = normalizedEngineId,
+            model = model.trim().ifBlank { state.defaultModelFor(normalizedEngineId) },
+        )
+        if (normalizedEngineId == "codex") {
+            state.selectedComposerModel = normalizedModel
+        }
+        state.selectedComposerModelsByEngine[normalizedEngineId] = normalizedModel
+    }
+
+    /** 对持久化状态执行轻量迁移，避免旧模型值持续污染运行时。 */
+    private fun normalizePersistedState() {
+        state.selectedComposerModelsByEngine = state.selectedComposerModelsByEngine
+            .mapValuesTo(linkedMapOf()) { (engineId, model) ->
+                normalizeComposerModel(engineId = engineId, model = model)
+            }
+    }
+
+    /** 根据引擎类型归一化当前选中的模型值。 */
+    private fun normalizeComposerModel(engineId: String, model: String): String {
+        return when (engineId.trim()) {
+            "claude" -> ClaudeModelCatalog.normalize(model)
+            else -> model.trim()
+        }
     }
 
     fun selectedComposerReasoning(): String = state.selectedComposerReasoning.trim().ifBlank { ComposerReasoning.MEDIUM.effort }

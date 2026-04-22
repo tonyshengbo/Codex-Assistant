@@ -114,35 +114,8 @@ internal fun buildSkillConfigWriteParams(entry: CodexSkillConfigSyncEntry): Json
 
 
 internal fun buildPrompt(request: AgentRequest): String {
-    val snippetBlock = request.contextFiles
-        .filter { !it.content.isNullOrBlank() }
-        .joinToString("\n\n") { file ->
-            "FILE: ${file.path}\n${file.content.orEmpty()}"
-        }
-    val pathOnlyBlock = request.contextFiles
-        .filter { it.content.isNullOrBlank() }
-        .joinToString("\n") { "- ${it.path}" }
-    var contextBlock = buildString {
-        if (snippetBlock.isNotBlank()) {
-            append("Context snippets:\n")
-            append(snippetBlock)
-        }
-        if (pathOnlyBlock.isNotBlank()) {
-            if (isNotBlank()) append("\n\n")
-            append("Context files (read by path):\n")
-            append(pathOnlyBlock)
-        }
-    }
-    if (request.systemInstructions.isNotEmpty()) {
-        contextBlock = buildString {
-            if (contextBlock.isNotBlank()) {
-                append(contextBlock)
-                append("\n\n")
-            }
-            append("##Agent Role and Instructions\n")
-            append(request.systemInstructions.joinToString("\n"))
-        }
-    }
+    val contextSnippets = request.contextFiles.filter { !it.content.isNullOrBlank() }
+    val contextFilesByPath = request.contextFiles.filter { it.content.isNullOrBlank() }
     val fileBlock = if (request.fileAttachments.isEmpty()) {
         ""
     } else {
@@ -150,9 +123,26 @@ internal fun buildPrompt(request: AgentRequest): String {
     }
     return buildString {
         append(request.prompt)
-        if (contextBlock.isNotBlank()) {
-            append("\n\nContext files:\n")
-            append(contextBlock)
+        if (contextSnippets.isNotEmpty()) {
+            append("\n\nContext snippets:\n")
+            append(
+                contextSnippets.joinToString("\n\n") { file ->
+                    buildString {
+                        append("FILE: ")
+                        append(file.path)
+                        append('\n')
+                        append(file.content.orEmpty())
+                    }
+                },
+            )
+        }
+        if (contextFilesByPath.isNotEmpty()) {
+            append("\n\nContext files (read by path):\n")
+            append(contextFilesByPath.joinToString("\n") { "- ${it.path}" })
+        }
+        if (request.systemInstructions.isNotEmpty()) {
+            append("\n\n##Agent Role and Instructions\n")
+            append(request.systemInstructions.joinToString("\n"))
         }
         if (fileBlock.isNotBlank()) {
             append("\n\nAttached non-text files (read by path):\n")

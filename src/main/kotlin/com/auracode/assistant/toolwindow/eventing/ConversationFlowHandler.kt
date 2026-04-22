@@ -22,6 +22,8 @@ internal class ConversationFlowHandler(
         context.pendingSubmissionsBySessionId.remove(sessionId)
         context.activePlanRunContexts.remove(sessionId)
         context.publishSessionSnapshot()
+        context.publishSettingsSnapshot()
+        context.publishConversationCapabilities()
         onRestoreHistory()
     }
 
@@ -32,6 +34,8 @@ internal class ConversationFlowHandler(
         if (!context.chatService.switchSession(sessionId)) return
         context.sessionAttentionStore.clear(sessionId)
         context.publishSessionSnapshot()
+        context.publishSettingsSnapshot()
+        context.publishConversationCapabilities()
         if (!context.eventDispatcher.restoreCachedSessionState(sessionId)) {
             onRestoreHistory()
         }
@@ -119,7 +123,7 @@ internal class ConversationFlowHandler(
         composerState: com.auracode.assistant.toolwindow.composer.ComposerAreaState,
     ): PendingComposerSubmission? {
         val disabledSkills = context.skillsRuntimeService.findDisabledSkillMentions(
-            engineId = context.chatService.defaultEngineId(),
+            engineId = composerState.selectedEngineId,
             cwd = context.chatService.currentWorkingDirectory(),
             text = composerState.inputText,
         )
@@ -138,6 +142,7 @@ internal class ConversationFlowHandler(
         )
         return PendingComposerSubmission(
             id = ToolWindowCoordinatorIds.newPendingSubmissionId(composerState),
+            engineId = composerState.selectedEngineId,
             prompt = prompt,
             systemInstructions = systemInstructions,
             contextFiles = workspaceHandler.buildContextFiles(
@@ -163,6 +168,7 @@ internal class ConversationFlowHandler(
         val composerState = context.composerStore.state.value
         return PendingComposerSubmission(
             id = ToolWindowCoordinatorIds.newExternalSubmissionId(context.pendingSubmissionQueue(context.activeSessionId())),
+            engineId = composerState.selectedEngineId,
             prompt = request.prompt,
             systemInstructions = composerState.serializedSystemInstructions(),
             contextFiles = request.contextFiles,
@@ -238,7 +244,7 @@ internal class ConversationFlowHandler(
         context.publishSessionSnapshot()
         context.chatService.runAgent(
             sessionId = sessionId,
-            engineId = context.chatService.defaultEngineId(),
+            engineId = submission.engineId,
             model = submission.selectedModel,
             reasoningEffort = submission.selectedReasoning.effort,
             prompt = submission.prompt,

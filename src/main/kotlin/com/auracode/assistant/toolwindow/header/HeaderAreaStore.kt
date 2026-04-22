@@ -1,6 +1,7 @@
 package com.auracode.assistant.toolwindow.header
 
 import com.auracode.assistant.i18n.AuraCodeBundle
+import com.auracode.assistant.toolwindow.engineDisplayLabel
 import com.auracode.assistant.toolwindow.eventing.AppEvent
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -8,6 +9,7 @@ import kotlinx.coroutines.flow.asStateFlow
 
 internal data class HeaderAreaState(
     val title: String = "",
+    val engineLabel: String = "",
     val canCreateNewSession: Boolean = false,
 )
 
@@ -24,6 +26,7 @@ internal class HeaderAreaStore {
                 val canCreate = (active?.messageCount ?: 0) > 0
                 _state.value = _state.value.copy(
                     title = title,
+                    engineLabel = active?.providerId?.let(::engineDisplayLabel).orEmpty(),
                     canCreateNewSession = canCreate,
                 )
             }

@@ -2,8 +2,12 @@ package com.auracode.assistant.toolwindow.composer
 
 import com.auracode.assistant.protocol.ItemStatus
 import com.auracode.assistant.protocol.UnifiedApprovalRequestKind
+import com.auracode.assistant.conversation.ConversationCapabilities
 import com.auracode.assistant.model.ContextFile
 import com.auracode.assistant.model.TurnUsageSnapshot
+import com.auracode.assistant.provider.EngineDescriptor
+import com.auracode.assistant.provider.EngineCapabilities
+import com.auracode.assistant.service.AgentChatService
 import com.auracode.assistant.provider.codex.CodexModelCatalog
 import com.auracode.assistant.settings.SavedAgentDefinition
 import com.auracode.assistant.toolwindow.eventing.AppEvent
@@ -27,6 +31,370 @@ import kotlin.test.assertTrue
 import kotlin.test.assertFalse
 
 class ComposerAreaStoreTest {
+    @Test
+    fun `session snapshot switches composer engine and shows empty session hint`() {
+        val store = ComposerAreaStore()
+        store.onEvent(
+            AppEvent.SettingsSnapshotUpdated(
+                codexCliPath = "codex",
+                selectedEngineId = "codex",
+                availableEngines = listOf(
+                    EngineDescriptor(
+                        id = "codex",
+                        displayName = "Codex",
+                        models = listOf("gpt-5.4"),
+                        capabilities = EngineCapabilities(
+                            supportsThinking = true,
+                            supportsToolEvents = true,
+                            supportsCommandProposal = true,
+                            supportsDiffProposal = true,
+                        ),
+                    ),
+                    EngineDescriptor(
+                        id = "claude",
+                        displayName = "Claude",
+                        models = listOf("claude-sonnet-4-6"),
+                        capabilities = EngineCapabilities(
+                            supportsThinking = true,
+                            supportsToolEvents = false,
+                            supportsCommandProposal = false,
+                            supportsDiffProposal = false,
+                        ),
+                    ),
+                ),
+                languageMode = com.auracode.assistant.settings.UiLanguageMode.FOLLOW_IDE,
+                themeMode = com.auracode.assistant.settings.UiThemeMode.FOLLOW_IDE,
+                autoContextEnabled = true,
+                savedAgents = emptyList(),
+                customModelIds = emptyList(),
+                selectedModel = "gpt-5.4",
+            ),
+        )
+
+        store.onEvent(
+            AppEvent.SessionSnapshotUpdated(
+                sessions = listOf(
+                    AgentChatService.SessionSummary(
+                        id = "s1",
+                        title = "Claude Session",
+                        updatedAt = 1L,
+                        messageCount = 0,
+                        remoteConversationId = "",
+                        providerId = "claude",
+                    ),
+                ),
+                activeSessionId = "s1",
+            ),
+        )
+
+        assertEquals("claude", store.state.value.selectedEngineId)
+        assertEquals("claude-sonnet-4-6", store.state.value.selectedModel)
+        assertEquals(
+            "This session is empty. Your first message will start it on Claude.",
+            store.state.value.emptyStateHint,
+        )
+    }
+
+    @Test
+    fun `session snapshot clears empty session hint once the conversation has history`() {
+        val store = ComposerAreaStore()
+        store.onEvent(
+            AppEvent.SettingsSnapshotUpdated(
+                codexCliPath = "codex",
+                selectedEngineId = "claude",
+                availableEngines = listOf(
+                    EngineDescriptor(
+                        id = "claude",
+                        displayName = "Claude",
+                        models = listOf("claude-sonnet-4-6"),
+                        capabilities = EngineCapabilities(
+                            supportsThinking = true,
+                            supportsToolEvents = false,
+                            supportsCommandProposal = false,
+                            supportsDiffProposal = false,
+                        ),
+                    ),
+                ),
+                languageMode = com.auracode.assistant.settings.UiLanguageMode.FOLLOW_IDE,
+                themeMode = com.auracode.assistant.settings.UiThemeMode.FOLLOW_IDE,
+                autoContextEnabled = true,
+                savedAgents = emptyList(),
+                customModelIds = emptyList(),
+                selectedModel = "claude-sonnet-4-6",
+            ),
+        )
+
+        store.onEvent(
+            AppEvent.SessionSnapshotUpdated(
+                sessions = listOf(
+                    AgentChatService.SessionSummary(
+                        id = "s1",
+                        title = "Claude Session",
+                        updatedAt = 1L,
+                        messageCount = 2,
+                        remoteConversationId = "",
+                        providerId = "claude",
+                    ),
+                ),
+                activeSessionId = "s1",
+            ),
+        )
+
+        assertNull(store.state.value.emptyStateHint)
+    }
+
+    @Test
+    fun `selecting engine switches composer model to that engine default immediately`() {
+        val store = ComposerAreaStore()
+        store.onEvent(
+            AppEvent.SettingsSnapshotUpdated(
+                codexCliPath = "codex",
+                selectedEngineId = "codex",
+                availableEngines = listOf(
+                    EngineDescriptor(
+                        id = "codex",
+                        displayName = "Codex",
+                        models = listOf("gpt-5.4"),
+                        capabilities = EngineCapabilities(
+                            supportsThinking = true,
+                            supportsToolEvents = true,
+                            supportsCommandProposal = true,
+                            supportsDiffProposal = true,
+                        ),
+                    ),
+                    EngineDescriptor(
+                        id = "claude",
+                        displayName = "Claude",
+                        models = listOf("claude-sonnet-4-6"),
+                        capabilities = EngineCapabilities(
+                            supportsThinking = true,
+                            supportsToolEvents = false,
+                            supportsCommandProposal = false,
+                            supportsDiffProposal = false,
+                        ),
+                    ),
+                ),
+                languageMode = com.auracode.assistant.settings.UiLanguageMode.FOLLOW_IDE,
+                themeMode = com.auracode.assistant.settings.UiThemeMode.FOLLOW_IDE,
+                autoContextEnabled = true,
+                savedAgents = emptyList(),
+                customModelIds = emptyList(),
+                selectedModel = "gpt-5.4",
+            ),
+        )
+
+        store.onEvent(AppEvent.UiIntentPublished(UiIntent.SelectEngine("claude")))
+
+        assertEquals("claude", store.state.value.selectedEngineId)
+        assertEquals("claude-sonnet-4-6", store.state.value.selectedModel)
+    }
+
+    @Test
+    fun `requesting engine switch from a populated session opens a confirmation dialog instead of changing engine`() {
+        val store = ComposerAreaStore()
+        store.onEvent(
+            AppEvent.SettingsSnapshotUpdated(
+                codexCliPath = "codex",
+                selectedEngineId = "codex",
+                availableEngines = listOf(
+                    EngineDescriptor(
+                        id = "codex",
+                        displayName = "Codex",
+                        models = listOf("gpt-5.4"),
+                        capabilities = EngineCapabilities(
+                            supportsThinking = true,
+                            supportsToolEvents = true,
+                            supportsCommandProposal = true,
+                            supportsDiffProposal = true,
+                        ),
+                    ),
+                    EngineDescriptor(
+                        id = "claude",
+                        displayName = "Claude",
+                        models = listOf("claude-sonnet-4-6"),
+                        capabilities = EngineCapabilities(
+                            supportsThinking = true,
+                            supportsToolEvents = false,
+                            supportsCommandProposal = false,
+                            supportsDiffProposal = false,
+                        ),
+                    ),
+                ),
+                languageMode = com.auracode.assistant.settings.UiLanguageMode.FOLLOW_IDE,
+                themeMode = com.auracode.assistant.settings.UiThemeMode.FOLLOW_IDE,
+                autoContextEnabled = true,
+                savedAgents = emptyList(),
+                customModelIds = emptyList(),
+                selectedModel = "gpt-5.4",
+            ),
+        )
+        store.onEvent(
+            AppEvent.SessionSnapshotUpdated(
+                sessions = listOf(
+                    AgentChatService.SessionSummary(
+                        id = "s1",
+                        title = "Codex Session",
+                        updatedAt = 1L,
+                        messageCount = 1,
+                        remoteConversationId = "",
+                        providerId = "codex",
+                    ),
+                ),
+                activeSessionId = "s1",
+            ),
+        )
+
+        store.onEvent(AppEvent.UiIntentPublished(UiIntent.RequestEngineSwitch("claude")))
+
+        assertEquals("codex", store.state.value.selectedEngineId)
+        assertEquals(
+            EngineSwitchConfirmationState(
+                targetEngineId = "claude",
+                targetEngineLabel = "Claude",
+            ),
+            store.state.value.engineSwitchConfirmation,
+        )
+    }
+
+    @Test
+    fun `dismissing engine switch confirmation clears the pending dialog`() {
+        val store = ComposerAreaStore()
+        store.restoreState(
+            ComposerAreaState(
+                selectedEngineId = "codex",
+                availableEngines = listOf(
+                    EngineDescriptor(
+                        id = "codex",
+                        displayName = "Codex",
+                        models = listOf("gpt-5.4"),
+                        capabilities = EngineCapabilities(
+                            supportsThinking = true,
+                            supportsToolEvents = true,
+                            supportsCommandProposal = true,
+                            supportsDiffProposal = true,
+                        ),
+                    ),
+                    EngineDescriptor(
+                        id = "claude",
+                        displayName = "Claude",
+                        models = listOf("claude-sonnet-4-6"),
+                        capabilities = EngineCapabilities(
+                            supportsThinking = true,
+                            supportsToolEvents = false,
+                            supportsCommandProposal = false,
+                            supportsDiffProposal = false,
+                        ),
+                    ),
+                ),
+                activeSessionMessageCount = 3,
+                engineSwitchConfirmation = EngineSwitchConfirmationState(
+                    targetEngineId = "claude",
+                    targetEngineLabel = "Claude",
+                ),
+            ),
+        )
+
+        store.onEvent(AppEvent.UiIntentPublished(UiIntent.DismissEngineSwitchDialog))
+
+        assertNull(store.state.value.engineSwitchConfirmation)
+        assertEquals("codex", store.state.value.selectedEngineId)
+    }
+
+    @Test
+    fun `settings snapshot switches composer engine and model list`() {
+        val store = ComposerAreaStore()
+
+        store.onEvent(
+            AppEvent.SettingsSnapshotUpdated(
+                codexCliPath = "codex",
+                selectedEngineId = "claude",
+                availableEngines = listOf(
+                    EngineDescriptor(
+                        id = "codex",
+                        displayName = "Codex",
+                        models = listOf("gpt-5.4"),
+                        capabilities = EngineCapabilities(
+                            supportsThinking = true,
+                            supportsToolEvents = true,
+                            supportsCommandProposal = true,
+                            supportsDiffProposal = true,
+                        ),
+                    ),
+                    EngineDescriptor(
+                        id = "claude",
+                        displayName = "Claude",
+                        models = listOf("claude-sonnet-4-6", "claude-opus-4-1"),
+                        capabilities = EngineCapabilities(
+                            supportsThinking = true,
+                            supportsToolEvents = false,
+                            supportsCommandProposal = false,
+                            supportsDiffProposal = false,
+                        ),
+                    ),
+                ),
+                languageMode = com.auracode.assistant.settings.UiLanguageMode.FOLLOW_IDE,
+                themeMode = com.auracode.assistant.settings.UiThemeMode.FOLLOW_IDE,
+                autoContextEnabled = true,
+                savedAgents = emptyList(),
+                customModelIds = emptyList(),
+                selectedModel = "claude-sonnet-4-6",
+            ),
+        )
+
+        assertEquals("claude", store.state.value.selectedEngineId)
+        assertEquals(listOf("claude-sonnet-4-6", "claude-opus-4-1"), store.state.value.modelOptions.map { it.id })
+        assertEquals("claude-sonnet-4-6", store.state.value.selectedModel)
+    }
+
+    @Test
+    fun `conversation capabilities expose plan mode hint for unsupported engine`() {
+        val store = ComposerAreaStore()
+        store.onEvent(
+            AppEvent.SettingsSnapshotUpdated(
+                codexCliPath = "codex",
+                selectedEngineId = "claude",
+                availableEngines = listOf(
+                    EngineDescriptor(
+                        id = "claude",
+                        displayName = "Claude",
+                        models = listOf("claude-sonnet-4-6"),
+                        capabilities = EngineCapabilities(
+                            supportsThinking = true,
+                            supportsToolEvents = false,
+                            supportsCommandProposal = false,
+                            supportsDiffProposal = false,
+                        ),
+                    ),
+                ),
+                languageMode = com.auracode.assistant.settings.UiLanguageMode.FOLLOW_IDE,
+                themeMode = com.auracode.assistant.settings.UiThemeMode.FOLLOW_IDE,
+                autoContextEnabled = true,
+                savedAgents = emptyList(),
+                customModelIds = emptyList(),
+                selectedModel = "claude-sonnet-4-6",
+            ),
+        )
+
+        store.onEvent(
+            AppEvent.ConversationCapabilitiesUpdated(
+                ConversationCapabilities(
+                    supportsStructuredHistory = false,
+                    supportsHistoryPagination = false,
+                    supportsPlanMode = false,
+                    supportsApprovalRequests = false,
+                    supportsToolUserInput = true,
+                    supportsResume = true,
+                    supportsAttachments = true,
+                    supportsImageInputs = true,
+                ),
+            ),
+        )
+
+        assertFalse(store.state.value.planModeAvailable)
+        assertEquals("Plan mode is not available for Claude yet.", store.state.value.capabilityHint)
+        assertEquals("Plan mode is not available for Claude yet.", store.state.value.disabledCapabilityReason)
+    }
+
     @Test
     fun `focused selection context overrides whole-file focus and keeps manual entries after it`() {
         val store = ComposerAreaStore()

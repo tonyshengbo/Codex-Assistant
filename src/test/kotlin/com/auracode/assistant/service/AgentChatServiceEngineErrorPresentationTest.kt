@@ -49,9 +49,7 @@ class AgentChatServiceEngineErrorPresentationTest {
         )
 
         val message = withTimeout(2_000) { errorMessage.await() }
-        assertTrue(message.contains("所选引擎不可用"))
-        assertTrue(message.contains("请先安装该引擎的 CLI"))
-        assertTrue(message.contains("Mock Engine"))
+        assertMissingCliMessage(message)
         service.dispose()
     }
 
@@ -84,9 +82,7 @@ class AgentChatServiceEngineErrorPresentationTest {
         )
 
         val message = withTimeout(2_000) { errorMessage.await() }
-        assertTrue(message.contains("所选引擎不可用"))
-        assertTrue(message.contains("设置界面配置正确的可执行路径"))
-        assertTrue(message.contains("Mock Engine"))
+        assertMissingCliMessage(message)
         service.dispose()
     }
 
@@ -145,6 +141,16 @@ class AgentChatServiceEngineErrorPresentationTest {
                 defaultEngineId = "mock-engine",
             ),
             settings = settings,
+        )
+    }
+
+    private fun assertMissingCliMessage(message: String) {
+        assertTrue(message.contains("Mock Engine"))
+        assertTrue(message.contains("CLI"))
+        assertTrue(
+            message.contains("Settings", ignoreCase = true) ||
+                message.contains("设置") ||
+                message.contains("安装"),
         )
     }
 

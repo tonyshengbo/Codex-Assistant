@@ -2,6 +2,7 @@ package com.auracode.assistant.toolwindow.header
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -24,6 +25,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
 import com.auracode.assistant.i18n.AuraCodeBundle
 import com.auracode.assistant.toolwindow.eventing.UiIntent
 import com.auracode.assistant.toolwindow.shared.DesignPalette
@@ -91,15 +93,27 @@ internal fun HeaderRegion(
         modifier = Modifier.fillMaxWidth().background(p.topBarBg).padding(horizontal = t.spacing.md, vertical = t.spacing.xs + t.spacing.xs),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(
-            text = displayTitle,
-            color = p.textPrimary,
-            fontWeight = FontWeight.Bold,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
+        Row(
             modifier = Modifier.weight(1f),
-            style = androidx.compose.material.MaterialTheme.typography.h5,
-        )
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = displayTitle,
+                color = p.textPrimary,
+                fontWeight = FontWeight.Bold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f),
+                style = androidx.compose.material.MaterialTheme.typography.h5,
+            )
+            state.engineLabel.takeIf(String::isNotBlank)?.let { engineLabel ->
+                Spacer(modifier = Modifier.width(t.spacing.sm))
+                HeaderEngineBadge(
+                    label = engineLabel,
+                    p = p,
+                )
+            }
+        }
         Spacer(modifier = Modifier.width(t.spacing.xs))
         HeaderAction(
             p = p,
@@ -115,6 +129,26 @@ internal fun HeaderRegion(
         HeaderAction(p, "/icons/history.svg", AuraCodeBundle.message("header.action.history")) { onIntent(UiIntent.ToggleHistory) }
         Spacer(modifier = Modifier.width(t.spacing.xs))
         HeaderAction(p, "/icons/settings.svg", AuraCodeBundle.message("header.action.settings")) { onIntent(UiIntent.ToggleSettings) }
+    }
+}
+
+@Composable
+private fun HeaderEngineBadge(
+    label: String,
+    p: DesignPalette,
+) {
+    val t = assistantUiTokens()
+    Box(
+        modifier = Modifier
+            .background(p.accent.copy(alpha = 0.14f), RoundedCornerShape(t.spacing.sm))
+            .padding(horizontal = t.spacing.sm, vertical = 3.dp),
+    ) {
+        Text(
+            text = label,
+            color = p.accent,
+            style = androidx.compose.material.MaterialTheme.typography.caption,
+            fontWeight = FontWeight.Medium,
+        )
     }
 }
 

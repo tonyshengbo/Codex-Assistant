@@ -64,6 +64,10 @@ internal sealed interface UiIntent {
     data class SelectMode(val mode: ComposerMode) : UiIntent
     data object ToggleExecutionMode : UiIntent
     data object TogglePlanMode : UiIntent
+    data object ToggleEngineMenu : UiIntent
+    data class RequestEngineSwitch(val engineId: String) : UiIntent
+    data class SelectEngine(val engineId: String) : UiIntent
+    data object DismissEngineSwitchDialog : UiIntent
     data object ToggleModelMenu : UiIntent
     data class SelectModel(val model: String) : UiIntent
     data object StartAddingCustomModel : UiIntent
@@ -128,6 +132,8 @@ internal sealed interface UiIntent {
     data object DismissPlanCompletionPrompt : UiIntent
     data class SelectSettingsSection(val section: SettingsSection) : UiIntent
     data class EditSettingsCodexCliPath(val value: String) : UiIntent
+    data class EditSettingsClaudeCliPath(val value: String) : UiIntent
+    data class EditSettingsClaudeDefaultModel(val value: String) : UiIntent
     data class EditSettingsNodePath(val value: String) : UiIntent
     data class EditSettingsLanguageMode(val mode: UiLanguageMode) : UiIntent
     data class EditSettingsThemeMode(val mode: UiThemeMode) : UiIntent
@@ -222,6 +228,10 @@ internal sealed interface AppEvent {
     ) : AppEvent
     data class SettingsSnapshotUpdated(
         val codexCliPath: String,
+        val claudeCliPath: String = "claude",
+        val claudeDefaultModel: String = com.auracode.assistant.provider.claude.ClaudeModelCatalog.defaultModel,
+        val selectedEngineId: String = "codex",
+        val availableEngines: List<com.auracode.assistant.provider.EngineDescriptor> = emptyList(),
         val nodePath: String = "",
         val languageMode: UiLanguageMode,
         val themeMode: UiThemeMode,

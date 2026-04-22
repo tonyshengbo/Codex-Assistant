@@ -78,7 +78,7 @@ private fun assistantUiTokens(scale: Float): AssistantUiTokens {
     fun scaledDp(value: Float, min: Float = 1f): Dp = (value * scale).coerceAtLeast(min).dp
     fun scaledText(value: Float): TextUnit = (value * scale).sp
     fun scaledControl(value: Float, min: Float): Dp = (value * scale).coerceIn(min, value * 1.35f).dp
-    fun scaledIcon(value: Float): Dp = (value * (0.95f + ((scale - 1f) * 0.6f))).coerceAtLeast(10f).dp
+    fun scaledIcon(value: Float): Dp = (value * scale).coerceAtLeast(10f).dp
 
     return AssistantUiTokens(
         spacing = AssistantSpacing(

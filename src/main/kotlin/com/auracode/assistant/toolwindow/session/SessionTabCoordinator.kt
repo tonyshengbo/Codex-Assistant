@@ -58,6 +58,14 @@ internal class SessionTabCoordinator(
         openSessionTab(id)
     }
 
+    /**
+     * Opens an existing session inside a new header tab and activates it when capacity allows.
+     */
+    fun openExistingSessionInNewTab(sessionId: String): Boolean {
+        notifySessionDeactivated(activeSessionTabId)
+        return openSessionTab(sessionId)
+    }
+
     fun switchToSession(sessionId: String) {
         if (sessionId == activeSessionTabId) return
         notifySessionDeactivated(activeSessionTabId)
@@ -94,13 +102,14 @@ internal class SessionTabCoordinator(
         refresh()
     }
 
-    private fun openSessionTab(sessionId: String) {
+    private fun openSessionTab(sessionId: String): Boolean {
         if (openSessionTabs.size >= MAX_OPEN_TABS && !openSessionTabs.contains(sessionId)) {
             onStatus(UiText.bundle("session.warn.maxTabs", MAX_OPEN_TABS))
-            return
+            return false
         }
         openSessionTabs += sessionId
         switchToSession(sessionId)
+        return true
     }
 
     private fun replaceActiveSessionTab(sessionId: String) {

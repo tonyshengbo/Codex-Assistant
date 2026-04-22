@@ -1,5 +1,7 @@
 package com.auracode.assistant.provider
 
+import com.auracode.assistant.provider.claude.ClaudeModelCatalog
+import com.auracode.assistant.provider.claude.ClaudeProviderFactory
 import com.auracode.assistant.provider.codex.CodexAppServerProvider
 import com.auracode.assistant.provider.codex.CodexModelCatalog
 import com.auracode.assistant.settings.AgentSettingsService
@@ -12,6 +14,13 @@ private val codexCapabilities = EngineCapabilities(
     supportsToolEvents = true,
     supportsCommandProposal = true,
     supportsDiffProposal = true,
+)
+
+private val claudeCapabilities = EngineCapabilities(
+    supportsThinking = true,
+    supportsToolEvents = false,
+    supportsCommandProposal = false,
+    supportsDiffProposal = false,
 )
 
 /** Registers the Codex provider implementation behind the shared provider factory contract. */
@@ -38,13 +47,22 @@ class ProviderRegistry(
     constructor(settings: AgentSettingsService) : this(
         descriptors = listOf(
             EngineDescriptor(
+                id = ClaudeProviderFactory.ENGINE_ID,
+                displayName = "Claude",
+                models = ClaudeModelCatalog.ids(),
+                capabilities = claudeCapabilities,
+            ),
+            EngineDescriptor(
                 id = CodexProviderFactory.ENGINE_ID,
                 displayName = "Codex",
                 models = CodexModelCatalog.ids(),
                 capabilities = codexCapabilities,
             ),
         ),
-        factories = listOf(CodexProviderFactory(settings)),
+        factories = listOf(
+            ClaudeProviderFactory(settings),
+            CodexProviderFactory(settings),
+        ),
         defaultEngineId = CodexProviderFactory.ENGINE_ID,
     )
 

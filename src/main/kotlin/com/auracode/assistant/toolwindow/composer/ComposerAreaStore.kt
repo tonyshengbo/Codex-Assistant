@@ -8,8 +8,11 @@ import com.auracode.assistant.model.FileAttachment
 import com.auracode.assistant.model.ImageAttachment
 import com.auracode.assistant.model.TurnUsageSnapshot
 import com.auracode.assistant.persistence.chat.PersistedMessageAttachment
+import com.auracode.assistant.provider.EngineDescriptor
+import com.auracode.assistant.provider.claude.ClaudeModelCatalog
 import com.auracode.assistant.provider.codex.CodexModelCatalog
 import com.auracode.assistant.settings.SavedAgentDefinition
+import com.auracode.assistant.toolwindow.engineDisplayLabel
 import com.auracode.assistant.toolwindow.approval.PendingApprovalRequestUiModel
 import com.auracode.assistant.toolwindow.eventing.AppEvent
 import com.auracode.assistant.toolwindow.eventing.ComposerMode
@@ -139,6 +142,14 @@ internal data class ComposerInteractionCard(
     val kind: ComposerInteractionCardKind,
 )
 
+/**
+ * Describes a pending engine switch that requires confirmation before branching sessions.
+ */
+internal data class EngineSwitchConfirmationState(
+    val targetEngineId: String,
+    val targetEngineLabel: String,
+)
+
 internal data class PendingComposerSubmission(
     val id: String,
     val prompt: String,
@@ -151,6 +162,7 @@ internal data class PendingComposerSubmission(
     val selectedReasoning: ComposerReasoning,
     val executionMode: ComposerMode,
     val planEnabled: Boolean,
+    val engineId: String = "codex",
     val createdAt: Long = System.currentTimeMillis(),
 ) {
     val summary: String
@@ -168,6 +180,12 @@ internal data class ComposerAreaState(
     val executionMode: ComposerMode = ComposerMode.AUTO,
     val planEnabled: Boolean = false,
     val planModeAvailable: Boolean = true,
+    val capabilityHint: String? = null,
+    val disabledCapabilityReason: String? = null,
+    val selectedEngineId: String = "codex",
+    val availableEngines: List<EngineDescriptor> = emptyList(),
+    val engineMenuExpanded: Boolean = false,
+    val engineSwitchConfirmation: EngineSwitchConfirmationState? = null,
     val selectedModel: String = CodexModelCatalog.defaultModel,
     val selectedReasoning: ComposerReasoning = ComposerReasoning.MEDIUM,
     val autoContextEnabled: Boolean = true,
@@ -199,6 +217,7 @@ internal data class ComposerAreaState(
     val editedFilesExpanded: Boolean = false,
     val appliedTurnDiffs: Map<String, String> = emptyMap(),
     val usageSnapshot: TurnUsageSnapshot? = null,
+    val activeSessionMessageCount: Int? = null,
     val sessionIsRunning: Boolean = false,
     val pendingApprovalCount: Int = 0,
     val pendingToolInputCount: Int = 0,
@@ -212,10 +231,24 @@ internal data class ComposerAreaState(
     val pendingSubmissions: List<PendingComposerSubmission> = emptyList(),
 ) {
     val modelOptions: List<ComposerModelOption>
-        get() = composerModelOptions(customModelIds)
+        get() = composerModelOptions(
+            builtInModelIds = availableEngines.firstOrNull { it.id == selectedEngineId }?.models
+                ?: defaultModelIdsForEngine(selectedEngineId),
+            customModelIds = customModelIds,
+        )
 
     val inputText: String
         get() = normalizePromptBody(removeMentionRanges(document.text, mentionEntries))
+
+    val emptyStateHint: String?
+        get() = activeSessionMessageCount
+            ?.takeIf { it == 0 }
+            ?.let {
+                AuraCodeBundle.message(
+                    "composer.emptyState.newSession",
+                    engineDisplayLabel(selectedEngineId, availableEngines),
+                )
+            }
 
     fun serializedPrompt(): String {
         val mentionBlock = mentionEntries.sortedBy { it.start }.joinToString("\n") { it.path.trim() }.trim()
@@ -274,6 +307,49 @@ internal class ComposerAreaStore(
                     is UiIntent.InputChanged -> applyDocumentUpdate(
                         TextFieldValue(intent.value, TextRange(intent.value.length)),
                     )
+                    UiIntent.ToggleEngineMenu -> _state.value = _state.value.copy(
+                        engineMenuExpanded = !_state.value.engineMenuExpanded,
+                        modelMenuExpanded = false,
+                        reasoningMenuExpanded = false,
+                    )
+                    is UiIntent.RequestEngineSwitch -> {
+                        val targetEngineId = intent.engineId.trim().ifBlank { _state.value.selectedEngineId }
+                        val requiresConfirmation = targetEngineId != _state.value.selectedEngineId &&
+                            (_state.value.activeSessionMessageCount ?: 0) > 0
+                        _state.value = _state.value.copy(
+                            engineMenuExpanded = false,
+                            modelMenuExpanded = false,
+                            reasoningMenuExpanded = false,
+                            engineSwitchConfirmation = if (requiresConfirmation) {
+                                EngineSwitchConfirmationState(
+                                    targetEngineId = targetEngineId,
+                                    targetEngineLabel = engineDisplayLabel(targetEngineId, _state.value.availableEngines),
+                                )
+                            } else {
+                                null
+                            },
+                        )
+                    }
+                    is UiIntent.SelectEngine -> {
+                        val nextEngineId = intent.engineId.trim().ifBlank { _state.value.selectedEngineId }
+                        val nextBuiltInModels = _state.value.availableEngines.firstOrNull { it.id == nextEngineId }?.models
+                            ?: defaultModelIdsForEngine(nextEngineId)
+                        val nextAvailableModels = composerModelOptions(
+                            builtInModelIds = nextBuiltInModels,
+                            customModelIds = _state.value.customModelIds,
+                        ).map { it.id }.toSet()
+                        _state.value = _state.value.copy(
+                            selectedEngineId = nextEngineId,
+                            selectedModel = _state.value.selectedModel.takeIf { it in nextAvailableModels }
+                                ?: defaultModelForEngine(nextEngineId),
+                            engineMenuExpanded = false,
+                            modelMenuExpanded = false,
+                            engineSwitchConfirmation = null,
+                        )
+                    }
+                    UiIntent.DismissEngineSwitchDialog -> _state.value = _state.value.copy(
+                        engineSwitchConfirmation = null,
+                    )
                     UiIntent.ToggleExecutionMode -> _state.value = _state.value.toggleExecutionMode()
                     is UiIntent.SelectMode -> _state.value = _state.value.copy(
                         executionMode = intent.mode,
@@ -287,6 +363,7 @@ internal class ComposerAreaStore(
                     }
                     UiIntent.ToggleModelMenu -> _state.value = _state.value.copy(
                         modelMenuExpanded = !_state.value.modelMenuExpanded,
+                        engineMenuExpanded = false,
                         addingCustomModel = if (_state.value.modelMenuExpanded) false else _state.value.addingCustomModel,
                         customModelDraft = if (_state.value.modelMenuExpanded) "" else _state.value.customModelDraft,
                         reasoningMenuExpanded = false,
@@ -310,6 +387,7 @@ internal class ComposerAreaStore(
                     )
                     UiIntent.ToggleReasoningMenu -> _state.value = _state.value.copy(
                         reasoningMenuExpanded = !_state.value.reasoningMenuExpanded,
+                        engineMenuExpanded = false,
                         modelMenuExpanded = false,
                         addingCustomModel = false,
                         customModelDraft = "",
@@ -455,9 +533,19 @@ internal class ComposerAreaStore(
 
             is AppEvent.ConversationCapabilitiesUpdated -> {
                 val supportsPlanMode = event.capabilities.supportsPlanMode
+                val disabledReason = if (supportsPlanMode) {
+                    null
+                } else {
+                    AuraCodeBundle.message(
+                        "composer.capability.planUnavailable",
+                        engineDisplayLabel(_state.value.selectedEngineId, _state.value.availableEngines),
+                    )
+                }
                 _state.value = _state.value.copy(
                     planModeAvailable = supportsPlanMode,
                     planEnabled = if (supportsPlanMode) _state.value.planEnabled else false,
+                    capabilityHint = disabledReason,
+                    disabledCapabilityReason = disabledReason,
                 )
             }
 
@@ -557,8 +645,21 @@ internal class ComposerAreaStore(
 
             is AppEvent.SessionSnapshotUpdated -> {
                 val activeSession = event.sessions.firstOrNull { it.id == event.activeSessionId }
+                val activeEngineId = activeSession?.providerId?.trim()?.takeIf(String::isNotBlank)
+                val selectedEngineId = activeEngineId ?: _state.value.selectedEngineId
+                val builtInModelIds = _state.value.availableEngines.firstOrNull { it.id == selectedEngineId }?.models
+                    ?: defaultModelIdsForEngine(selectedEngineId)
+                val availableModelIds = composerModelOptions(
+                    builtInModelIds = builtInModelIds,
+                    customModelIds = _state.value.customModelIds,
+                ).map { it.id }.toSet()
                 _state.value = _state.value.copy(
+                    selectedEngineId = selectedEngineId,
+                    selectedModel = _state.value.selectedModel.takeIf { it in availableModelIds }
+                        ?: defaultModelForEngine(selectedEngineId),
                     usageSnapshot = activeSession?.usageSnapshot,
+                    activeSessionMessageCount = activeSession?.messageCount,
+                    engineSwitchConfirmation = null,
                 )
             }
 
@@ -575,9 +676,16 @@ internal class ComposerAreaStore(
             }
 
             is AppEvent.SettingsSnapshotUpdated -> {
-                val availableModelIds = composerModelOptions(event.customModelIds).map { it.id }.toSet()
+                val selectedEngineId = event.selectedEngineId.trim().ifBlank { "codex" }
+                val builtInModelIds = event.availableEngines.firstOrNull { it.id == selectedEngineId }?.models
+                    ?: defaultModelIdsForEngine(selectedEngineId)
+                val availableModelIds = composerModelOptions(
+                    builtInModelIds = builtInModelIds,
+                    customModelIds = event.customModelIds,
+                ).map { it.id }.toSet()
                 val trimmedDraft = _state.value.customModelDraft.trim()
-                val selectedModel = event.selectedModel.takeIf { it in availableModelIds } ?: CodexModelCatalog.defaultModel
+                val selectedModel = event.selectedModel.takeIf { it in availableModelIds }
+                    ?: defaultModelForEngine(selectedEngineId)
                 val selectedReasoning = ComposerReasoning.entries
                     .firstOrNull { it.effort == event.selectedReasoning }
                     ?: ComposerReasoning.MEDIUM
@@ -589,6 +697,10 @@ internal class ComposerAreaStore(
                     autoContextEnabled = event.autoContextEnabled,
                     focusedContextEntry = if (event.autoContextEnabled) _state.value.focusedContextEntry else null,
                     agentEntries = restoredAgents,
+                    selectedEngineId = selectedEngineId,
+                    availableEngines = event.availableEngines,
+                    engineMenuExpanded = false,
+                    engineSwitchConfirmation = null,
                     customModelIds = event.customModelIds,
                     selectedModel = selectedModel,
                     selectedReasoning = selectedReasoning,
@@ -610,9 +722,12 @@ internal class ComposerAreaStore(
             AppEvent.ConversationReset -> _state.value = ComposerAreaState(
                 autoContextEnabled = _state.value.autoContextEnabled,
                 agentEntries = _state.value.agentEntries,
+                selectedEngineId = _state.value.selectedEngineId,
+                availableEngines = _state.value.availableEngines,
                 customModelIds = _state.value.customModelIds,
                 selectedModel = _state.value.selectedModel,
                 selectedReasoning = _state.value.selectedReasoning,
+                activeSessionMessageCount = null,
             )
 
             else -> Unit
@@ -1045,8 +1160,11 @@ internal class ComposerAreaStore(
     }
 }
 
-internal fun composerModelOptions(customModelIds: List<String>): List<ComposerModelOption> {
-    val builtIns = CodexModelCatalog.ids().map { ComposerModelOption(id = it, isCustom = false) }
+internal fun composerModelOptions(
+    builtInModelIds: List<String>,
+    customModelIds: List<String>,
+): List<ComposerModelOption> {
+    val builtIns = builtInModelIds.map { ComposerModelOption(id = it, isCustom = false) }
     val builtInIds = builtIns.mapTo(linkedSetOf()) { it.id }
     val customs = customModelIds
         .map { it.trim() }
@@ -1054,6 +1172,20 @@ internal fun composerModelOptions(customModelIds: List<String>): List<ComposerMo
         .distinct()
         .map { ComposerModelOption(id = it, isCustom = true) }
     return builtIns + customs
+}
+
+private fun defaultModelIdsForEngine(engineId: String): List<String> {
+    return when (engineId.trim()) {
+        "claude" -> ClaudeModelCatalog.ids()
+        else -> CodexModelCatalog.ids()
+    }
+}
+
+private fun defaultModelForEngine(engineId: String): String {
+    return when (engineId.trim()) {
+        "claude" -> ClaudeModelCatalog.defaultModel
+        else -> CodexModelCatalog.defaultModel
+    }
 }
 
 private fun ComposerAreaState.clearComposerDraft(clearInteractionQueues: Boolean): ComposerAreaState {

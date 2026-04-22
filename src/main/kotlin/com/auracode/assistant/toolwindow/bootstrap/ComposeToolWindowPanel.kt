@@ -178,6 +178,9 @@ class ComposeToolWindowPanel(
         revealPathInFileManager = { path ->
             revealPathInFileManager(path)
         },
+        openSessionInNewTab = { sessionId ->
+            sessionTabCoordinator.openExistingSessionInNewTab(sessionId)
+        },
         onSessionSnapshotPublished = {
             if (::sessionTabCoordinator.isInitialized) {
                 sessionTabCoordinator.refresh()

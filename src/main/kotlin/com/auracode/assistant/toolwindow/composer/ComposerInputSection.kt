@@ -69,267 +69,279 @@ internal fun ComposerInputSection(
     val selectedSlash = state.slashSuggestions.getOrNull(state.activeSlashIndex)
     val composing = state.document.composition != null
 
-    Box(modifier = Modifier.fillMaxWidth()) {
-        val mentionVisualTransformation = remember(state.mentionEntries, p) {
-            MentionVisualTransformation(state.mentionEntries, p)
-        }
-        OutlinedTextField(
-            modifier = Modifier
-                .fillMaxWidth()
-                .onPreviewKeyEvent {
-                    if (it.type != KeyEventType.KeyDown) {
-                        return@onPreviewKeyEvent false
-                    }
-                    if (!composing && state.slashPopupVisible) {
-                        when (it.key) {
-                            Key.DirectionDown -> {
-                                onIntent(UiIntent.MoveSlashSelectionNext)
-                                return@onPreviewKeyEvent true
-                            }
-                            Key.DirectionUp -> {
-                                onIntent(UiIntent.MoveSlashSelectionPrevious)
-                                return@onPreviewKeyEvent true
-                            }
-                            Key.Escape -> {
-                                onIntent(UiIntent.DismissSlashPopup)
-                                return@onPreviewKeyEvent true
-                            }
-                            Key.Enter -> {
-                                if (!it.isShiftPressed && selectedSlash != null) {
-                                    when (selectedSlash) {
-                                        is SlashSuggestionItem.Command -> {
-                                            if (selectedSlash.enabled) {
-                                                onIntent(UiIntent.SelectSlashCommand(selectedSlash.command))
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(t.spacing.xs),
+    ) {
+        Box(modifier = Modifier.fillMaxWidth()) {
+            val mentionVisualTransformation = remember(state.mentionEntries, p) {
+                MentionVisualTransformation(state.mentionEntries, p)
+            }
+            OutlinedTextField(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .onPreviewKeyEvent {
+                        if (it.type != KeyEventType.KeyDown) {
+                            return@onPreviewKeyEvent false
+                        }
+                        if (!composing && state.slashPopupVisible) {
+                            when (it.key) {
+                                Key.DirectionDown -> {
+                                    onIntent(UiIntent.MoveSlashSelectionNext)
+                                    return@onPreviewKeyEvent true
+                                }
+                                Key.DirectionUp -> {
+                                    onIntent(UiIntent.MoveSlashSelectionPrevious)
+                                    return@onPreviewKeyEvent true
+                                }
+                                Key.Escape -> {
+                                    onIntent(UiIntent.DismissSlashPopup)
+                                    return@onPreviewKeyEvent true
+                                }
+                                Key.Enter -> {
+                                    if (!it.isShiftPressed && selectedSlash != null) {
+                                        when (selectedSlash) {
+                                            is SlashSuggestionItem.Command -> {
+                                                if (selectedSlash.enabled) {
+                                                    onIntent(UiIntent.SelectSlashCommand(selectedSlash.command))
+                                                }
                                             }
+                                            is SlashSuggestionItem.Skill -> onIntent(UiIntent.SelectSlashSkill(selectedSlash.name))
                                         }
-                                        is SlashSuggestionItem.Skill -> onIntent(UiIntent.SelectSlashSkill(selectedSlash.name))
+                                        return@onPreviewKeyEvent true
                                     }
-                                    return@onPreviewKeyEvent true
                                 }
+                                else -> Unit
                             }
-                            else -> Unit
                         }
-                    }
-                    if (!composing && state.mentionPopupVisible) {
-                        when (it.key) {
-                            Key.DirectionDown -> {
-                                onIntent(UiIntent.MoveMentionSelectionNext)
-                                return@onPreviewKeyEvent true
-                            }
-                            Key.DirectionUp -> {
-                                onIntent(UiIntent.MoveMentionSelectionPrevious)
-                                return@onPreviewKeyEvent true
-                            }
-                            Key.Escape -> {
-                                onIntent(UiIntent.DismissMentionPopup)
-                                return@onPreviewKeyEvent true
-                            }
-                            Key.Enter -> {
-                                if (!it.isShiftPressed && selectedMention != null) {
-                                    onIntent(UiIntent.SelectMentionFile(selectedMention.path))
+                        if (!composing && state.mentionPopupVisible) {
+                            when (it.key) {
+                                Key.DirectionDown -> {
+                                    onIntent(UiIntent.MoveMentionSelectionNext)
                                     return@onPreviewKeyEvent true
                                 }
+                                Key.DirectionUp -> {
+                                    onIntent(UiIntent.MoveMentionSelectionPrevious)
+                                    return@onPreviewKeyEvent true
+                                }
+                                Key.Escape -> {
+                                    onIntent(UiIntent.DismissMentionPopup)
+                                    return@onPreviewKeyEvent true
+                                }
+                                Key.Enter -> {
+                                    if (!it.isShiftPressed && selectedMention != null) {
+                                        onIntent(UiIntent.SelectMentionFile(selectedMention.path))
+                                        return@onPreviewKeyEvent true
+                                    }
+                                }
+                                else -> Unit
                             }
-                            else -> Unit
                         }
-                    }
-                    if (!composing && state.agentPopupVisible) {
-                        when (it.key) {
-                            Key.DirectionDown -> {
-                                onIntent(UiIntent.MoveAgentSelectionNext)
-                                return@onPreviewKeyEvent true
-                            }
-                            Key.DirectionUp -> {
-                                onIntent(UiIntent.MoveAgentSelectionPrevious)
-                                return@onPreviewKeyEvent true
-                            }
-                            Key.Escape -> {
-                                onIntent(UiIntent.DismissAgentPopup)
-                                return@onPreviewKeyEvent true
-                            }
-                            Key.Enter -> {
-                                if (!it.isShiftPressed && selectedAgent != null) {
-                                    onIntent(UiIntent.SelectAgent(selectedAgent))
+                        if (!composing && state.agentPopupVisible) {
+                            when (it.key) {
+                                Key.DirectionDown -> {
+                                    onIntent(UiIntent.MoveAgentSelectionNext)
                                     return@onPreviewKeyEvent true
                                 }
+                                Key.DirectionUp -> {
+                                    onIntent(UiIntent.MoveAgentSelectionPrevious)
+                                    return@onPreviewKeyEvent true
+                                }
+                                Key.Escape -> {
+                                    onIntent(UiIntent.DismissAgentPopup)
+                                    return@onPreviewKeyEvent true
+                                }
+                                Key.Enter -> {
+                                    if (!it.isShiftPressed && selectedAgent != null) {
+                                        onIntent(UiIntent.SelectAgent(selectedAgent))
+                                        return@onPreviewKeyEvent true
+                                    }
+                                }
+                                else -> Unit
                             }
-                            else -> Unit
                         }
-                    }
-                    if (!composing && !it.isShiftPressed && !it.isMetaPressed && !it.isCtrlPressed) {
-                        when (it.key) {
-                            Key.DirectionLeft -> {
-                                moveCursorLeftAcrossMention(state.document, state.mentionEntries)?.let { next ->
-                                    onIntent(UiIntent.UpdateDocument(next))
-                                    return@onPreviewKeyEvent true
+                        if (!composing && !it.isShiftPressed && !it.isMetaPressed && !it.isCtrlPressed) {
+                            when (it.key) {
+                                Key.DirectionLeft -> {
+                                    moveCursorLeftAcrossMention(state.document, state.mentionEntries)?.let { next ->
+                                        onIntent(UiIntent.UpdateDocument(next))
+                                        return@onPreviewKeyEvent true
+                                    }
                                 }
+                                Key.DirectionRight -> {
+                                    moveCursorRightAcrossMention(state.document, state.mentionEntries)?.let { next ->
+                                        onIntent(UiIntent.UpdateDocument(next))
+                                        return@onPreviewKeyEvent true
+                                    }
+                                }
+                                Key.Backspace -> {
+                                    val next = if (state.document.selection.collapsed) {
+                                        removeMentionByBackspace(state.document, state.mentionEntries)
+                                    } else {
+                                        removeMentionSelection(state.document, state.mentionEntries)
+                                    }
+                                    next?.let { removed ->
+                                        onIntent(UiIntent.UpdateDocument(removed.first))
+                                        return@onPreviewKeyEvent true
+                                    }
+                                }
+                                Key.Delete -> {
+                                    val next = if (state.document.selection.collapsed) {
+                                        removeMentionByDelete(state.document, state.mentionEntries)
+                                    } else {
+                                        removeMentionSelection(state.document, state.mentionEntries)
+                                    }
+                                    next?.let { removed ->
+                                        onIntent(UiIntent.UpdateDocument(removed.first))
+                                        return@onPreviewKeyEvent true
+                                    }
+                                }
+                                else -> Unit
                             }
-                            Key.DirectionRight -> {
-                                moveCursorRightAcrossMention(state.document, state.mentionEntries)?.let { next ->
-                                    onIntent(UiIntent.UpdateDocument(next))
-                                    return@onPreviewKeyEvent true
-                                }
-                            }
-                            Key.Backspace -> {
-                                val next = if (state.document.selection.collapsed) {
-                                    removeMentionByBackspace(state.document, state.mentionEntries)
-                                } else {
-                                    removeMentionSelection(state.document, state.mentionEntries)
-                                }
-                                next?.let { removed ->
-                                    onIntent(UiIntent.UpdateDocument(removed.first))
-                                    return@onPreviewKeyEvent true
-                                }
-                            }
-                            Key.Delete -> {
-                                val next = if (state.document.selection.collapsed) {
-                                    removeMentionByDelete(state.document, state.mentionEntries)
-                                } else {
-                                    removeMentionSelection(state.document, state.mentionEntries)
-                                }
-                                next?.let { removed ->
-                                    onIntent(UiIntent.UpdateDocument(removed.first))
-                                    return@onPreviewKeyEvent true
-                                }
-                            }
-                            else -> Unit
                         }
-                    }
-                    if (it.key == Key.V && (it.isMetaPressed || it.isCtrlPressed)) {
-                        onIntent(UiIntent.PasteImageFromClipboard)
-                        return@onPreviewKeyEvent false
-                    }
-                    if (!composing && it.key == Key.Enter && !it.isShiftPressed) {
-                        onIntent(UiIntent.SendPrompt)
-                        true
-                    } else {
-                        false
-                    }
+                        if (it.key == Key.V && (it.isMetaPressed || it.isCtrlPressed)) {
+                            onIntent(UiIntent.PasteImageFromClipboard)
+                            return@onPreviewKeyEvent false
+                        }
+                        if (!composing && it.key == Key.Enter && !it.isShiftPressed) {
+                            onIntent(UiIntent.SendPrompt)
+                            true
+                        } else {
+                            false
+                        }
+                    },
+                value = state.document,
+                onValueChange = { onIntent(UiIntent.UpdateDocument(it)) },
+                textStyle = TextStyle(color = p.textPrimary, fontSize = t.type.body, lineHeight = 19.sp),
+                label = {
+                    Text(
+                        text = ToolWindowUiText.COMPOSER_HINT,
+                        color = p.textMuted,
+                        style = androidx.compose.material.MaterialTheme.typography.body2,
+                    )
                 },
-            value = state.document,
-            onValueChange = { onIntent(UiIntent.UpdateDocument(it)) },
-            textStyle = TextStyle(color = p.textPrimary, fontSize = t.type.body, lineHeight = 19.sp),
-            label = {
-                Text(
-                    text = ToolWindowUiText.COMPOSER_HINT,
-                    color = p.textMuted,
-                    style = androidx.compose.material.MaterialTheme.typography.body2,
-                )
-            },
-            visualTransformation = mentionVisualTransformation,
-            singleLine = false,
-            maxLines = 6,
-            shape = RoundedCornerShape(t.spacing.sm),
-            colors = TextFieldDefaults.outlinedTextFieldColors(
-                textColor = p.textPrimary,
-                backgroundColor = p.timelineCardBg,
-                cursorColor = p.textPrimary,
-                focusedBorderColor = p.accent,
-                unfocusedBorderColor = p.markdownDivider.copy(alpha = 0.55f),
-                focusedLabelColor = p.textSecondary,
-                unfocusedLabelColor = p.textMuted,
-            ),
-        )
-        BoxWithConstraints {
-            val maxPopupHeight = maxHeight * 0.52f
-            val popupMode = when {
-                state.slashPopupVisible -> ComposerPopupMode.SLASH
-                state.agentPopupVisible -> ComposerPopupMode.AGENT
-                state.mentionPopupVisible -> ComposerPopupMode.MENTION
-                else -> ComposerPopupMode.NONE
-            }
-            val popupContent = buildComposerPopupContent(
-                slashSuggestions = state.slashSuggestions,
-                activeSlashIndex = state.activeSlashIndex,
-                mentionSuggestions = state.mentionSuggestions,
-                activeMentionIndex = state.activeMentionIndex,
-                agentSuggestions = state.agentSuggestions,
-                activeAgentIndex = state.activeAgentIndex,
-                mode = popupMode,
+                visualTransformation = mentionVisualTransformation,
+                singleLine = false,
+                maxLines = 6,
+                shape = RoundedCornerShape(t.spacing.sm),
+                colors = TextFieldDefaults.outlinedTextFieldColors(
+                    textColor = p.textPrimary,
+                    backgroundColor = p.timelineCardBg,
+                    cursorColor = p.textPrimary,
+                    focusedBorderColor = p.accent,
+                    unfocusedBorderColor = p.markdownDivider.copy(alpha = 0.55f),
+                    focusedLabelColor = p.textSecondary,
+                    unfocusedLabelColor = p.textMuted,
+                ),
             )
-            val popupScrollState = rememberScrollState()
-            val popupRowRequesters = popupContent.rows.map { remember { BringIntoViewRequester() } }
+            BoxWithConstraints {
+                val maxPopupHeight = maxHeight * 0.52f
+                val popupMode = when {
+                    state.slashPopupVisible -> ComposerPopupMode.SLASH
+                    state.agentPopupVisible -> ComposerPopupMode.AGENT
+                    state.mentionPopupVisible -> ComposerPopupMode.MENTION
+                    else -> ComposerPopupMode.NONE
+                }
+                val popupContent = buildComposerPopupContent(
+                    slashSuggestions = state.slashSuggestions,
+                    activeSlashIndex = state.activeSlashIndex,
+                    mentionSuggestions = state.mentionSuggestions,
+                    activeMentionIndex = state.activeMentionIndex,
+                    agentSuggestions = state.agentSuggestions,
+                    activeAgentIndex = state.activeAgentIndex,
+                    mode = popupMode,
+                )
+                val popupScrollState = rememberScrollState()
+                val popupRowRequesters = popupContent.rows.map { remember { BringIntoViewRequester() } }
 
-            LaunchedEffect(popupMode, popupContent.selectedRowIndex) {
-                if (popupMode != ComposerPopupMode.NONE) {
-                    popupContent.selectedRowIndex?.let { selectedRowIndex ->
-                        popupRowRequesters.getOrNull(selectedRowIndex)?.bringIntoView()
+                LaunchedEffect(popupMode, popupContent.selectedRowIndex) {
+                    if (popupMode != ComposerPopupMode.NONE) {
+                        popupContent.selectedRowIndex?.let { selectedRowIndex ->
+                            popupRowRequesters.getOrNull(selectedRowIndex)?.bringIntoView()
+                        }
                     }
                 }
-            }
-            DropdownMenu(
-                expanded = state.slashPopupVisible || state.mentionPopupVisible || state.agentPopupVisible,
-                onDismissRequest = {
-                    if (state.slashPopupVisible) {
-                        onIntent(UiIntent.DismissSlashPopup)
-                    } else if (state.agentPopupVisible) {
-                        onIntent(UiIntent.DismissAgentPopup)
-                    } else {
-                        onIntent(UiIntent.DismissMentionPopup)
-                    }
-                },
-                modifier = Modifier.heightIn(max = maxPopupHeight),
-                properties = PopupProperties(focusable = false),
-            ) {
-                Column(
-                    modifier = Modifier
-                        .width(360.dp)
-                        .heightIn(max = maxPopupHeight)
-                        .verticalScroll(popupScrollState),
+                DropdownMenu(
+                    expanded = state.slashPopupVisible || state.mentionPopupVisible || state.agentPopupVisible,
+                    onDismissRequest = {
+                        if (state.slashPopupVisible) {
+                            onIntent(UiIntent.DismissSlashPopup)
+                        } else if (state.agentPopupVisible) {
+                            onIntent(UiIntent.DismissAgentPopup)
+                        } else {
+                            onIntent(UiIntent.DismissMentionPopup)
+                        }
+                    },
+                    modifier = Modifier.heightIn(max = maxPopupHeight),
+                    properties = PopupProperties(focusable = false),
                 ) {
-                    popupContent.rows.forEachIndexed { index, row ->
-                        when (row) {
-                            is ComposerPopupRow.Header -> Box(
-                                modifier = Modifier.bringIntoViewRequester(popupRowRequesters[index]),
-                            ) {
-                                SlashSectionHeader(
-                                    title = row.title,
-                                    p = p,
-                                )
-                            }
-                            is ComposerPopupRow.SlashItem -> {
-                                DropdownMenuItem(
+                    Column(
+                        modifier = Modifier
+                            .width(360.dp)
+                            .heightIn(max = maxPopupHeight)
+                            .verticalScroll(popupScrollState),
+                    ) {
+                        popupContent.rows.forEachIndexed { index, row ->
+                            when (row) {
+                                is ComposerPopupRow.Header -> Box(
                                     modifier = Modifier.bringIntoViewRequester(popupRowRequesters[index]),
-                                    enabled = row.item.isEnabled(),
-                                    onClick = { row.item.dispatch(onIntent) },
                                 ) {
-                                    SlashSuggestionRow(
-                                        title = row.item.title,
-                                        description = row.item.description,
-                                        selected = index == popupContent.selectedRowIndex,
+                                    SlashSectionHeader(
+                                        title = row.title,
+                                        p = p,
+                                    )
+                                }
+                                is ComposerPopupRow.SlashItem -> {
+                                    DropdownMenuItem(
+                                        modifier = Modifier.bringIntoViewRequester(popupRowRequesters[index]),
                                         enabled = row.item.isEnabled(),
-                                        p = p,
-                                    )
+                                        onClick = { row.item.dispatch(onIntent) },
+                                    ) {
+                                        SlashSuggestionRow(
+                                            title = row.item.title,
+                                            description = row.item.description,
+                                            selected = index == popupContent.selectedRowIndex,
+                                            enabled = row.item.isEnabled(),
+                                            p = p,
+                                        )
+                                    }
                                 }
-                            }
-                            is ComposerPopupRow.AgentItem -> {
-                                DropdownMenuItem(
-                                    modifier = Modifier.bringIntoViewRequester(popupRowRequesters[index]),
-                                    onClick = { onIntent(UiIntent.SelectAgent(row.agent)) },
-                                ) {
-                                    AgentSuggestionRow(
-                                        name = row.agent.name,
-                                        selected = index == popupContent.selectedRowIndex,
-                                        p = p,
-                                    )
+                                is ComposerPopupRow.AgentItem -> {
+                                    DropdownMenuItem(
+                                        modifier = Modifier.bringIntoViewRequester(popupRowRequesters[index]),
+                                        onClick = { onIntent(UiIntent.SelectAgent(row.agent)) },
+                                    ) {
+                                        AgentSuggestionRow(
+                                            name = row.agent.name,
+                                            selected = index == popupContent.selectedRowIndex,
+                                            p = p,
+                                        )
+                                    }
                                 }
-                            }
-                            is ComposerPopupRow.MentionItem -> {
-                                DropdownMenuItem(
-                                    modifier = Modifier.bringIntoViewRequester(popupRowRequesters[index]),
-                                    onClick = { onIntent(UiIntent.SelectMentionFile(row.entry.path)) },
-                                ) {
-                                    MentionSuggestionRow(
-                                        entry = row.entry,
-                                        selected = index == popupContent.selectedRowIndex,
-                                        p = p,
-                                    )
+                                is ComposerPopupRow.MentionItem -> {
+                                    DropdownMenuItem(
+                                        modifier = Modifier.bringIntoViewRequester(popupRowRequesters[index]),
+                                        onClick = { onIntent(UiIntent.SelectMentionFile(row.entry.path)) },
+                                    ) {
+                                        MentionSuggestionRow(
+                                            entry = row.entry,
+                                            selected = index == popupContent.selectedRowIndex,
+                                            p = p,
+                                        )
+                                    }
                                 }
                             }
                         }
                     }
                 }
             }
+        }
+        state.emptyStateHint?.takeIf(String::isNotBlank)?.let { hint ->
+            Text(
+                text = hint,
+                color = p.textMuted,
+                style = androidx.compose.material.MaterialTheme.typography.caption,
+            )
         }
     }
 }

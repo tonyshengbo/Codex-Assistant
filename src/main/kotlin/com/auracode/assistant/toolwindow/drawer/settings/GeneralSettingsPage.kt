@@ -15,6 +15,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.auracode.assistant.i18n.AuraCodeBundle
+import com.auracode.assistant.provider.claude.ClaudeModelCatalog
 import com.auracode.assistant.settings.UiLanguageMode
 import com.auracode.assistant.settings.UiScaleMode
 import com.auracode.assistant.settings.UiThemeMode
@@ -36,8 +37,8 @@ internal fun GeneralSettingsPage(
     ) {
         SettingsGroupHeader(
             p = p,
-            title = AuraCodeBundle.message("settings.group.appearance"),
-            description = AuraCodeBundle.message("settings.group.appearance.subtitle"),
+            title = AuraCodeBundle.message("settings.group.shared"),
+            description = AuraCodeBundle.message("settings.group.shared.subtitle"),
         )
         SettingsField(
             p = p,
@@ -77,11 +78,17 @@ internal fun GeneralSettingsPage(
         }
         SettingsGroupHeader(
             p = p,
-            title = AuraCodeBundle.message("settings.group.environment"),
-            description = AuraCodeBundle.message("settings.group.environment.subtitle"),
+            title = AuraCodeBundle.message("settings.group.codex"),
+            description = AuraCodeBundle.message("settings.group.codex.subtitle"),
         )
         GeneralEnvironmentSettingsSection(p = p, state = state, onIntent = onIntent)
         CodexCliVersionSettingsSection(p = p, state = state, onIntent = onIntent)
+        SettingsGroupHeader(
+            p = p,
+            title = AuraCodeBundle.message("settings.group.claude"),
+            description = AuraCodeBundle.message("settings.group.claude.subtitle"),
+        )
+        ClaudeSettingsSection(p = p, state = state, onIntent = onIntent)
         SettingsField(
             p = p,
             title = AuraCodeBundle.message("settings.autoContext.label"),
@@ -104,6 +111,46 @@ internal fun GeneralSettingsPage(
                 onCheckedChange = {
                     onIntent(UiIntent.EditSettingsBackgroundCompletionNotificationsEnabled(it))
                 },
+            )
+        }
+    }
+}
+
+@Composable
+private fun ClaudeSettingsSection(
+    p: DesignPalette,
+    state: RightDrawerAreaState,
+    onIntent: (UiIntent) -> Unit,
+) {
+    val claudePathInputState = rememberSettingsTextInputState(state.claudeCliPath)
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(assistantUiTokens().spacing.md),
+    ) {
+        SettingsField(
+            p = p,
+            title = AuraCodeBundle.message("settings.claudePath.label"),
+            description = AuraCodeBundle.message("settings.claudePath.hint"),
+        ) {
+            SettingsTextInput(
+                p = p,
+                value = claudePathInputState.value,
+                onValueChange = {
+                    claudePathInputState.value = it
+                    onIntent(UiIntent.EditSettingsClaudeCliPath(it.text))
+                },
+            )
+        }
+        SettingsField(
+            p = p,
+            title = AuraCodeBundle.message("settings.claudeDefaultModel.label"),
+            description = AuraCodeBundle.message("settings.claudeDefaultModel.hint"),
+        ) {
+            ClaudeModelDropdown(
+                p = p,
+                value = state.claudeDefaultModel.ifBlank { ClaudeModelCatalog.defaultModel },
+                onSelect = { onIntent(UiIntent.EditSettingsClaudeDefaultModel(it)) },
+                modifier = Modifier.width(220.dp),
             )
         }
     }
@@ -198,6 +245,29 @@ private fun ThemeModeDropdown(
         }
         DropdownMenuItem(onClick = { expanded = false; onSelect(UiThemeMode.DARK) }) {
             Text(AuraCodeBundle.message("settings.theme.dark"))
+        }
+    }
+}
+
+@Composable
+private fun ClaudeModelDropdown(
+    p: DesignPalette,
+    value: String,
+    onSelect: (String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    var expanded by remember { mutableStateOf(false) }
+    SettingsSelectField(
+        p = p,
+        text = value,
+        modifier = modifier,
+        onClick = { expanded = true },
+    )
+    DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+        ClaudeModelCatalog.ids().forEach { modelId ->
+            DropdownMenuItem(onClick = { expanded = false; onSelect(modelId) }) {
+                Text(modelId)
+            }
         }
     }
 }

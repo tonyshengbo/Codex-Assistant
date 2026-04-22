@@ -235,6 +235,29 @@ class AreaStoresTest {
     }
 
     @Test
+    fun `header store exposes active session engine label`() {
+        val store = HeaderAreaStore()
+
+        store.onEvent(
+            AppEvent.SessionSnapshotUpdated(
+                sessions = listOf(
+                    AgentChatService.SessionSummary(
+                        id = "s1",
+                        title = "Claude Session",
+                        updatedAt = 1L,
+                        messageCount = 1,
+                        remoteConversationId = "",
+                        providerId = "claude",
+                    ),
+                ),
+                activeSessionId = "s1",
+            ),
+        )
+
+        assertEquals("Claude", store.state.value.engineLabel)
+    }
+
+    @Test
     fun `right drawer closes when close intent is published`() {
         val store = RightDrawerAreaStore()
         store.onEvent(AppEvent.UiIntentPublished(UiIntent.ToggleHistory))
@@ -243,6 +266,32 @@ class AreaStoresTest {
         store.onEvent(AppEvent.UiIntentPublished(UiIntent.CloseRightDrawer))
 
         assertEquals(RightDrawerKind.NONE, store.state.value.kind)
+    }
+
+    @Test
+    fun `settings snapshot exposes claude configuration and save visibility`() {
+        val store = RightDrawerAreaStore()
+
+        store.onEvent(
+            AppEvent.SettingsSnapshotUpdated(
+                codexCliPath = "codex",
+                claudeCliPath = "claude",
+                claudeDefaultModel = "claude-sonnet-4-6",
+                languageMode = com.auracode.assistant.settings.UiLanguageMode.FOLLOW_IDE,
+                themeMode = com.auracode.assistant.settings.UiThemeMode.FOLLOW_IDE,
+                autoContextEnabled = true,
+                savedAgents = emptyList(),
+            ),
+        )
+
+        assertEquals("claude", store.state.value.claudeCliPath)
+        assertEquals("claude-sonnet-4-6", store.state.value.claudeDefaultModel)
+        assertFalse(store.state.value.isEnvironmentSaveVisible)
+
+        store.onEvent(AppEvent.UiIntentPublished(UiIntent.EditSettingsClaudeCliPath("custom-claude")))
+
+        assertEquals("custom-claude", store.state.value.claudeCliPath)
+        assertTrue(store.state.value.isEnvironmentSaveVisible)
     }
 
     @Test

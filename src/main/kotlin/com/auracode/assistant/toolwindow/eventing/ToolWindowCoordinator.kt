@@ -61,6 +61,7 @@ internal class ToolWindowCoordinator(
     private val openTimelineFileChange: (TimelineFileChange) -> Unit = {},
     private val openTimelineFilePath: (String) -> Unit = {},
     private val revealPathInFileManager: (String) -> Boolean = { false },
+    private val openSessionInNewTab: (String) -> Boolean = { true },
     private val localSkillInstallPolicy: LocalSkillInstallPolicy = LocalSkillInstallPolicy(),
     private val writeExportFile: (String, String) -> Unit = { path, content ->
         val exportPath = Path.of(path)
@@ -309,8 +310,11 @@ internal class ToolWindowCoordinator(
             UiIntent.DismissPlanCompletionPrompt -> planHandler.dismissPlanCompletionPrompt()
             is UiIntent.SelectAgent -> settingsHandler.persistSelectedAgent(intent.agent.id)
             is UiIntent.RemoveSelectedAgent -> settingsHandler.persistDeselectedAgent(intent.id)
+            is UiIntent.RequestEngineSwitch -> Unit
+            is UiIntent.SelectEngine -> handleEngineSelection(intent.engineId)
+            UiIntent.DismissEngineSwitchDialog -> Unit
             is UiIntent.SelectModel -> {
-                settingsService.setSelectedComposerModel(intent.model)
+                settingsService.setSelectedComposerModel(chatService.defaultEngineId(), intent.model)
                 publishSettingsSnapshot()
             }
             is UiIntent.SelectReasoning -> {
@@ -372,9 +376,14 @@ internal class ToolWindowCoordinator(
 
     private fun publishSettingsSnapshot() {
         val state = settingsService.state
+        val selectedEngineId = chatService.defaultEngineId()
         eventHub.publish(
             AppEvent.SettingsSnapshotUpdated(
                 codexCliPath = state.executablePathFor("codex"),
+                claudeCliPath = state.executablePathFor("claude"),
+                claudeDefaultModel = settingsService.selectedComposerModel("claude"),
+                selectedEngineId = selectedEngineId,
+                availableEngines = chatService.availableEngines(),
                 nodePath = settingsService.nodeExecutablePath(),
                 languageMode = settingsService.uiLanguageMode(),
                 themeMode = settingsService.uiThemeMode(),
@@ -385,7 +394,7 @@ internal class ToolWindowCoordinator(
                 savedAgents = state.savedAgents.toList(),
                 selectedAgentIds = settingsService.selectedAgentIds(),
                 customModelIds = settingsService.customModelIds(),
-                selectedModel = settingsService.selectedComposerModel(),
+                selectedModel = settingsService.selectedComposerModel(selectedEngineId),
                 selectedReasoning = settingsService.selectedComposerReasoning(),
                 codexCliVersionSnapshot = codexCliVersionService.snapshot(),
             ),
@@ -395,9 +404,151 @@ internal class ToolWindowCoordinator(
     private fun publishConversationCapabilities() {
         eventHub.publish(
             AppEvent.ConversationCapabilitiesUpdated(
-                capabilities = chatService.conversationCapabilities(),
+                capabilities = chatService.conversationCapabilities(chatService.defaultEngineId()),
             ),
         )
+    }
+
+    /**
+     * Applies the selected engine either in-place for empty sessions or by branching to a new tab.
+     */
+    private fun handleEngineSelection(engineId: String) {
+        val normalizedEngineId = engineId.trim().ifBlank { chatService.defaultEngineId() }
+        val previousSessionId = activeSessionId()
+        val previousEngineId = chatService.sessionProviderId(previousSessionId)
+        if (previousEngineId == normalizedEngineId) {
+            publishSettingsSnapshot()
+            publishConversationCapabilities()
+            publishSessionSnapshot()
+            return
+        }
+
+        settingsService.setDefaultEngineId(normalizedEngineId)
+        val switchedToNewSession = when {
+            chatService.setSessionProviderIfEmpty(providerId = normalizedEngineId) -> false
+            else -> branchSessionForEngineSwitch(
+                previousSessionId = previousSessionId,
+                previousEngineId = previousEngineId,
+                targetEngineId = normalizedEngineId,
+            )
+        }
+
+        publishSettingsSnapshot()
+        publishConversationCapabilities()
+        publishSessionSnapshot()
+        if (switchedToNewSession && !eventDispatcher.restoreCachedSessionState(activeSessionId())) {
+            historyHandler.restoreCurrentSessionHistory()
+        }
+    }
+
+    /**
+     * Creates a sibling session for the requested engine and seeds its composer state before opening a tab.
+     */
+    private fun branchSessionForEngineSwitch(
+        previousSessionId: String,
+        previousEngineId: String,
+        targetEngineId: String,
+    ): Boolean {
+        val previousComposerState = restorePreviousSessionComposerState(
+            sourceState = composerStore.state.value,
+            previousEngineId = previousEngineId,
+        )
+        eventDispatcher.captureVisibleSessionState(previousSessionId)
+        eventDispatcher.storeComposerState(previousSessionId, previousComposerState)
+
+        val newSessionId = chatService.createSession(targetEngineId)
+        eventDispatcher.storeComposerState(
+            newSessionId,
+            createBranchedComposerState(
+                sourceState = previousComposerState,
+                targetEngineId = targetEngineId,
+            ),
+        )
+        if (openSessionInNewTab(newSessionId)) {
+            return true
+        }
+
+        sessionUiStateCache.drop(newSessionId)
+        chatService.switchSession(previousSessionId)
+        chatService.deleteSession(newSessionId)
+        settingsService.setDefaultEngineId(previousEngineId)
+        publishSettingsSnapshot()
+        publishConversationCapabilities()
+        publishSessionSnapshot()
+        if (!eventDispatcher.restoreCachedSessionState(previousSessionId)) {
+            historyHandler.restoreCurrentSessionHistory()
+        }
+        return false
+    }
+
+    /**
+     * Reconstructs the originating session's composer state after the UI has already reflected the target engine.
+     */
+    private fun restorePreviousSessionComposerState(
+        sourceState: com.auracode.assistant.toolwindow.composer.ComposerAreaState,
+        previousEngineId: String,
+    ): com.auracode.assistant.toolwindow.composer.ComposerAreaState {
+        val previousModel = resolveComposerModelForEngine(previousEngineId)
+        return sourceState.copy(
+            selectedEngineId = previousEngineId,
+            selectedModel = previousModel,
+            engineSwitchConfirmation = null,
+        )
+    }
+
+    /**
+     * Seeds the branched session with the current draft while clearing runtime-only session state.
+     */
+    private fun createBranchedComposerState(
+        sourceState: com.auracode.assistant.toolwindow.composer.ComposerAreaState,
+        targetEngineId: String,
+    ): com.auracode.assistant.toolwindow.composer.ComposerAreaState {
+        return sourceState.copy(
+            selectedEngineId = targetEngineId,
+            selectedModel = resolveComposerModelForEngine(targetEngineId),
+            engineMenuExpanded = false,
+            engineSwitchConfirmation = null,
+            modelMenuExpanded = false,
+            reasoningMenuExpanded = false,
+            mentionPopupVisible = false,
+            mentionSuggestions = emptyList(),
+            mentionQuery = "",
+            activeMentionIndex = 0,
+            agentPopupVisible = false,
+            agentSuggestions = emptyList(),
+            agentQuery = "",
+            activeAgentIndex = 0,
+            slashPopupVisible = false,
+            slashSuggestions = emptyList(),
+            slashQuery = "",
+            activeSlashIndex = 0,
+            editedFiles = emptyList(),
+            editedFilesExpanded = false,
+            appliedTurnDiffs = emptyMap(),
+            usageSnapshot = null,
+            activeSessionMessageCount = 0,
+            sessionIsRunning = false,
+            pendingApprovalCount = 0,
+            pendingToolInputCount = 0,
+            approvalQueue = emptyList(),
+            approvalPrompt = null,
+            toolUserInputQueue = emptyList(),
+            toolUserInputPrompt = null,
+            runningPlan = null,
+            runningPlanExpanded = true,
+            planCompletion = null,
+            pendingSubmissions = emptyList(),
+        )
+    }
+
+    /**
+     * Resolves the remembered model for an engine while falling back to that engine's default.
+     */
+    private fun resolveComposerModelForEngine(engineId: String): String {
+        val availableModels = chatService.engineDescriptor(engineId)?.models.orEmpty().toSet()
+        val selectedModel = settingsService.selectedComposerModel(engineId)
+        return selectedModel.takeIf { it in availableModels }
+            ?: settingsService.state.defaultModelFor(engineId)
     }
 
     private fun activeSessionId(): String = chatService.getCurrentSessionId()

@@ -7,6 +7,24 @@ import kotlin.test.assertTrue
 
 class ToolUserInputPromptModelsTest {
     @Test
+    fun `fixed choice shows inline description only when focused`() {
+        val fixedChoice = ToolUserInputChoiceUiModel(
+            label = "工厂模式 (Recommended)",
+            description = "最常见，Factory/Abstract Factory 一类 demo",
+            kind = ToolUserInputChoiceKind.FIXED,
+        )
+        val freeformChoice = ToolUserInputChoiceUiModel(
+            label = "别的模式",
+            description = "不是上面两种，我会按你的补充描述来规划",
+            kind = ToolUserInputChoiceKind.FREEFORM,
+        )
+
+        assertEquals("最常见，Factory/Abstract Factory 一类 demo", fixedChoice.inlineDescription(isFocused = true))
+        assertEquals("", fixedChoice.inlineDescription(isFocused = false))
+        assertEquals("", freeformChoice.inlineDescription(isFocused = true))
+    }
+
+    @Test
     fun `semantic other option is treated as freeform answer source`() {
         val question = ToolUserInputQuestionUiModel(
             id = "pattern_meaning",

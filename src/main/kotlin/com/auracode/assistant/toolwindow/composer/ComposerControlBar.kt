@@ -85,6 +85,23 @@ internal fun resolveComposerTrailingActionState(
     )
 }
 
+/**
+ * Resolves whether engine selection should happen immediately or wait for confirmation.
+ */
+internal fun resolveEngineSelectionIntent(
+    state: ComposerAreaState,
+    engineId: String,
+): UiIntent {
+    val normalizedEngineId = engineId.trim().ifBlank { state.selectedEngineId }
+    val requiresConfirmation = normalizedEngineId != state.selectedEngineId &&
+        (state.activeSessionMessageCount ?: 0) > 0
+    return if (requiresConfirmation) {
+        UiIntent.RequestEngineSwitch(normalizedEngineId)
+    } else {
+        UiIntent.SelectEngine(normalizedEngineId)
+    }
+}
+
 @Composable
 internal fun ComposerControlBar(
     p: DesignPalette,
@@ -104,6 +121,30 @@ internal fun ComposerControlBar(
             .padding(start = t.spacing.sm, end = 2.dp, top = 3.dp, bottom = 3.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        val selectedEngineLabel = state.availableEngines
+            .firstOrNull { it.id == state.selectedEngineId }
+            ?.displayName
+            ?: state.selectedEngineId
+        DropdownChip(
+            label = selectedEngineLabel,
+            expanded = state.engineMenuExpanded,
+            onToggle = { onIntent(UiIntent.ToggleEngineMenu) },
+            onDismiss = { onIntent(UiIntent.ToggleEngineMenu) },
+            p = p,
+        ) {
+            state.availableEngines.forEach { engine ->
+                DropdownMenuItem(onClick = { onIntent(resolveEngineSelectionIntent(state, engine.id)) }) {
+                    DropdownOptionRow(
+                        label = engine.displayName,
+                        selected = state.selectedEngineId == engine.id,
+                        isCustom = false,
+                        onDelete = null,
+                        p = p,
+                    )
+                }
+            }
+        }
+        Spacer(Modifier.width(t.spacing.sm))
         DropdownChip(
             label = state.selectedModel,
             expanded = state.modelMenuExpanded,
@@ -163,38 +204,47 @@ internal fun ComposerControlBar(
                 }
             }
         }
-        if (state.planModeAvailable) {
-            Spacer(Modifier.width(t.spacing.sm))
-            Box(
-                modifier = Modifier
-                    .width(1.dp)
-                    .background(p.markdownDivider.copy(alpha = 0.55f))
-                    .padding(vertical = 8.dp),
+        Spacer(Modifier.width(t.spacing.sm))
+        Box(
+            modifier = Modifier
+                .width(1.dp)
+                .background(p.markdownDivider.copy(alpha = 0.55f))
+                .padding(vertical = 8.dp),
+        )
+        Spacer(Modifier.width(t.spacing.sm))
+        HoverTooltip(
+            text = if (state.executionMode == com.auracode.assistant.toolwindow.eventing.ComposerMode.AUTO) {
+                AuraCodeBundle.message("composer.mode.auto.tooltip.enabled")
+            } else {
+                AuraCodeBundle.message("composer.mode.auto.tooltip.disabled")
+            },
+        ) {
+            ToggleChip(
+                label = AuraCodeBundle.message("composer.mode.auto"),
+                enabled = state.executionMode == com.auracode.assistant.toolwindow.eventing.ComposerMode.AUTO,
+                interactive = true,
+                p = p,
+                onClick = { onIntent(UiIntent.ToggleExecutionMode) },
             )
+        }
+        Spacer(Modifier.width(t.spacing.sm))
+        HoverTooltip(text = resolvePlanModeTooltip(state.planModeAvailable, state.disabledCapabilityReason)) {
+            ToggleChip(
+                label = AuraCodeBundle.message("composer.mode.plan"),
+                enabled = state.planEnabled && state.planModeAvailable,
+                interactive = state.planModeAvailable,
+                p = p,
+                onClick = { onIntent(UiIntent.TogglePlanMode) },
+            )
+        }
+        state.capabilityHint?.takeIf(String::isNotBlank)?.let { hint ->
             Spacer(Modifier.width(t.spacing.sm))
-            HoverTooltip(
-                text = if (state.executionMode == com.auracode.assistant.toolwindow.eventing.ComposerMode.AUTO) {
-                    AuraCodeBundle.message("composer.mode.auto.tooltip.enabled")
-                } else {
-                    AuraCodeBundle.message("composer.mode.auto.tooltip.disabled")
-                },
-            ) {
-                ToggleChip(
-                    label = AuraCodeBundle.message("composer.mode.auto"),
-                    enabled = state.executionMode == com.auracode.assistant.toolwindow.eventing.ComposerMode.AUTO,
-                    p = p,
-                    onClick = { onIntent(UiIntent.ToggleExecutionMode) },
-                )
-            }
-            Spacer(Modifier.width(t.spacing.sm))
-            HoverTooltip(text = AuraCodeBundle.message("composer.mode.plan.tooltip")) {
-                ToggleChip(
-                    label = AuraCodeBundle.message("composer.mode.plan"),
-                    enabled = state.planEnabled,
-                    p = p,
-                    onClick = { onIntent(UiIntent.TogglePlanMode) },
-                )
-            }
+            Text(
+                text = hint,
+                color = p.textMuted,
+                style = MaterialTheme.typography.caption,
+                maxLines = 1,
+            )
         }
         Spacer(Modifier.weight(1f))
         HoverTooltip(
@@ -209,6 +259,17 @@ internal fun ComposerControlBar(
                 onClick = { onIntent(trailingActionState.intent) },
             )
         }
+    }
+}
+
+internal fun resolvePlanModeTooltip(
+    planModeAvailable: Boolean,
+    disabledReason: String?,
+): String {
+    return if (planModeAvailable) {
+        AuraCodeBundle.message("composer.mode.plan.tooltip")
+    } else {
+        disabledReason?.trim().orEmpty().ifBlank { AuraCodeBundle.message("composer.mode.plan.tooltip") }
     }
 }
 
@@ -414,17 +475,22 @@ private fun CustomModelInputSection(
 private fun ToggleChip(
     label: String,
     enabled: Boolean,
+    interactive: Boolean,
     p: DesignPalette,
     onClick: () -> Unit,
 ) {
     val t = assistantUiTokens()
     Text(
         text = label,
-        color = if (enabled) p.accent else p.textSecondary,
+        color = when {
+            enabled -> p.accent
+            interactive -> p.textSecondary
+            else -> p.textMuted
+        },
         fontWeight = if (enabled) FontWeight.Medium else FontWeight.Normal,
         modifier = Modifier
             .background(Color.Transparent, RoundedCornerShape(t.spacing.sm))
-            .clickable(onClick = onClick)
+            .clickable(enabled = interactive, onClick = onClick)
             .padding(horizontal = 6.dp, vertical = 3.dp),
     )
 }

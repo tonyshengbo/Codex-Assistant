@@ -115,10 +115,21 @@ internal class PlanFlowHandler(
             }
 
             is UnifiedEvent.ItemUpdated -> {
+                val planContext = context.activePlanRunContexts[sessionId]
                 if (event.item.kind == com.auracode.assistant.protocol.ItemKind.PLAN_UPDATE) {
-                    context.activePlanRunContexts[sessionId]?.apply {
+                    // Codex 风格：通过专用 PLAN_UPDATE 类型传递计划内容
+                    planContext?.apply {
                         latestPlanBody = event.item.text?.trim()?.takeIf { it.isNotBlank() } ?: latestPlanBody
                     }
+                }
+                // Claude CLI 在 --permission-mode plan 下以普通 NARRATIVE 消息输出计划内容，
+                // 需要同步捕获，否则 handlePlanTurnCompleted 拿到的 latestPlanBody 为空
+                if (planContext != null &&
+                    event.item.kind == com.auracode.assistant.protocol.ItemKind.NARRATIVE &&
+                    event.item.name == "message"
+                ) {
+                    planContext.latestPlanBody = event.item.text?.trim()?.takeIf { it.isNotBlank() }
+                        ?: planContext.latestPlanBody
                 }
             }
 

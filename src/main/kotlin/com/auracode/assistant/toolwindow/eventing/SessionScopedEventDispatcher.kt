@@ -51,6 +51,13 @@ internal class SessionScopedEventDispatcher(
         )
     }
 
+    /**
+     * Stores the composer snapshot for a session while preserving other scoped stores.
+     */
+    fun storeComposerState(sessionId: String, composerState: com.auracode.assistant.toolwindow.composer.ComposerAreaState) {
+        sessionUiStateCache.storeComposerState(sessionId, composerState)
+    }
+
     fun findToolUserInputPrompt(sessionId: String, requestId: String): ToolUserInputPromptUiModel? {
         return if (sessionId == activeSessionId()) {
             toolUserInputPromptStore.state.value.queue.firstOrNull { it.requestId == requestId }

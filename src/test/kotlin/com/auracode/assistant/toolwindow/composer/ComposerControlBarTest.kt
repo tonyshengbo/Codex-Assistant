@@ -8,6 +8,32 @@ import kotlin.test.assertTrue
 
 class ComposerControlBarTest {
     @Test
+    fun `switching engine from a populated session requests confirmation instead of selecting immediately`() {
+        val intent = resolveEngineSelectionIntent(
+            state = ComposerAreaState(
+                selectedEngineId = "codex",
+                activeSessionMessageCount = 2,
+            ),
+            engineId = "claude",
+        )
+
+        assertEquals(UiIntent.RequestEngineSwitch("claude"), intent)
+    }
+
+    @Test
+    fun `switching engine from an empty session still selects immediately`() {
+        val intent = resolveEngineSelectionIntent(
+            state = ComposerAreaState(
+                selectedEngineId = "codex",
+                activeSessionMessageCount = 0,
+            ),
+            engineId = "claude",
+        )
+
+        assertEquals(UiIntent.SelectEngine("claude"), intent)
+    }
+
+    @Test
     fun `running engine keeps trailing action locked to cancel even when prompt has content`() {
         val state = resolveComposerTrailingActionState(
             running = true,
@@ -40,5 +66,16 @@ class ComposerControlBarTest {
         assertEquals(UiIntent.SendPrompt, readyState.intent)
         assertTrue(readyState.enabled)
         assertFalse(readyState.running)
+    }
+
+    @Test
+    fun `plan tooltip falls back to capability reason when plan mode is unavailable`() {
+        assertEquals(
+            "Plan mode is not available for Claude yet.",
+            resolvePlanModeTooltip(
+                planModeAvailable = false,
+                disabledReason = "Plan mode is not available for Claude yet.",
+            ),
+        )
     }
 }

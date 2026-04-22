@@ -9,6 +9,16 @@ import kotlin.test.assertTrue
 
 class ProviderRegistryTest {
     @Test
+    fun `default registry exposes codex and claude engines`() {
+        val settings = AgentSettingsService().apply { loadState(AgentSettingsService.State()) }
+
+        val registry = ProviderRegistry(settings)
+
+        assertEquals(listOf("claude", "codex"), registry.engines().map { it.id }.sorted())
+        assertEquals("Claude", registry.engine("claude")?.displayName)
+    }
+
+    @Test
     fun `default codex registry exposes curated model list without auto`() {
         val settings = AgentSettingsService().apply { loadState(AgentSettingsService.State()) }
 
@@ -24,6 +34,46 @@ class ProviderRegistryTest {
             ),
             registry.engine("codex")?.models,
         )
+    }
+
+    @Test
+    fun `default claude registry exposes current curated model list`() {
+        val settings = AgentSettingsService().apply { loadState(AgentSettingsService.State()) }
+
+        val registry = ProviderRegistry(settings)
+
+        assertEquals(
+            listOf(
+                "claude-sonnet-4-6",
+                "claude-sonnet-4-6[1m]",
+                "claude-opus-4-6",
+                "claude-opus-4-6[1m]",
+                "claude-haiku-4-5-20251001",
+            ),
+            registry.engine("claude")?.models,
+        )
+    }
+
+    @Test
+    fun `settings persist selected model per engine`() {
+        val settings = AgentSettingsService().apply { loadState(AgentSettingsService.State()) }
+
+        settings.setSelectedComposerModel(engineId = "claude", model = "claude-sonnet-4-5")
+        settings.setSelectedComposerModel(engineId = "codex", model = "gpt-5.4")
+
+        assertEquals("claude-sonnet-4-6", settings.selectedComposerModel("claude"))
+        assertEquals("gpt-5.4", settings.selectedComposerModel("codex"))
+    }
+
+    @Test
+    fun `settings migrate legacy curated claude model ids to current replacements`() {
+        val settings = AgentSettingsService().apply { loadState(AgentSettingsService.State()) }
+
+        settings.setSelectedComposerModel(engineId = "claude", model = "claude-opus-4-1")
+        assertEquals("claude-opus-4-6", settings.selectedComposerModel("claude"))
+
+        settings.setSelectedComposerModel(engineId = "claude", model = "claude-haiku-4-5")
+        assertEquals("claude-haiku-4-5-20251001", settings.selectedComposerModel("claude"))
     }
 
     @Test

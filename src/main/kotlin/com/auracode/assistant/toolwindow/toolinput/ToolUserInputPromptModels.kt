@@ -21,6 +21,10 @@ internal data class ToolUserInputChoiceUiModel(
     val kind: ToolUserInputChoiceKind,
 )
 
+internal fun ToolUserInputChoiceUiModel.inlineDescription(isFocused: Boolean): String {
+    return if (kind == ToolUserInputChoiceKind.FIXED && isFocused) description else ""
+}
+
 internal data class ToolUserInputQuestionUiModel(
     val id: String,
     val header: String,

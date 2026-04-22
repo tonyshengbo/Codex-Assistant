@@ -4,12 +4,11 @@ import com.auracode.assistant.protocol.UnifiedEvent
 import com.auracode.assistant.toolwindow.eventing.AppEvent
 import com.auracode.assistant.toolwindow.eventing.ToolWindowEventHub
 import com.auracode.assistant.toolwindow.eventing.UiIntent
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.flow.take
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
@@ -40,8 +39,8 @@ class ToolWindowEventHubTest {
     fun `stream does not drop burst events when consumer is slow`() = runBlocking {
         val hub = ToolWindowEventHub()
         val received = mutableListOf<AppEvent>()
-        val collector: Job = launch(Dispatchers.Default) {
-            hub.stream.collect { event ->
+        val collector = launch(start = CoroutineStart.UNDISPATCHED) {
+            hub.stream.take(300).collect { event ->
                 received += event
                 delay(5)
             }
@@ -56,12 +55,7 @@ class ToolWindowEventHubTest {
             )
         }
 
-        val deadline = System.currentTimeMillis() + 5_000
-        while (received.size < 300 && System.currentTimeMillis() < deadline) {
-            delay(20)
-        }
-        collector.cancelAndJoin()
-
+        collector.join()
         assertEquals(300, received.size)
     }
 }

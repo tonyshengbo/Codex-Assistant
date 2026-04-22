@@ -14,12 +14,13 @@ class ToolWindowHeaderTabsModelTest {
             openSessionIds = listOf("s2", "s1"),
             activeSessionId = "s1",
             sessions = listOf(
-                AgentChatService.SessionSummary("s1", "First Session", 2L, 3, ""),
-                AgentChatService.SessionSummary("s2", "Second Session", 1L, 1, ""),
+                AgentChatService.SessionSummary("s1", "First Session", 2L, 3, "", providerId = "codex"),
+                AgentChatService.SessionSummary("s2", "Second Session", 1L, 1, "", providerId = "claude"),
             ),
         )
 
         assertEquals(listOf("Second Session", "First Session"), layout.visibleTabs.map { it.fullTitle })
+        assertEquals(listOf("Claude", "Codex"), layout.visibleTabs.map { it.engineLabel })
         assertEquals(listOf(false, true), layout.visibleTabs.map { it.active })
         assertTrue(layout.visibleTabs.all { it.closable })
         assertTrue(layout.overflowTabs.isEmpty())

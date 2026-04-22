@@ -95,6 +95,7 @@ class CodexEnvironmentDetectorTest {
             shellEnvironmentLoader = {
                 mapOf("PATH" to tempDir.absolutePathString())
             },
+            shellEnvironmentCandidatesLoader = { emptyList() },
             commonSearchPaths = emptyList(),
             executableResolver = CodexExecutableResolver(
                 commonSearchPaths = emptyList(),
@@ -215,6 +216,7 @@ class CodexEnvironmentDetectorTest {
     fun `resolve for launch keeps codex status when executable is missing`() {
         val detector = CodexEnvironmentDetector(
             shellEnvironmentLoader = { emptyMap() },
+            shellEnvironmentCandidatesLoader = { emptyList() },
             commonSearchPaths = emptyList(),
             executableResolver = CodexExecutableResolver(
                 commonSearchPaths = emptyList(),

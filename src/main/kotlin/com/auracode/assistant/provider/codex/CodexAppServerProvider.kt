@@ -56,6 +56,7 @@ import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import java.io.File
+import java.net.URI
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
 
@@ -737,12 +738,12 @@ internal class CodexAppServerProvider(
                 ?: ""
         }
 
-        private fun extractWebSearchText(item: JsonObject): String {
+        private fun extractWebSearchText(item: JsonObject): String? {
             val query = item.string("query").orEmpty().trim()
             val action = item.objectValue("action")
-            if (action == null) return query
+            if (action == null) return query.ifBlank { null }
             val detail = webSearchDetail(query = query, action = action)
-            return detail.ifBlank { query }
+            return detail.ifBlank { query }.ifBlank { null }
         }
 
         private fun webSearchDetail(
@@ -767,7 +768,10 @@ internal class CodexAppServerProvider(
                         .joinToString("\n")
                 }
 
-                "open_page", "openpage" -> action.string("url").orEmpty().ifBlank { query }
+                "open_page", "openpage" -> {
+                    val target = action.string("url").orEmpty().ifBlank { query }
+                    summarizeOpenedLocation(target)
+                }
 
                 "find_in_page", "findinpage" -> {
                     val pattern = action.string("pattern").orEmpty().trim()
@@ -782,6 +786,17 @@ internal class CodexAppServerProvider(
 
                 else -> query
             }
+        }
+
+        private fun summarizeOpenedLocation(target: String): String {
+            val trimmed = target.trim()
+            if (trimmed.isBlank()) return ""
+            val host = runCatching {
+                URI(trimmed).host
+                    ?.removePrefix("www.")
+                    ?.takeIf { it.isNotBlank() }
+            }.getOrNull()
+            return host?.let { "Opened $it" } ?: trimmed
         }
 
         private fun extractUserInputText(item: JsonObject): String {

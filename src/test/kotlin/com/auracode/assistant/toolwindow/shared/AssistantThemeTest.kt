@@ -52,15 +52,15 @@ class AssistantThemeTest {
         val typography = assistantTypography(tokens)
 
         assertEquals(14.sp, tokens.type.body)
-        assertEquals(10.dp, tokens.markdown.codePadding)
-        assertEquals(8.dp, tokens.markdown.blockSpacing)
-        assertEquals(6.dp, tokens.markdown.listSpacing)
-        assertEquals(4.dp, tokens.markdown.listItemTop)
-        assertEquals(6.dp, tokens.markdown.listItemBottom)
-        assertEquals(12.dp, tokens.markdown.tableCellPadding)
-        assertEquals(21.sp, typography.body1.fontSize)
-        assertEquals(16.sp, typography.body2.fontSize)
-        assertEquals(14.sp, typography.caption.fontSize)
+        assertEquals(8.dp, tokens.markdown.codePadding)
+        assertEquals(6.dp, tokens.markdown.blockSpacing)
+        assertEquals(4.dp, tokens.markdown.listSpacing)
+        assertEquals(3.dp, tokens.markdown.listItemTop)
+        assertEquals(4.dp, tokens.markdown.listItemBottom)
+        assertEquals(8.dp, tokens.markdown.tableCellPadding)
+        assertEquals(14.sp, typography.body1.fontSize)
+        assertEquals(12.sp, typography.body2.fontSize)
+        assertEquals(11.sp, typography.caption.fontSize)
     }
 
     @Test
