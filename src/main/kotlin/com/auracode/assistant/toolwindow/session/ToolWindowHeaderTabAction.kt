@@ -41,10 +41,6 @@ internal open class ToolWindowHeaderTabAction(
         val panel = JPanel(BorderLayout(4, 0)).apply {
             isOpaque = true
         }
-        val badgeLabel = JLabel(tab.engineLabel).apply {
-            isOpaque = false
-            isVisible = tab.engineLabel.isNotBlank()
-        }
         val titleLabel = JLabel(tab.displayTitle)
         val closeButton = JButton().apply {
             isFocusable = false
@@ -58,19 +54,16 @@ internal open class ToolWindowHeaderTabAction(
         }
         titleLabel.font = titleLabel.font.deriveFont(Font.PLAIN, tokens.type.label.value)
         titleLabel.toolTipText = tab.fullTitle
-        badgeLabel.font = badgeLabel.font.deriveFont(Font.BOLD, (tokens.type.label.value - 1f).coerceAtLeast(10f))
         closeButton.preferredSize = java.awt.Dimension(tokens.controls.iconMd.value.toInt(), tokens.controls.iconMd.value.toInt())
         val center = JPanel(BorderLayout(4, 0)).apply {
             isOpaque = false
-            add(badgeLabel, BorderLayout.WEST)
             add(titleLabel, BorderLayout.CENTER)
         }
         panel.add(center, BorderLayout.CENTER)
         panel.add(closeButton, BorderLayout.EAST)
-        panel.putClientProperty("badge", badgeLabel)
         panel.putClientProperty("label", titleLabel)
         panel.putClientProperty("close", closeButton)
-        applyStyle(panel, badgeLabel, titleLabel, closeButton)
+        applyStyle(panel, titleLabel, closeButton)
         panel.border = BorderFactory.createEmptyBorder(0, tokens.spacing.xs.value.toInt(), 0, tokens.spacing.xs.value.toInt())
         panel.toolTipText = tab.fullTitle
         installSelectionHandlers(panel, center, titleLabel)
@@ -80,16 +73,13 @@ internal open class ToolWindowHeaderTabAction(
 
     override fun updateCustomComponent(component: JComponent, presentation: Presentation) {
         val panel = component as? JPanel ?: return
-        val badgeLabel = panel.getClientProperty("badge") as? JLabel ?: return
         val titleLabel = panel.getClientProperty("label") as? JLabel ?: return
         val closeButton = panel.getClientProperty("close") as? JButton ?: return
-        badgeLabel.text = tab.engineLabel
-        badgeLabel.isVisible = tab.engineLabel.isNotBlank()
         titleLabel.text = tab.displayTitle
         titleLabel.toolTipText = tab.fullTitle
         closeButton.isVisible = tab.closable
         panel.toolTipText = tab.fullTitle
-        applyStyle(panel, badgeLabel, titleLabel, closeButton)
+        applyStyle(panel, titleLabel, closeButton)
     }
 
     fun updateTab(tab: ToolWindowHeaderTab) {
@@ -98,7 +88,7 @@ internal open class ToolWindowHeaderTabAction(
         refreshCustomComponents()
     }
 
-    private fun applyStyle(panel: JPanel, badgeLabel: JLabel, titleLabel: JLabel, closeButton: JButton) {
+    private fun applyStyle(panel: JPanel, titleLabel: JLabel, closeButton: JButton) {
         val tokens = assistantUiTokens()
         val theme = if (currentIdeDarkTheme()) EffectiveTheme.DARK else EffectiveTheme.LIGHT
         val palette = AssistantUiTheme.palette(theme)
@@ -112,7 +102,6 @@ internal open class ToolWindowHeaderTabAction(
                 tokens.spacing.sm.value.toInt(),
             ),
         )
-        badgeLabel.foreground = palette.accent
         titleLabel.foreground = if (tab.active) palette.textPrimary else palette.textSecondary
         closeButton.foreground = if (tab.active) palette.textPrimary else palette.textSecondary
     }

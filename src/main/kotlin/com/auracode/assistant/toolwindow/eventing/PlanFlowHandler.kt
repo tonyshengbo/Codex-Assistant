@@ -90,8 +90,7 @@ internal class PlanFlowHandler(
             }
 
             is UnifiedEvent.RunningPlanUpdated -> {
-                val activePlanContext = context.activePlanRunContexts[sessionId] ?: return
-                activePlanContext.apply {
+                context.activePlanRunContexts[sessionId]?.apply {
                     latestPlanBody = event.body.trim().takeIf { it.isNotBlank() } ?: latestPlanBody
                     threadId = event.threadId ?: threadId
                     remoteTurnId = event.turnId.takeIf { it.isNotBlank() } ?: remoteTurnId
@@ -100,7 +99,7 @@ internal class PlanFlowHandler(
                     sessionId,
                     AppEvent.RunningPlanUpdated(
                         plan = ComposerRunningPlanState(
-                            threadId = event.threadId ?: activePlanContext.threadId,
+                            threadId = event.threadId ?: context.activePlanRunContexts[sessionId]?.threadId,
                             turnId = event.turnId,
                             explanation = event.explanation,
                             steps = event.steps.map { step ->
@@ -122,22 +121,15 @@ internal class PlanFlowHandler(
                         latestPlanBody = event.item.text?.trim()?.takeIf { it.isNotBlank() } ?: latestPlanBody
                     }
                 }
-                // Claude CLI 在 --permission-mode plan 下以普通 NARRATIVE 消息输出计划内容，
-                // 需要同步捕获，否则 handlePlanTurnCompleted 拿到的 latestPlanBody 为空
-                if (planContext != null &&
-                    event.item.kind == com.auracode.assistant.protocol.ItemKind.NARRATIVE &&
-                    event.item.name == "message"
-                ) {
-                    planContext.latestPlanBody = event.item.text?.trim()?.takeIf { it.isNotBlank() }
-                        ?: planContext.latestPlanBody
-                }
             }
 
             is UnifiedEvent.TurnCompleted -> {
                 context.eventDispatcher.dispatchSessionEvent(sessionId, AppEvent.ClearApprovals)
                 context.eventDispatcher.dispatchSessionEvent(sessionId, AppEvent.ClearToolUserInputs)
                 notifyBackgroundCompletionIfNeeded(sessionId, event)
-                handlePlanTurnCompleted(sessionId, event)
+                if (!handlePlanTurnCompleted(sessionId, event)) {
+                    clearRunningPlanIfNeeded(sessionId, event)
+                }
             }
 
             else -> Unit
@@ -270,14 +262,15 @@ internal class PlanFlowHandler(
         }
     }
 
-    private fun handlePlanTurnCompleted(sessionId: String, event: UnifiedEvent.TurnCompleted) {
-        val current = context.activePlanRunContexts[sessionId] ?: return
-        if (current.remoteTurnId != null && current.remoteTurnId != event.turnId) return
+    /** 处理 plan mode turn 结束逻辑；处理成功时返回 true。 */
+    private fun handlePlanTurnCompleted(sessionId: String, event: UnifiedEvent.TurnCompleted): Boolean {
+        val current = context.activePlanRunContexts[sessionId] ?: return false
+        if (current.remoteTurnId != null && current.remoteTurnId != event.turnId) return false
         context.activePlanRunContexts.remove(sessionId)
         context.eventDispatcher.dispatchSessionEvent(sessionId, AppEvent.RunningPlanUpdated(plan = null))
-        if (event.outcome != TurnOutcome.SUCCESS) return
+        if (event.outcome != TurnOutcome.SUCCESS) return true
         val body = current.latestPlanBody?.trim().orEmpty()
-        if (body.isBlank()) return
+        if (body.isBlank()) return true
         context.eventDispatcher.dispatchSessionEvent(
             sessionId,
             AppEvent.PlanCompletionPromptUpdated(
@@ -289,6 +282,14 @@ internal class PlanFlowHandler(
                 ),
             ),
         )
+        return true
+    }
+
+    /** 清理普通 turn 顶部运行计划，避免 Claude TodoWrite 在完成后残留。 */
+    private fun clearRunningPlanIfNeeded(sessionId: String, event: UnifiedEvent.TurnCompleted) {
+        val runningPlan = context.composerStore.state.value.runningPlan ?: return
+        if (event.turnId.isNotBlank() && runningPlan.turnId != event.turnId) return
+        context.eventDispatcher.dispatchSessionEvent(sessionId, AppEvent.RunningPlanUpdated(plan = null))
     }
 
     private fun notifyBackgroundCompletionIfNeeded(sessionId: String, event: UnifiedEvent.TurnCompleted) {

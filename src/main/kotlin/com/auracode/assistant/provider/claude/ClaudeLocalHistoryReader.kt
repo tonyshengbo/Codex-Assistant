@@ -143,9 +143,11 @@ internal class ClaudeLocalHistoryReader(
             completed = true,
         )
         toolStates[rawEvent.toolUseId] = current.copy(event = updated)
-        events += UnifiedEvent.ItemUpdated(
-            toolCallItemMapper.map(ownerId = current.ownerId, event = updated),
-        )
+        if (!updated.toolName.equals("TodoWrite", ignoreCase = true)) {
+            events += UnifiedEvent.ItemUpdated(
+                toolCallItemMapper.map(ownerId = current.ownerId, event = updated),
+            )
+        }
         return nextPendingTurnId
     }
 
@@ -188,9 +190,11 @@ internal class ClaudeLocalHistoryReader(
                 completed = false,
             )
             toolStates[content.toolUseId] = HistoryToolState(ownerId = uuid, event = toolEvent)
-            events += UnifiedEvent.ItemUpdated(
-                toolCallItemMapper.map(ownerId = uuid, event = toolEvent),
-            )
+            if (!content.name.equals("TodoWrite", ignoreCase = true)) {
+                events += UnifiedEvent.ItemUpdated(
+                    toolCallItemMapper.map(ownerId = uuid, event = toolEvent),
+                )
+            }
         }
 
         snapshot.content.filterIsInstance<ClaudeMessageContent.Thinking>().forEachIndexed { index, content ->

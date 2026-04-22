@@ -41,7 +41,20 @@ internal class ClaudeUnifiedEventMapper(
                 buildList {
                     maybeEmitThreadStarted(this)
                     maybeEmitTurnStarted(this)
-                    add(UnifiedEvent.ItemUpdated(toolCallItemMapper.map(ownerId = request.requestId, event = event)))
+                    if (event.toolName.trim().equals("TodoWrite", ignoreCase = true)) {
+                        val plan = toolCallItemMapper.mapTodoWritePlan(event)
+                        add(
+                            UnifiedEvent.RunningPlanUpdated(
+                                threadId = threadId,
+                                turnId = turnId,
+                                explanation = null,
+                                steps = plan.steps,
+                                body = plan.body,
+                            ),
+                        )
+                    } else {
+                        add(UnifiedEvent.ItemUpdated(toolCallItemMapper.map(ownerId = request.requestId, event = event)))
+                    }
                 }
             }
 

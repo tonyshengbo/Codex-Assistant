@@ -185,8 +185,8 @@ class ClaudeLocalHistoryReaderTest {
     }
 
     @Test
-    /** 验证历史回放会把 TodoWrite、Read、Write、Edit 恢复成结构化 timeline 节点。 */
-    fun `readHistory restores structured tool items for claude tool calls`() {
+    /** 验证历史回放会跳过 TodoWrite timeline 节点，但继续恢复 Read、Write、Edit 等结构化工具节点。 */
+    fun `readHistory skips todo timeline item and restores other structured tool items`() {
         val projectsDir = Files.createTempDirectory("claude-projects")
         val projectDir = projectsDir.resolve("-Users-test-Project").also { Files.createDirectory(it) }
         val sessionId = "structured-history-session"
@@ -210,10 +210,7 @@ class ClaudeLocalHistoryReaderTest {
         val result = reader.readHistory(sessionId)
         val itemUpdates = result.events.filterIsInstance<UnifiedEvent.ItemUpdated>()
 
-        val planItem = itemUpdates.firstOrNull { it.item.id.contains("tooluse_todo") }
-            ?: error("Missing TodoWrite history item.")
-        assertEquals(ItemKind.PLAN_UPDATE, planItem.item.kind)
-        assertTrue(planItem.item.text.orEmpty().contains("Override loadInitialHistory() in ClaudeCliProvider"))
+        assertTrue(itemUpdates.none { it.item.id.contains("tooluse_todo") })
 
         val readItem = itemUpdates.firstOrNull { it.item.id.contains("tooluse_read") }
             ?: error("Missing Read history item.")

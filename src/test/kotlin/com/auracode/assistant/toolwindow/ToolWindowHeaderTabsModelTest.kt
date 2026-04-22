@@ -20,7 +20,6 @@ class ToolWindowHeaderTabsModelTest {
         )
 
         assertEquals(listOf("Second Session", "First Session"), layout.visibleTabs.map { it.fullTitle })
-        assertEquals(listOf("Claude", "Codex"), layout.visibleTabs.map { it.engineLabel })
         assertEquals(listOf(false, true), layout.visibleTabs.map { it.active })
         assertTrue(layout.visibleTabs.all { it.closable })
         assertTrue(layout.overflowTabs.isEmpty())

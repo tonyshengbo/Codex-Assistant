@@ -1,14 +1,12 @@
 package com.auracode.assistant.toolwindow.session
 
 import com.auracode.assistant.service.AgentChatService
-import com.auracode.assistant.toolwindow.engineDisplayLabel
 
 /**
  * Describes a single rendered tab item in the tool window header.
  */
 internal data class ToolWindowHeaderTab(
     val sessionId: String,
-    val engineLabel: String = "",
     val fullTitle: String,
     val displayTitle: String,
     val active: Boolean,
@@ -55,7 +53,6 @@ internal object ToolWindowHeaderTabsModel {
             )
             ToolWindowHeaderTab(
                 sessionId = sessionId,
-                engineLabel = engineDisplayLabel(summary.providerId),
                 fullTitle = decoratedTitle,
                 displayTitle = truncateHeaderTabTitle(decoratedTitle),
                 active = sessionId == activeSessionId,

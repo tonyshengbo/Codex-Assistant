@@ -338,8 +338,8 @@ class ClaudeCliProviderTest {
     }
 
     @Test
-    /** 验证 Claude 的 TodoWrite、Read、Write、Edit 会映射到 Codex 同构的 timeline kind。 */
-    fun `stream maps claude tools to plan command and diff items`() = runBlocking {
+    /** 验证 Claude 的 TodoWrite 会映射为顶部运行计划事件，其它工具仍映射到结构化 timeline 节点。 */
+    fun `stream maps claude todo to running plan and other tools to timeline items`() = runBlocking {
         val provider = ClaudeCliProvider(
             settings = AgentSettingsService().apply { loadState(AgentSettingsService.State()) },
             launcher = FakeClaudeCliLauncher(
@@ -369,13 +369,21 @@ class ClaudeCliProviderTest {
             ),
         ).toList()
 
-        val itemUpdates = events.filterIsInstance<UnifiedEvent.ItemUpdated>()
+        val turnStarted = events.filterIsInstance<UnifiedEvent.TurnStarted>().firstOrNull()
+            ?: error("Missing TurnStarted event.")
+        val runningPlan = events.filterIsInstance<UnifiedEvent.RunningPlanUpdated>().firstOrNull()
+            ?: error("Missing RunningPlanUpdated event for TodoWrite.")
+        assertEquals(turnStarted.turnId, runningPlan.turnId)
+        assertEquals(3, runningPlan.steps.size)
+        assertEquals("Create ClaudeLocalHistoryReader.kt", runningPlan.steps[0].step)
+        assertEquals("Override loadInitialHistory() in ClaudeCliProvider", runningPlan.steps[1].step)
+        assertEquals("completed", runningPlan.steps[0].status)
+        assertEquals("in_progress", runningPlan.steps[1].status)
+        assertTrue(runningPlan.body.contains("- [x] Create ClaudeLocalHistoryReader.kt"))
+        assertTrue(runningPlan.body.contains("Override loadInitialHistory() in ClaudeCliProvider"))
 
-        val planItem = itemUpdates.firstOrNull { it.item.id.contains("tooluse_todo") }
-            ?: error("Missing TodoWrite item.")
-        assertEquals(ItemKind.PLAN_UPDATE, planItem.item.kind)
-        assertTrue(planItem.item.text.orEmpty().contains("- [x] Create ClaudeLocalHistoryReader.kt"))
-        assertTrue(planItem.item.text.orEmpty().contains("Override loadInitialHistory() in ClaudeCliProvider"))
+        val itemUpdates = events.filterIsInstance<UnifiedEvent.ItemUpdated>()
+        assertFalse(itemUpdates.any { it.item.id.contains("tooluse_todo") })
 
         val readItem = itemUpdates.firstOrNull {
             it.item.id.contains("tooluse_read") &&

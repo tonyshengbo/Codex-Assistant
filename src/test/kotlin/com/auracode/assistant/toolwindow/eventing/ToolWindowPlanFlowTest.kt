@@ -136,6 +136,43 @@ class ToolWindowPlanFlowTest {
     }
 
     @Test
+    fun `non plan turn running plan updates populate composer and clear on turn completion`() {
+        val harness = CoordinatorHarness()
+
+        harness.eventHub.publishUiIntent(UiIntent.InputChanged("Run normal claude turn"))
+        harness.eventHub.publishUiIntent(UiIntent.SendPrompt)
+        harness.waitUntil { harness.provider.requests.isNotEmpty() }
+
+        harness.provider.emitRunningPlanUpdate(
+            UnifiedEvent.RunningPlanUpdated(
+                threadId = "thread-1",
+                turnId = "turn-1",
+                explanation = null,
+                steps = listOf(
+                    com.auracode.assistant.protocol.UnifiedRunningPlanStep(step = "Analyze timeline mapping", status = "completed"),
+                    com.auracode.assistant.protocol.UnifiedRunningPlanStep(step = "Show running plan above composer", status = "in_progress"),
+                ),
+                body = """
+                    - [x] Analyze timeline mapping
+                    - [~] Show running plan above composer
+                """.trimIndent(),
+            ),
+        )
+
+        harness.waitUntil { harness.composerStore.state.value.runningPlan != null }
+        val runningPlan = harness.composerStore.state.value.runningPlan
+        assertEquals("turn-1", runningPlan?.turnId)
+        assertEquals("Show running plan above composer", runningPlan?.steps?.get(1)?.step)
+        assertTrue(harness.timelineStore.state.value.nodes.none { it is TimelineNode.PlanNode })
+
+        harness.provider.completeTurn()
+        harness.waitUntil { harness.composerStore.state.value.runningPlan == null }
+        assertNull(harness.composerStore.state.value.planCompletion)
+
+        harness.dispose()
+    }
+
+    @Test
     fun `executing approved plan starts follow up turn on same thread with last execution mode`() {
         val harness = CoordinatorHarness()
 

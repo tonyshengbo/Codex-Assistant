@@ -254,7 +254,7 @@ class AreaStoresTest {
             ),
         )
 
-        assertEquals("Claude", store.state.value.engineLabel)
+        assertEquals("Claude Session", store.state.value.title)
     }
 
     @Test

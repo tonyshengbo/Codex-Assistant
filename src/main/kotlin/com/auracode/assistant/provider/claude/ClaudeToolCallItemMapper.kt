@@ -5,6 +5,7 @@ import com.auracode.assistant.protocol.ItemKind
 import com.auracode.assistant.protocol.ItemStatus
 import com.auracode.assistant.protocol.UnifiedFileChange
 import com.auracode.assistant.protocol.UnifiedItem
+import com.auracode.assistant.protocol.UnifiedRunningPlanStep
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
@@ -25,7 +26,6 @@ internal class ClaudeToolCallItemMapper(
         event: ClaudeConversationEvent.ToolCallUpdated,
     ): UnifiedItem {
         return when (event.toolName.trim().lowercase()) {
-            "todowrite" -> mapTodoWrite(ownerId = ownerId, event = event)
             "read" -> mapRead(ownerId = ownerId, event = event)
             "write" -> mapWrite(ownerId = ownerId, event = event)
             "edit" -> mapEdit(ownerId = ownerId, event = event)
@@ -33,17 +33,26 @@ internal class ClaudeToolCallItemMapper(
         }
     }
 
-    /** 将 TodoWrite 映射为 Plan Update 卡片。 */
-    private fun mapTodoWrite(
-        ownerId: String,
+    /** 将 TodoWrite 输入转换为运行态计划快照；解析失败时返回空步骤与兜底正文。 */
+    fun mapTodoWritePlan(
         event: ClaudeConversationEvent.ToolCallUpdated,
-    ): UnifiedItem {
-        return UnifiedItem(
-            id = toolItemId(ownerId = ownerId, toolUseId = event.toolUseId),
-            kind = ItemKind.PLAN_UPDATE,
-            status = unifiedStatus(event),
-            name = "Plan Update",
-            text = todoPlanBody(event.inputJson),
+    ): ClaudeTodoPlanSnapshot {
+        val input = parseJsonObject(event.inputJson)
+        val todos = input?.get("todos") as? JsonArray
+        val steps = todos?.mapNotNull { element ->
+            val todo = element as? JsonObject ?: return@mapNotNull null
+            val content = todo.string("content", "title", "text", "activeForm").orEmpty()
+            if (content.isBlank()) return@mapNotNull null
+            UnifiedRunningPlanStep(
+                step = content,
+                status = todoStatusValue(todo.string("status").orEmpty()),
+            )
+        }.orEmpty()
+        return ClaudeTodoPlanSnapshot(
+            steps = steps,
+            body = steps.takeIf { it.isNotEmpty() }?.joinToString("\n") { step ->
+                "${todoStatusCheckbox(step.status)} ${step.step}"
+            } ?: fallbackPlanBody(event.inputJson),
         )
     }
 
@@ -141,19 +150,6 @@ internal class ClaudeToolCallItemMapper(
         )
     }
 
-    /** 将 TodoWrite 的 todos 数组格式化为计划卡片正文。 */
-    private fun todoPlanBody(inputJson: String): String {
-        val input = parseJsonObject(inputJson) ?: return fallbackPlanBody(inputJson)
-        val todos = input["todos"] as? JsonArray ?: return fallbackPlanBody(inputJson)
-        val lines = todos.mapNotNull { element ->
-            val todo = element as? JsonObject ?: return@mapNotNull null
-            val content = todo.string("content", "title", "text", "activeForm").orEmpty()
-            if (content.isBlank()) return@mapNotNull null
-            "${todoStatusCheckbox(todo.string("status").orEmpty())} $content"
-        }
-        return lines.takeIf { it.isNotEmpty() }?.joinToString("\n") ?: fallbackPlanBody(inputJson)
-    }
-
     /** 在 TodoWrite 输入尚未成形时，给计划卡片一个稳定的占位正文。 */
     private fun fallbackPlanBody(inputJson: String): String {
         return inputJson.takeIf { it.isNotBlank() } ?: "Updating plan"
@@ -203,10 +199,19 @@ internal class ClaudeToolCallItemMapper(
 
     /** 将 Todo 状态映射为 markdown checklist 勾选前缀。 */
     private fun todoStatusCheckbox(status: String): String {
-        return when (status.trim().lowercase()) {
-            "completed", "success", "done" -> "- [x]"
-            "in_progress", "running", "active" -> "- [~]"
+        return when (todoStatusValue(status)) {
+            "completed" -> "- [x]"
+            "in_progress" -> "- [~]"
             else -> "- [ ]"
+        }
+    }
+
+    /** 将 Todo 状态归一化为统一运行计划状态值。 */
+    private fun todoStatusValue(status: String): String {
+        return when (status.trim().lowercase()) {
+            "completed", "success", "done" -> "completed"
+            "inprogress", "in_progress", "running", "active" -> "in_progress"
+            else -> "pending"
         }
     }
 
@@ -221,4 +226,10 @@ internal class ClaudeToolCallItemMapper(
     private fun String.lineCountOrNull(): Int? {
         return takeIf { it.isNotBlank() }?.lineSequence()?.count()
     }
+
+    /** 承载 TodoWrite 解析结果，供 provider 组装 RunningPlanUpdated。 */
+    data class ClaudeTodoPlanSnapshot(
+        val steps: List<UnifiedRunningPlanStep>,
+        val body: String,
+    )
 }
