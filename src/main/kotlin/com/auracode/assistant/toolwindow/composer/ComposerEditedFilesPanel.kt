@@ -38,6 +38,7 @@ import androidx.compose.ui.unit.dp
 import com.auracode.assistant.i18n.AuraCodeBundle
 import com.auracode.assistant.toolwindow.eventing.UiIntent
 import com.auracode.assistant.toolwindow.shared.DesignPalette
+import com.auracode.assistant.toolwindow.shared.FileTypeIcon
 import com.auracode.assistant.toolwindow.shared.HoverTooltip
 import com.auracode.assistant.toolwindow.shared.assistantUiTokens
 
@@ -160,11 +161,7 @@ private fun EditedFileRow(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(t.spacing.sm),
     ) {
-        ComposerFileTypeIcon(
-            fileName = item.displayName,
-            tint = androidx.compose.ui.graphics.Color.Unspecified,
-            tokens = t,
-        )
+        FileTypeIcon(fileName = item.displayName, modifier = Modifier.size(t.controls.iconMd))
         Column(modifier = Modifier.weight(1f)) {
             HoverTooltip(item.path) {
                 Column {

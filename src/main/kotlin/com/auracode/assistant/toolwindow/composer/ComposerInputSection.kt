@@ -51,6 +51,7 @@ import androidx.compose.ui.window.PopupProperties
 import com.auracode.assistant.i18n.AuraCodeBundle
 import com.auracode.assistant.toolwindow.eventing.UiIntent
 import com.auracode.assistant.toolwindow.shared.DesignPalette
+import com.auracode.assistant.toolwindow.shared.FileTypeIcon
 import com.auracode.assistant.toolwindow.shared.ToolWindowUiText
 import com.auracode.assistant.toolwindow.shared.assistantUiTokens
 
@@ -449,10 +450,9 @@ private fun MentionFileSuggestionRow(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.Start,
     ) {
-        ComposerFileTypeIcon(
+        FileTypeIcon(
             fileName = entry.path.substringAfterLast('/').substringAfterLast('\\').ifBlank { entry.displayName },
             tint = p.textSecondary,
-            tokens = t,
         )
         Spacer(Modifier.width(t.spacing.sm))
         Text(
