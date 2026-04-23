@@ -8,9 +8,9 @@ import com.auracode.assistant.protocol.TurnOutcome
 internal class TimelineNodeReducer {
     var state: TimelineAreaState = TimelineAreaState()
         private set
-
     private var activeThreadId: String? = null
     private var activeTurnId: String? = null
+    private var openTurnId: String? = null
     private var syntheticTurnCount: Int = 0
     private var errorNodeCount: Int = 0
 
@@ -90,6 +90,7 @@ internal class TimelineNodeReducer {
         val normalizedTurnId = turnId?.trim().orEmpty()
         if (normalizedTurnId.isNotBlank()) {
             activeTurnId = normalizedTurnId
+            openTurnId = normalizedTurnId
         }
         state = state.copy(
             isRunning = true,
@@ -104,6 +105,7 @@ internal class TimelineNodeReducer {
     fun reset() {
         activeThreadId = null
         activeTurnId = null
+        openTurnId = null
         syntheticTurnCount = 0
         errorNodeCount = 0
         state = TimelineAreaState()
@@ -115,6 +117,7 @@ internal class TimelineNodeReducer {
         activeTurnId = restoredState.nodes.asReversed().firstNotNullOfOrNull { node ->
             node.turnId?.takeIf { restoredState.isRunning || node.status == ItemStatus.RUNNING }
         }
+        openTurnId = activeTurnId
         syntheticTurnCount = 0
         errorNodeCount = restoredState.nodes.count { it is TimelineNode.ErrorNode }
     }
@@ -130,6 +133,7 @@ internal class TimelineNodeReducer {
             state.nodes
         }
         activeTurnId = mutation.turnId
+        openTurnId = mutation.turnId
         return state.copy(
             nodes = nextNodes,
             isRunning = true,
@@ -358,16 +362,8 @@ internal class TimelineNodeReducer {
         val turnId = resolveTurnId(explicitTurnId)
         val node = create(turnId)
         val nextNodes = upsertNode(state.nodes, node, turnId)
-        if (status == ItemStatus.FAILED && turnId != null && activeTurnId == turnId) {
-            val stillRunningInTurn = nextNodes.any { candidate ->
-                candidate !is TimelineNode.LoadMoreNode &&
-                    candidate.turnId == turnId &&
-                    candidate.status == ItemStatus.RUNNING
-            }
-            if (!stillRunningInTurn) {
-                activeTurnId = null
-            }
-        }
+        // 不在单个节点失败时清空 activeTurnId：Codex 模式下工具调用失败后 agent 会继续运行，
+        // 整个 turn 尚未结束。activeTurnId 只应在 TurnCompleted 或 AppendError 时清空。
         return state.copy(
             nodes = nextNodes,
             isRunning = hasRunningState(nextNodes),
@@ -378,8 +374,12 @@ internal class TimelineNodeReducer {
     private fun acceptTurnCompleted(mutation: TimelineMutation.TurnCompleted): TimelineAreaState {
         val targetTurnId = resolveCompletionTurnId(mutation.turnId)
         val completingActiveTurn = targetTurnId != null && activeTurnId == targetTurnId
+        val completingOpenTurn = targetTurnId != null && openTurnId == targetTurnId
         if (completingActiveTurn) {
             activeTurnId = null
+        }
+        if (completingOpenTurn) {
+            openTurnId = null
         }
         val nextNodes = finalizeRunningNodes(
             nodes = state.nodes,
@@ -457,13 +457,21 @@ internal class TimelineNodeReducer {
         val normalized = explicitTurnId?.trim().orEmpty()
         if (normalized.isNotBlank()) {
             activeTurnId = normalized
+            openTurnId = normalized
             return normalized
         }
         if (!activeTurnId.isNullOrBlank()) {
             return activeTurnId
         }
+        openTurnId?.takeIf { it.isNotBlank() }?.let { trackedTurnId ->
+            // Keep post-failure items attached to the still-open turn without making
+            // the open-turn marker itself a UI running signal.
+            activeTurnId = trackedTurnId
+            return trackedTurnId
+        }
         return nextSyntheticTurnId().also { generated ->
             activeTurnId = generated
+            openTurnId = generated
         }
     }
 

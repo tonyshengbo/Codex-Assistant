@@ -16,10 +16,9 @@ import androidx.compose.material.Icon
 import androidx.compose.material.IconButton
 import androidx.compose.material.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -37,6 +36,10 @@ internal fun ContextEntryStrip(
     onIntent: (UiIntent) -> Unit,
 ) {
     val t = assistantUiTokens()
+    val scrollState = rememberScrollState()
+    val trailingReservedWidth = remember(state.editedFiles.isNotEmpty()) {
+        resolveContextEntryStripTrailingReservedWidth(hasEditedFiles = state.editedFiles.isNotEmpty())
+    }
     Box(
         modifier = Modifier
             .fillMaxWidth()
@@ -44,10 +47,7 @@ internal fun ContextEntryStrip(
             .padding(horizontal = t.spacing.sm, vertical = 3.dp),
     ) {
         Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(end = if (state.editedFiles.isNotEmpty()) 96.dp else 0.dp)
-                .horizontalScroll(rememberScrollState()),
+            modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             HoverTooltip(text = AuraCodeBundle.message("composer.addAttachment")) {
@@ -64,37 +64,57 @@ internal fun ContextEntryStrip(
                 }
             }
             Spacer(Modifier.width(t.spacing.xs))
-            state.contextEntries.forEach { entry ->
-                ContextEntryChip(
-                    entry = entry,
-                    p = p,
-                    onRemove = { onIntent(UiIntent.RemoveContextFile(entry.path)) },
-                )
-                Spacer(Modifier.width(t.spacing.xs))
-            }
-            state.agentEntries.forEach { entry ->
-                AgentEntryChip(
-                    entry = entry,
-                    p = p,
-                    onRemove = { onIntent(UiIntent.RemoveSelectedAgent(entry.id)) },
-                )
-                Spacer(Modifier.width(t.spacing.xs))
-            }
-        }
-        if (state.editedFiles.isNotEmpty()) {
             Box(
-                modifier = Modifier.align(Alignment.CenterEnd),
+                modifier = Modifier.weight(1f),
             ) {
-                EditedFilesEntry(
-                    p = p,
-                    summary = state.editedFilesSummary,
-                    expanded = state.editedFilesExpanded,
-                    onClick = { onIntent(UiIntent.ToggleEditedFilesExpanded) },
-                )
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(end = trailingReservedWidth)
+                        .horizontalScroll(scrollState)
+                        .mouseHorizontalDragScroll(scrollState),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    state.contextEntries.forEach { entry ->
+                        ContextEntryChip(
+                            entry = entry,
+                            p = p,
+                            onRemove = { onIntent(UiIntent.RemoveContextFile(entry.path)) },
+                        )
+                        Spacer(Modifier.width(t.spacing.xs))
+                    }
+                    state.agentEntries.forEach { entry ->
+                        AgentEntryChip(
+                            entry = entry,
+                            p = p,
+                            onRemove = { onIntent(UiIntent.RemoveSelectedAgent(entry.id)) },
+                        )
+                        Spacer(Modifier.width(t.spacing.xs))
+                    }
+                }
+                if (state.editedFiles.isNotEmpty()) {
+                    Box(
+                        modifier = Modifier.align(Alignment.CenterEnd),
+                    ) {
+                        EditedFilesEntry(
+                            p = p,
+                            summary = state.editedFilesSummary,
+                            expanded = state.editedFilesExpanded,
+                            onClick = { onIntent(UiIntent.ToggleEditedFilesExpanded) },
+                        )
+                    }
+                }
             }
         }
     }
 }
+
+/**
+ * Reserves space so the fixed edited-files entry does not overlap the chip scroller.
+ */
+internal fun resolveContextEntryStripTrailingReservedWidth(
+    hasEditedFiles: Boolean,
+) = if (hasEditedFiles) 96.dp else 0.dp
 
 @Composable
 private fun EditedFilesEntry(

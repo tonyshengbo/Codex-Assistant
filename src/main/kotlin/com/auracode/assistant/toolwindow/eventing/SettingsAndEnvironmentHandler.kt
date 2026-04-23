@@ -70,7 +70,6 @@ internal class SettingsAndEnvironmentHandler(
         state.setExecutablePathFor("codex", drawerState.codexCliPath.trim())
         state.setExecutablePathFor("claude", drawerState.claudeCliPath.trim())
         context.settingsService.setNodeExecutablePath(drawerState.nodePath.trim())
-        context.settingsService.setSelectedComposerModel("claude", drawerState.claudeDefaultModel.trim())
         context.settingsService.setUiLanguageMode(drawerState.languageMode)
         context.settingsService.setUiThemeMode(drawerState.themeMode)
         context.settingsService.setUiScaleMode(drawerState.uiScaleMode)

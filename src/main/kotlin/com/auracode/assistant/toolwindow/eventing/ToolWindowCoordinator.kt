@@ -383,7 +383,6 @@ internal class ToolWindowCoordinator(
             AppEvent.SettingsSnapshotUpdated(
                 codexCliPath = state.executablePathFor("codex"),
                 claudeCliPath = state.executablePathFor("claude"),
-                claudeDefaultModel = settingsService.selectedComposerModel("claude"),
                 selectedEngineId = selectedEngineId,
                 availableEngines = chatService.availableEngines(),
                 nodePath = settingsService.nodeExecutablePath(),

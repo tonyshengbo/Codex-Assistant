@@ -15,7 +15,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.auracode.assistant.i18n.AuraCodeBundle
-import com.auracode.assistant.provider.claude.ClaudeModelCatalog
 import com.auracode.assistant.settings.UiLanguageMode
 import com.auracode.assistant.settings.UiScaleMode
 import com.auracode.assistant.settings.UiThemeMode
@@ -141,18 +140,6 @@ private fun ClaudeSettingsSection(
                 },
             )
         }
-        SettingsField(
-            p = p,
-            title = AuraCodeBundle.message("settings.claudeDefaultModel.label"),
-            description = AuraCodeBundle.message("settings.claudeDefaultModel.hint"),
-        ) {
-            ClaudeModelDropdown(
-                p = p,
-                value = state.claudeDefaultModel.ifBlank { ClaudeModelCatalog.defaultModel },
-                onSelect = { onIntent(UiIntent.EditSettingsClaudeDefaultModel(it)) },
-                modifier = Modifier.width(220.dp),
-            )
-        }
     }
 }
 
@@ -245,29 +232,6 @@ private fun ThemeModeDropdown(
         }
         DropdownMenuItem(onClick = { expanded = false; onSelect(UiThemeMode.DARK) }) {
             Text(AuraCodeBundle.message("settings.theme.dark"))
-        }
-    }
-}
-
-@Composable
-private fun ClaudeModelDropdown(
-    p: DesignPalette,
-    value: String,
-    onSelect: (String) -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    var expanded by remember { mutableStateOf(false) }
-    SettingsSelectField(
-        p = p,
-        text = value,
-        modifier = modifier,
-        onClick = { expanded = true },
-    )
-    DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-        ClaudeModelCatalog.ids().forEach { modelId ->
-            DropdownMenuItem(onClick = { expanded = false; onSelect(modelId) }) {
-                Text(modelId)
-            }
         }
     }
 }

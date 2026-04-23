@@ -455,7 +455,9 @@ class TimelineNodeReducerTest {
     }
 
     @Test
-    fun `failed activity without matching turn completion still clears running when no nodes remain running`() {
+    fun `failed activity keeps running state until turn is explicitly completed`() {
+        // Codex 模式下工具调用失败后 agent 会继续运行，isRunning 应保持 true，
+        // 直到收到 TurnCompleted 才解锁发送按钮。
         val reducer = TimelineNodeReducer()
 
         reducer.accept(TimelineMutation.TurnStarted(turnId = "turn_parent", threadId = "thread_1"))
@@ -481,7 +483,70 @@ class TimelineNodeReducerTest {
 
         val tool = assertIs<TimelineNode.ToolCallNode>(reducer.state.nodes.single())
         assertEquals(ItemStatus.FAILED, tool.status)
+        // 工具调用失败不应解锁发送按钮，turn 仍在运行中
+        assertTrue(reducer.state.isRunning)
+
+        reducer.accept(TimelineMutation.TurnCompleted(turnId = "turn_parent", outcome = TurnOutcome.FAILED))
         assertFalse(reducer.state.isRunning)
+    }
+
+    @Test
+    fun `items after failed activity stay attached to open turn until completion`() {
+        val reducer = TimelineNodeReducer()
+
+        reducer.accept(TimelineMutation.TurnStarted(turnId = "turn_parent", threadId = "thread_1"))
+        reducer.accept(
+            TimelineMutation.UpsertCommand(
+                sourceId = "compile",
+                title = "Run Gradle compileKotlin",
+                body = "> Task :compileKotlin FAILED",
+                status = ItemStatus.RUNNING,
+            ),
+        )
+        reducer.accept(
+            TimelineMutation.UpsertCommand(
+                sourceId = "compile",
+                title = "Run Gradle compileKotlin",
+                body = "> Task :compileKotlin FAILED",
+                status = ItemStatus.FAILED,
+            ),
+        )
+
+        // 工具调用失败后 turn 仍在运行，发送按钮应保持锁定
+        assertTrue(reducer.state.isRunning)
+
+        reducer.accept(
+            TimelineMutation.UpsertMessage(
+                sourceId = "assistant-after-failure",
+                role = MessageRole.ASSISTANT,
+                text = "Fixing compile error",
+                status = ItemStatus.RUNNING,
+            ),
+        )
+        reducer.accept(
+            TimelineMutation.UpsertCommand(
+                sourceId = "test",
+                title = "Run Gradle Test",
+                body = "> Task :test",
+                status = ItemStatus.RUNNING,
+            ),
+        )
+        reducer.accept(TimelineMutation.TurnCompleted(turnId = "turn_parent", outcome = TurnOutcome.SUCCESS))
+
+        assertFalse(reducer.state.isRunning)
+        assertTrue(reducer.state.nodes.all { node ->
+            node is TimelineNode.LoadMoreNode || node.turnId == "turn_parent"
+        })
+        assertEquals(
+            listOf(ItemStatus.FAILED, ItemStatus.SUCCESS, ItemStatus.SUCCESS),
+            reducer.state.nodes.mapNotNull { node ->
+                when (node) {
+                    is TimelineNode.CommandNode -> node.status
+                    is TimelineNode.MessageNode -> node.status
+                    else -> null
+                }
+            },
+        )
     }
 
     @Test

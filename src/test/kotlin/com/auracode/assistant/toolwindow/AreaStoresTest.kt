@@ -270,14 +270,13 @@ class AreaStoresTest {
     }
 
     @Test
-    fun `settings snapshot exposes claude configuration and save visibility`() {
+    fun `settings snapshot exposes claude cli configuration and save visibility`() {
         val store = RightDrawerAreaStore()
 
         store.onEvent(
             AppEvent.SettingsSnapshotUpdated(
                 codexCliPath = "codex",
                 claudeCliPath = "claude",
-                claudeDefaultModel = "claude-sonnet-4-6",
                 languageMode = com.auracode.assistant.settings.UiLanguageMode.FOLLOW_IDE,
                 themeMode = com.auracode.assistant.settings.UiThemeMode.FOLLOW_IDE,
                 autoContextEnabled = true,
@@ -286,13 +285,32 @@ class AreaStoresTest {
         )
 
         assertEquals("claude", store.state.value.claudeCliPath)
-        assertEquals("claude-sonnet-4-6", store.state.value.claudeDefaultModel)
         assertFalse(store.state.value.isEnvironmentSaveVisible)
 
         store.onEvent(AppEvent.UiIntentPublished(UiIntent.EditSettingsClaudeCliPath("custom-claude")))
 
         assertEquals("custom-claude", store.state.value.claudeCliPath)
         assertTrue(store.state.value.isEnvironmentSaveVisible)
+    }
+
+    @Test
+    fun `settings save visibility ignores claude composer model changes`() {
+        val store = RightDrawerAreaStore()
+
+        store.onEvent(
+            AppEvent.SettingsSnapshotUpdated(
+                codexCliPath = "codex",
+                claudeCliPath = "claude",
+                selectedEngineId = "claude",
+                languageMode = com.auracode.assistant.settings.UiLanguageMode.FOLLOW_IDE,
+                themeMode = com.auracode.assistant.settings.UiThemeMode.FOLLOW_IDE,
+                autoContextEnabled = true,
+                savedAgents = emptyList(),
+                selectedModel = "claude-opus-4-6",
+            ),
+        )
+
+        assertFalse(store.state.value.isEnvironmentSaveVisible)
     }
 
     @Test
