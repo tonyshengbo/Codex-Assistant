@@ -34,6 +34,7 @@ internal class TimelineNodeReducer {
             is TimelineMutation.UpsertUnknownActivity -> acceptUnknownActivity(mutation)
             is TimelineMutation.TurnCompleted -> acceptTurnCompleted(mutation)
             is TimelineMutation.AppendError -> acceptAppendedError(mutation)
+            is TimelineMutation.AppendEngineSwitched -> acceptEngineSwitched(mutation)
         }.withLiveRender()
     }
 
@@ -160,9 +161,10 @@ internal class TimelineNodeReducer {
             cursor = mutation.cursor,
             attachments = if (mutation.attachments.isNotEmpty()) mutation.attachments else existing?.attachments.orEmpty(),
         )
+        val nextNodes = upsertNode(state.nodes, node, turnId)
         return state.copy(
-            nodes = upsertNode(state.nodes, node, turnId),
-            isRunning = shouldKeepRunning(mutation.status, turnId),
+            nodes = nextNodes,
+            isRunning = hasRunningState(nextNodes),
             latestError = null,
         )
     }
@@ -183,9 +185,10 @@ internal class TimelineNodeReducer {
             cursor = mutation.cursor,
             attachments = if (mutation.attachments.isNotEmpty()) mutation.attachments else existing?.attachments.orEmpty(),
         )
+        val nextNodes = upsertAssistantAnswer(state.nodes, node, turnId)
         return state.copy(
-            nodes = upsertAssistantAnswer(state.nodes, node, turnId),
-            isRunning = shouldKeepRunning(mutation.status, turnId),
+            nodes = nextNodes,
+            isRunning = hasRunningState(nextNodes),
             latestError = null,
         )
     }
@@ -269,13 +272,14 @@ internal class TimelineNodeReducer {
         }
         if (fileNodes.isEmpty()) {
             return state.copy(
-                isRunning = shouldKeepRunning(mutation.status, turnId),
+                isRunning = hasRunningNodes(state.nodes),
                 latestError = null,
             )
         }
+        val nextNodes = fileNodes.fold(state.nodes) { nodes, node -> upsertNode(nodes, node, turnId) }
         return state.copy(
-            nodes = fileNodes.fold(state.nodes) { nodes, node -> upsertNode(nodes, node, turnId) },
-            isRunning = shouldKeepRunning(mutation.status, turnId),
+            nodes = nextNodes,
+            isRunning = hasRunningNodes(nextNodes),
             latestError = null,
         )
     }
@@ -353,9 +357,20 @@ internal class TimelineNodeReducer {
     ): TimelineAreaState {
         val turnId = resolveTurnId(explicitTurnId)
         val node = create(turnId)
+        val nextNodes = upsertNode(state.nodes, node, turnId)
+        if (status == ItemStatus.FAILED && turnId != null && activeTurnId == turnId) {
+            val stillRunningInTurn = nextNodes.any { candidate ->
+                candidate !is TimelineNode.LoadMoreNode &&
+                    candidate.turnId == turnId &&
+                    candidate.status == ItemStatus.RUNNING
+            }
+            if (!stillRunningInTurn) {
+                activeTurnId = null
+            }
+        }
         return state.copy(
-            nodes = upsertNode(state.nodes, node, turnId),
-            isRunning = shouldKeepRunning(status, turnId),
+            nodes = nextNodes,
+            isRunning = hasRunningState(nextNodes),
             latestError = null,
         )
     }
@@ -410,6 +425,31 @@ internal class TimelineNodeReducer {
             nodes = nextNodes,
             isRunning = false,
             latestError = mutation.message,
+        )
+    }
+
+    /**
+     * Appends a local informational boundary without rebinding prior nodes to a new turn.
+     */
+    private fun acceptEngineSwitched(mutation: TimelineMutation.AppendEngineSwitched): TimelineAreaState {
+        val nextNodes = appendNode(
+            nodes = state.nodes,
+            node = TimelineNode.EngineSwitchedNode(
+                id = activityNodeId("engine-switched", turnId = null, sourceId = mutation.sourceId),
+                sourceId = mutation.sourceId,
+                title = AuraCodeBundle.message("timeline.system.engineSwitched.title"),
+                targetEngineLabel = mutation.targetEngineLabel,
+                body = mutation.body,
+                iconPath = "/icons/swap-horiz.svg",
+                timestamp = mutation.timestamp,
+                status = ItemStatus.SUCCESS,
+                turnId = null,
+            ),
+        )
+        return state.copy(
+            nodes = nextNodes,
+            isRunning = hasRunningState(nextNodes),
+            latestError = null,
         )
     }
 
@@ -515,14 +555,18 @@ internal class TimelineNodeReducer {
         }
     }
 
-    private fun shouldKeepRunning(status: ItemStatus, turnId: String?): Boolean {
-        return status == ItemStatus.RUNNING || state.isRunning
-    }
-
     private fun hasRunningNodes(nodes: List<TimelineNode>): Boolean {
         return nodes.any { node ->
             node !is TimelineNode.LoadMoreNode && node.status == ItemStatus.RUNNING
         }
+    }
+
+    /**
+     * Keeps the timeline in a running state while the active turn is still open even if
+     * only completed local placeholder nodes have arrived so far.
+     */
+    private fun hasRunningState(nodes: List<TimelineNode>): Boolean {
+        return activeTurnId != null || hasRunningNodes(nodes)
     }
 
     private fun TimelineAreaState.withLiveRender(): TimelineAreaState {
@@ -560,6 +604,7 @@ internal class TimelineNodeReducer {
                 if (turnId != fromTurnId) this else copy(id = activityNodeId("unknown", toTurnId, sourceId), turnId = toTurnId)
             is TimelineNode.ErrorNode ->
                 if (turnId != fromTurnId) this else copy(id = activityNodeId("error", toTurnId, sourceId), turnId = toTurnId)
+            is TimelineNode.EngineSwitchedNode -> this
             is TimelineNode.LoadMoreNode -> this
         }
     }
@@ -604,6 +649,7 @@ internal class TimelineNodeReducer {
             )
             is TimelineNode.UnknownActivityNode -> copy(status = status)
             is TimelineNode.ErrorNode -> copy(status = status)
+            is TimelineNode.EngineSwitchedNode -> copy(status = status)
             is TimelineNode.LoadMoreNode -> this
         }
     }

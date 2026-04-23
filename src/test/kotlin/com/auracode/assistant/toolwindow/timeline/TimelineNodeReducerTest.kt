@@ -347,6 +347,33 @@ class TimelineNodeReducerTest {
     }
 
     @Test
+    fun `engine switch mutation appends a system node without clearing previous messages`() {
+        val reducer = TimelineNodeReducer()
+
+        reducer.accept(
+            TimelineMutation.UpsertMessage(
+                sourceId = "local-user-1",
+                role = MessageRole.USER,
+                text = "old prompt",
+                status = ItemStatus.SUCCESS,
+            ),
+        )
+        reducer.accept(
+            TimelineMutation.AppendEngineSwitched(
+                sourceId = "engine-switch-1",
+                targetEngineLabel = "Claude",
+                body = "已切换到 Claude，以下内容将作为新会话继续。",
+                timestamp = 123L,
+            ),
+        )
+
+        assertEquals(2, reducer.state.nodes.size)
+        val switchNode = assertIs<TimelineNode.EngineSwitchedNode>(reducer.state.nodes.last())
+        assertEquals("Claude", switchNode.targetEngineLabel)
+        assertEquals("已切换到 Claude，以下内容将作为新会话继续。", switchNode.body)
+    }
+
+    @Test
     fun `assistant answer and activities stay in flat timeline order`() {
         val reducer = TimelineNodeReducer()
 
@@ -424,6 +451,36 @@ class TimelineNodeReducerTest {
         assertEquals(ItemStatus.SUCCESS, process.status)
         assertEquals(null, process.collapsedSummary)
         assertEquals(ItemStatus.SUCCESS, answer.status)
+        assertFalse(reducer.state.isRunning)
+    }
+
+    @Test
+    fun `failed activity without matching turn completion still clears running when no nodes remain running`() {
+        val reducer = TimelineNodeReducer()
+
+        reducer.accept(TimelineMutation.TurnStarted(turnId = "turn_parent", threadId = "thread_1"))
+        reducer.accept(
+            TimelineMutation.UpsertToolCall(
+                sourceId = "tool-wait-1",
+                title = "Wait",
+                body = "Waiting for child agent",
+                status = ItemStatus.RUNNING,
+            ),
+        )
+
+        assertTrue(reducer.state.isRunning)
+
+        reducer.accept(
+            TimelineMutation.UpsertToolCall(
+                sourceId = "tool-wait-1",
+                title = "Wait",
+                body = "Child agent failed",
+                status = ItemStatus.FAILED,
+            ),
+        )
+
+        val tool = assertIs<TimelineNode.ToolCallNode>(reducer.state.nodes.single())
+        assertEquals(ItemStatus.FAILED, tool.status)
         assertFalse(reducer.state.isRunning)
     }
 

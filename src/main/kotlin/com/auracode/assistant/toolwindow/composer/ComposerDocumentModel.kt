@@ -81,6 +81,7 @@ internal fun insertMentionLabel(
     mentions: List<MentionEntry>,
     mentionPath: String,
     displayName: String,
+    kind: MentionEntryKind = MentionEntryKind.FILE,
 ): Pair<TextFieldValue, MentionEntry>? {
     val match = findMentionQuery(document, mentions) ?: return null
     val label = mentionLabel(displayName)
@@ -91,6 +92,7 @@ internal fun insertMentionLabel(
     }
     val nextMention = MentionEntry(
         id = java.util.UUID.randomUUID().toString(),
+        kind = kind,
         path = mentionPath,
         displayName = displayName,
         start = match.start,
@@ -98,6 +100,39 @@ internal fun insertMentionLabel(
     )
     val nextSelection = TextRange(nextMention.endExclusive)
     return TextFieldValue(nextText, nextSelection) to nextMention
+}
+
+/**
+ * Inserts a mention at the current cursor or selection, even when no active @ query is open.
+ */
+internal fun insertMentionAtCursor(
+    document: TextFieldValue,
+    mentions: List<MentionEntry>,
+    mentionPath: String,
+    displayName: String,
+    kind: MentionEntryKind = MentionEntryKind.FILE,
+): Pair<TextFieldValue, MentionEntry> {
+    val label = mentionLabel(displayName)
+    val selectionStart = document.selection.min.coerceIn(0, document.text.length)
+    val selectionEnd = document.selection.max.coerceIn(0, document.text.length)
+    val prefix = if (selectionStart > 0 && !document.text[selectionStart - 1].isWhitespace()) " " else ""
+    val suffix = if (selectionEnd < document.text.length && !document.text[selectionEnd].isWhitespace()) " " else ""
+    val insertion = "$prefix$label$suffix"
+    val nextText = buildString {
+        append(document.text.substring(0, selectionStart))
+        append(insertion)
+        append(document.text.substring(selectionEnd))
+    }
+    val mentionStart = selectionStart + prefix.length
+    val nextMention = MentionEntry(
+        id = java.util.UUID.randomUUID().toString(),
+        kind = kind,
+        path = mentionPath,
+        displayName = displayName,
+        start = mentionStart,
+        endExclusive = mentionStart + label.length,
+    )
+    return TextFieldValue(nextText, TextRange(mentionStart + insertion.length)) to nextMention
 }
 
 internal fun syncMentions(
@@ -147,16 +182,20 @@ internal fun syncMentions(
 internal fun removeMentionRanges(
     text: String,
     mentions: List<MentionEntry>,
+    includedKinds: Set<MentionEntryKind> = MentionEntryKind.entries.toSet(),
 ): String {
     if (mentions.isEmpty()) return text
     val builder = StringBuilder()
     var cursor = 0
-    mentions.sortedBy { it.start }.forEach { mention ->
+    mentions
+        .filter { it.kind in includedKinds }
+        .sortedBy { it.start }
+        .forEach { mention ->
         if (mention.start > cursor) {
             builder.append(text.substring(cursor, mention.start))
         }
         cursor = mention.endExclusive.coerceAtLeast(cursor)
-    }
+        }
     if (cursor < text.length) {
         builder.append(text.substring(cursor))
     }

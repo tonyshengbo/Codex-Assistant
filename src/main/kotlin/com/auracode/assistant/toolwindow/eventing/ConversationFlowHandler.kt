@@ -257,6 +257,7 @@ internal class ConversationFlowHandler(
             collaborationMode = if (submission.planEnabled) AgentCollaborationMode.PLAN else AgentCollaborationMode.DEFAULT,
             onTurnPersisted = { context.publishSessionSnapshot() },
             onUnifiedEvent = { event -> context.publishUnifiedEvent(sessionId, event) },
+            onRunStateChanged = { context.publishSessionSnapshot() },
         )
     }
 

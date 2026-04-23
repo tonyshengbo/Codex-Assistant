@@ -3,6 +3,7 @@ package com.auracode.assistant.toolwindow.eventing
 import com.auracode.assistant.coroutine.AppCoroutineManager
 import com.auracode.assistant.coroutine.ManagedCoroutineScope
 import com.auracode.assistant.context.MentionFileWhitelist
+import com.auracode.assistant.i18n.AuraCodeBundle
 import com.auracode.assistant.notification.ChatCompletionNotificationService
 import com.auracode.assistant.provider.codex.CodexCliVersionService
 import com.auracode.assistant.provider.codex.CodexEnvironmentDetector
@@ -16,6 +17,7 @@ import com.auracode.assistant.toolwindow.approval.ApprovalAreaStore
 import com.auracode.assistant.toolwindow.composer.ComposerAreaStore
 import com.auracode.assistant.toolwindow.drawer.RightDrawerAreaStore
 import com.auracode.assistant.toolwindow.drawer.RightDrawerKind
+import com.auracode.assistant.toolwindow.shared.UiText
 import com.auracode.assistant.toolwindow.session.SessionAttentionStore
 import com.auracode.assistant.toolwindow.header.HeaderAreaStore
 import com.auracode.assistant.toolwindow.status.StatusAreaStore
@@ -402,20 +404,26 @@ internal class ToolWindowCoordinator(
     }
 
     private fun publishConversationCapabilities() {
+        val activeEngineId = chatService.sessionProviderId(chatService.getCurrentSessionId())
         eventHub.publish(
             AppEvent.ConversationCapabilitiesUpdated(
-                capabilities = chatService.conversationCapabilities(chatService.defaultEngineId()),
+                capabilities = chatService.conversationCapabilities(activeEngineId),
             ),
         )
     }
 
     /**
-     * Applies the selected engine either in-place for empty sessions or by branching to a new tab.
+     * Applies the selected engine in the current session and clears any resumable remote conversation when needed.
      */
     private fun handleEngineSelection(engineId: String) {
         val normalizedEngineId = engineId.trim().ifBlank { chatService.defaultEngineId() }
-        val previousSessionId = activeSessionId()
-        val previousEngineId = chatService.sessionProviderId(previousSessionId)
+        val currentSessionId = activeSessionId()
+        val currentSession = chatService.listSessions().firstOrNull { it.id == currentSessionId }
+        if (currentSession?.isRunning == true) {
+            eventHub.publish(AppEvent.StatusTextUpdated(UiText.raw("Stop the current run before switching engines.")))
+            return
+        }
+        val previousEngineId = chatService.sessionProviderId(currentSessionId)
         if (previousEngineId == normalizedEngineId) {
             publishSettingsSnapshot()
             publishConversationCapabilities()
@@ -424,121 +432,33 @@ internal class ToolWindowCoordinator(
         }
 
         settingsService.setDefaultEngineId(normalizedEngineId)
-        val switchedToNewSession = when {
-            chatService.setSessionProviderIfEmpty(providerId = normalizedEngineId) -> false
-            else -> branchSessionForEngineSwitch(
-                previousSessionId = previousSessionId,
-                previousEngineId = previousEngineId,
-                targetEngineId = normalizedEngineId,
+        val switchedEmptySession = chatService.setSessionProviderIfEmpty(
+            sessionId = currentSessionId,
+            providerId = normalizedEngineId,
+        )
+        val switchedInPlace = switchedEmptySession || chatService.resetSessionForEngineSwitch(
+            sessionId = currentSessionId,
+            providerId = normalizedEngineId,
+        )
+
+        if (switchedInPlace && !switchedEmptySession) {
+            val targetEngineLabel = chatService.engineDescriptor(normalizedEngineId)?.displayName ?: normalizedEngineId
+            eventDispatcher.dispatchSessionEvent(
+                currentSessionId,
+                AppEvent.TimelineMutationApplied(
+                    TimelineMutation.AppendEngineSwitched(
+                        sourceId = "engine-switch-${System.currentTimeMillis()}",
+                        targetEngineLabel = targetEngineLabel,
+                        body = AuraCodeBundle.message("timeline.system.engineSwitched", targetEngineLabel),
+                        timestamp = System.currentTimeMillis(),
+                    ),
+                ),
             )
         }
 
         publishSettingsSnapshot()
         publishConversationCapabilities()
         publishSessionSnapshot()
-        if (switchedToNewSession && !eventDispatcher.restoreCachedSessionState(activeSessionId())) {
-            historyHandler.restoreCurrentSessionHistory()
-        }
-    }
-
-    /**
-     * Creates a sibling session for the requested engine and seeds its composer state before opening a tab.
-     */
-    private fun branchSessionForEngineSwitch(
-        previousSessionId: String,
-        previousEngineId: String,
-        targetEngineId: String,
-    ): Boolean {
-        val previousComposerState = restorePreviousSessionComposerState(
-            sourceState = composerStore.state.value,
-            previousEngineId = previousEngineId,
-        )
-        eventDispatcher.captureVisibleSessionState(previousSessionId)
-        eventDispatcher.storeComposerState(previousSessionId, previousComposerState)
-
-        val newSessionId = chatService.createSession(targetEngineId)
-        eventDispatcher.storeComposerState(
-            newSessionId,
-            createBranchedComposerState(
-                sourceState = previousComposerState,
-                targetEngineId = targetEngineId,
-            ),
-        )
-        if (openSessionInNewTab(newSessionId)) {
-            return true
-        }
-
-        sessionUiStateCache.drop(newSessionId)
-        chatService.switchSession(previousSessionId)
-        chatService.deleteSession(newSessionId)
-        settingsService.setDefaultEngineId(previousEngineId)
-        publishSettingsSnapshot()
-        publishConversationCapabilities()
-        publishSessionSnapshot()
-        if (!eventDispatcher.restoreCachedSessionState(previousSessionId)) {
-            historyHandler.restoreCurrentSessionHistory()
-        }
-        return false
-    }
-
-    /**
-     * Reconstructs the originating session's composer state after the UI has already reflected the target engine.
-     */
-    private fun restorePreviousSessionComposerState(
-        sourceState: com.auracode.assistant.toolwindow.composer.ComposerAreaState,
-        previousEngineId: String,
-    ): com.auracode.assistant.toolwindow.composer.ComposerAreaState {
-        val previousModel = resolveComposerModelForEngine(previousEngineId)
-        return sourceState.copy(
-            selectedEngineId = previousEngineId,
-            selectedModel = previousModel,
-            engineSwitchConfirmation = null,
-        )
-    }
-
-    /**
-     * Seeds the branched session with the current draft while clearing runtime-only session state.
-     */
-    private fun createBranchedComposerState(
-        sourceState: com.auracode.assistant.toolwindow.composer.ComposerAreaState,
-        targetEngineId: String,
-    ): com.auracode.assistant.toolwindow.composer.ComposerAreaState {
-        return sourceState.copy(
-            selectedEngineId = targetEngineId,
-            selectedModel = resolveComposerModelForEngine(targetEngineId),
-            engineMenuExpanded = false,
-            engineSwitchConfirmation = null,
-            modelMenuExpanded = false,
-            reasoningMenuExpanded = false,
-            mentionPopupVisible = false,
-            mentionSuggestions = emptyList(),
-            mentionQuery = "",
-            activeMentionIndex = 0,
-            agentPopupVisible = false,
-            agentSuggestions = emptyList(),
-            agentQuery = "",
-            activeAgentIndex = 0,
-            slashPopupVisible = false,
-            slashSuggestions = emptyList(),
-            slashQuery = "",
-            activeSlashIndex = 0,
-            editedFiles = emptyList(),
-            editedFilesExpanded = false,
-            appliedTurnDiffs = emptyMap(),
-            usageSnapshot = null,
-            activeSessionMessageCount = 0,
-            sessionIsRunning = false,
-            pendingApprovalCount = 0,
-            pendingToolInputCount = 0,
-            approvalQueue = emptyList(),
-            approvalPrompt = null,
-            toolUserInputQueue = emptyList(),
-            toolUserInputPrompt = null,
-            runningPlan = null,
-            runningPlanExpanded = true,
-            planCompletion = null,
-            pendingSubmissions = emptyList(),
-        )
     }
 
     /**

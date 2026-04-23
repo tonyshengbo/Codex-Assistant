@@ -54,6 +54,27 @@ class ClaudeCliLauncherTest {
     }
 
     @Test
+    /** 验证 reasoningEffort 目前不会被映射为 Claude CLI 参数，避免 UI 对无效配置产生错误预期。 */
+    fun `build command ignores reasoning effort for claude cli`() {
+        val launcher = DefaultClaudeCliLauncher()
+
+        val command = launcher.buildCommand(
+            request = AgentRequest(
+                engineId = "claude",
+                prompt = "Check support",
+                contextFiles = emptyList(),
+                workingDirectory = ".",
+                reasoningEffort = "high",
+            ),
+            settings = AgentSettingsService().apply { loadState(AgentSettingsService.State()) },
+        )
+
+        assertTrue("--reasoning" !in command, "Claude CLI 命令当前不应包含不存在的 reasoning 参数")
+        assertTrue("--reasoning-effort" !in command, "Claude CLI 命令当前不应包含 reasoning effort 参数")
+        assertTrue("high" !in command, "reasoningEffort 当前不应被直接拼入 Claude CLI 命令")
+    }
+
+    @Test
     /** 验证启动 Claude CLI 后会主动关闭标准输入，避免 Claude 持续等待 EOF。 */
     fun `start closes stdin after process launch`() {
         val stdout = ByteArrayInputStream(ByteArray(0))

@@ -1,5 +1,7 @@
 package com.auracode.assistant.toolwindow.composer
 
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.unit.dp
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
@@ -47,5 +49,26 @@ class RunningPlanComposerSectionTest {
 
         assertEquals("Patch UI", summary.currentStep)
         assertEquals("1/3", summary.progressLabel)
+    }
+
+    @Test
+    fun `progress badge chrome stays visually quiet and compact`() {
+        val chrome = runningPlanProgressBadgeChrome()
+
+        assertEquals(4.dp, chrome.horizontalPadding)
+        assertEquals(0.dp, chrome.verticalPadding)
+        assertEquals(999.dp, chrome.cornerRadius)
+        assertEquals(0.04f, chrome.backgroundAlpha)
+        assertEquals(0.12f, chrome.borderAlpha)
+    }
+
+    @Test
+    fun `step rows center the status dot with the step label`() {
+        val spec = runningPlanStepRowSpec()
+
+        assertEquals(Alignment.CenterVertically, spec.rowVerticalAlignment)
+        assertEquals(0.dp, spec.dotTopPadding)
+        assertEquals(6.dp, spec.inactiveDotSize)
+        assertEquals(7.dp, spec.activeDotSize)
     }
 }

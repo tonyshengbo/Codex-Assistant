@@ -418,6 +418,14 @@ internal fun TimelineRegion(
                             onToggleExpanded = { onIntent(UiIntent.ToggleNodeExpanded(node.id)) },
                             onOpenMarkdownFilePath = { path -> onIntent(UiIntent.OpenTimelineFilePath(path)) },
                         )
+
+                        is TimelineNode.EngineSwitchedNode -> TimelineEngineSwitchedItem(
+                            node = node,
+                            palette = p,
+                            expanded = state.expandedNodeIds.contains(node.id),
+                            onToggleExpanded = { onIntent(UiIntent.ToggleNodeExpanded(node.id)) },
+                            onOpenMarkdownFilePath = { path -> onIntent(UiIntent.OpenTimelineFilePath(path)) },
+                        )
                     }
                 }
             }

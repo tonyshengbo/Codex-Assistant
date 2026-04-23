@@ -23,6 +23,7 @@ import com.auracode.assistant.provider.codex.CodexEnvironmentCheckResult
 import com.auracode.assistant.provider.codex.CodexCliVersionSnapshot
 import com.auracode.assistant.toolwindow.approval.ApprovalAction
 import com.auracode.assistant.toolwindow.composer.ComposerRunningPlanState
+import com.auracode.assistant.toolwindow.composer.MentionSuggestion
 import com.auracode.assistant.toolwindow.composer.PlanCompletionAction
 import com.auracode.assistant.toolwindow.composer.PendingComposerSubmission
 import com.auracode.assistant.toolwindow.approval.PendingApprovalRequestUiModel
@@ -94,10 +95,13 @@ internal sealed interface UiIntent {
     data class UpdateFocusedContextFile(val snapshot: FocusedContextSnapshot?) : UiIntent
     data class RequestMentionSuggestions(val query: String, val documentVersion: Long) : UiIntent
     data class SelectMentionFile(val path: String) : UiIntent
+    data class SelectSessionSubagentMention(val threadId: String) : UiIntent
+    data class ToggleSubagentDetails(val threadId: String) : UiIntent
     data class RemoveMentionFile(val id: String) : UiIntent
     data object MoveMentionSelectionNext : UiIntent
     data object MoveMentionSelectionPrevious : UiIntent
     data object DismissMentionPopup : UiIntent
+    data object ToggleSubagentTrayExpanded : UiIntent
     data class RequestAgentSuggestions(val query: String, val documentVersion: Long) : UiIntent
     data class SelectAgent(val agent: SavedAgentDefinition) : UiIntent
     data class RemoveSelectedAgent(val id: String) : UiIntent
@@ -219,7 +223,7 @@ internal sealed interface AppEvent {
     data class MentionSuggestionsUpdated(
         val query: String,
         val documentVersion: Long,
-        val suggestions: List<ContextEntry>,
+        val suggestions: List<MentionSuggestion>,
     ) : AppEvent
     data class AgentSuggestionsUpdated(
         val query: String,

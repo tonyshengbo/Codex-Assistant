@@ -91,6 +91,15 @@ internal class ConversationHistoryHandler(
         context.eventDispatcher.dispatchSessionEvent(sessionId, AppEvent.ConversationReset)
         context.coroutineLauncher.launch("restoreCurrentSessionHistory") {
             val page = context.chatService.loadCurrentConversationHistory(limit = context.historyPageSize)
+            page.events
+                .filterIsInstance<UnifiedEvent.SubagentsUpdated>()
+                .lastOrNull()
+                ?.let { subagentsEvent ->
+                    context.eventDispatcher.dispatchSessionEvent(
+                        sessionId,
+                        AppEvent.UnifiedEventPublished(subagentsEvent),
+                    )
+                }
             context.eventDispatcher.dispatchSessionEvent(
                 sessionId,
                 AppEvent.TimelineHistoryLoaded(

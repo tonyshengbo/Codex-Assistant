@@ -2,6 +2,8 @@ package com.auracode.assistant.provider
 
 import com.auracode.assistant.protocol.UnifiedEvent
 import com.auracode.assistant.settings.AgentSettingsService
+import com.auracode.assistant.provider.claude.ClaudeModelCatalog
+import com.auracode.assistant.provider.codex.CodexModelCatalog
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
@@ -74,6 +76,14 @@ class ProviderRegistryTest {
 
         settings.setSelectedComposerModel(engineId = "claude", model = "claude-haiku-4-5")
         assertEquals("claude-haiku-4-5-20251001", settings.selectedComposerModel("claude"))
+    }
+
+    @Test
+    fun `curated model catalogs expose display friendly short names`() {
+        assertEquals("GPT 5.3 Codex", CodexModelCatalog.option("gpt-5.3-codex")?.description)
+        assertEquals("GPT 5.4", CodexModelCatalog.option("gpt-5.4")?.description)
+        assertEquals("Sonnet 4.6", ClaudeModelCatalog.option("claude-sonnet-4-6")?.shortName)
+        assertEquals("Haiku 4.5", ClaudeModelCatalog.option("claude-haiku-4-5-20251001")?.shortName)
     }
 
     @Test

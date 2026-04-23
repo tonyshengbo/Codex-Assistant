@@ -36,6 +36,7 @@ interface AgentProvider {
         supportsResume = true,
         supportsAttachments = true,
         supportsImageInputs = true,
+        supportsSubagents = false,
     )
     fun submitApprovalDecision(requestId: String, decision: ApprovalAction): Boolean = false
     fun submitToolUserInput(

@@ -388,6 +388,7 @@ internal class PlanFlowHandler(
             collaborationMode = collaborationMode,
             onTurnPersisted = { context.publishSessionSnapshot() },
             onUnifiedEvent = { event -> context.publishUnifiedEvent(sessionId, event) },
+            onRunStateChanged = { context.publishSessionSnapshot() },
         )
     }
 }

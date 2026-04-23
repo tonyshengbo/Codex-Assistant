@@ -6,19 +6,48 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material.AlertDialog
-import androidx.compose.material.Text
-import androidx.compose.material.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import com.auracode.assistant.i18n.AuraCodeBundle
 import com.auracode.assistant.toolwindow.approval.ApprovalAreaState
 import com.auracode.assistant.toolwindow.eventing.UiIntent
 import com.auracode.assistant.toolwindow.shared.DesignPalette
 import com.auracode.assistant.toolwindow.shared.assistantUiTokens
 import com.auracode.assistant.toolwindow.timeline.TimelineAreaState
 import com.auracode.assistant.toolwindow.toolinput.ToolUserInputPromptState
+
+/**
+ * Describes which primary body the composer should show below the shared top strips.
+ */
+internal enum class ComposerRegionBodyKind {
+    APPROVAL,
+    TOOL_USER_INPUT,
+    PLAN_COMPLETION,
+    DEFAULT,
+}
+
+/**
+ * Provides a small testable snapshot of the composer layout decisions.
+ */
+internal data class ComposerRegionContent(
+    val showSubagentTray: Boolean,
+    val bodyKind: ComposerRegionBodyKind,
+)
+
+/**
+ * Resolves the region layout so tray visibility stays consistent across interaction cards.
+ */
+internal fun resolveComposerRegionContent(state: ComposerAreaState): ComposerRegionContent {
+    return ComposerRegionContent(
+        showSubagentTray = state.subagentTrayVisible,
+        bodyKind = when (state.activeInteractionCard?.kind) {
+            ComposerInteractionCardKind.APPROVAL -> ComposerRegionBodyKind.APPROVAL
+            ComposerInteractionCardKind.TOOL_USER_INPUT -> ComposerRegionBodyKind.TOOL_USER_INPUT
+            ComposerInteractionCardKind.PLAN_COMPLETION -> ComposerRegionBodyKind.PLAN_COMPLETION
+            null -> ComposerRegionBodyKind.DEFAULT
+        },
+    )
+}
 
 @Composable
 internal fun ComposerRegion(
@@ -31,14 +60,11 @@ internal fun ComposerRegion(
 ) {
     val t = assistantUiTokens()
     val running = state.sessionIsRunning || conversationState.isRunning
+    val content = resolveComposerRegionContent(state)
 
     ComposerAttachmentPreviewDialog(
         p = p,
         state = state,
-        onIntent = onIntent,
-    )
-    ComposerEngineSwitchConfirmationDialog(
-        state = state.engineSwitchConfirmation,
         onIntent = onIntent,
     )
 
@@ -56,20 +82,28 @@ internal fun ComposerRegion(
         if (state.pendingSubmissions.isNotEmpty()) {
             Spacer(Modifier.height(t.spacing.xs))
         }
-        when (state.activeInteractionCard?.kind) {
-            ComposerInteractionCardKind.APPROVAL -> ApprovalComposerSection(
+        if (content.showSubagentTray) {
+            ComposerSubagentTray(
+                p = p,
+                state = state,
+                onIntent = onIntent,
+            )
+            Spacer(Modifier.height(t.spacing.xs))
+        }
+        when (content.bodyKind) {
+            ComposerRegionBodyKind.APPROVAL -> ApprovalComposerSection(
                 p = p,
                 state = approvalState,
                 onIntent = onIntent,
             )
 
-            ComposerInteractionCardKind.TOOL_USER_INPUT -> ToolUserInputComposerSection(
+            ComposerRegionBodyKind.TOOL_USER_INPUT -> ToolUserInputComposerSection(
                 p = p,
                 state = toolUserInputPromptState,
                 onIntent = onIntent,
             )
 
-            ComposerInteractionCardKind.PLAN_COMPLETION -> {
+            ComposerRegionBodyKind.PLAN_COMPLETION -> {
                 state.planCompletion?.let { planCompletion ->
                     PlanCompletionComposerSection(
                         p = p,
@@ -79,7 +113,7 @@ internal fun ComposerRegion(
                 }
             }
 
-            null -> {
+            ComposerRegionBodyKind.DEFAULT -> {
                 AttachmentStrip(p = p, state = state, onIntent = onIntent)
                 if (state.attachments.isNotEmpty()) {
                     Spacer(Modifier.height(t.spacing.xs))
@@ -106,41 +140,4 @@ internal fun ComposerRegion(
             }
         }
     }
-}
-
-/**
- * Confirms whether switching engines should branch the current populated session into a new tab.
- */
-@Composable
-private fun ComposerEngineSwitchConfirmationDialog(
-    state: EngineSwitchConfirmationState?,
-    onIntent: (UiIntent) -> Unit,
-) {
-    if (state == null) return
-    AlertDialog(
-        onDismissRequest = { onIntent(UiIntent.DismissEngineSwitchDialog) },
-        title = { Text(AuraCodeBundle.message("composer.engineSwitch.confirm.title")) },
-        text = {
-            Text(
-                AuraCodeBundle.message(
-                    "composer.engineSwitch.confirm.message",
-                    state.targetEngineLabel,
-                ),
-            )
-        },
-        confirmButton = {
-            TextButton(
-                onClick = { onIntent(UiIntent.SelectEngine(state.targetEngineId)) },
-            ) {
-                Text(AuraCodeBundle.message("composer.engineSwitch.confirm.confirm"))
-            }
-        },
-        dismissButton = {
-            TextButton(
-                onClick = { onIntent(UiIntent.DismissEngineSwitchDialog) },
-            ) {
-                Text(AuraCodeBundle.message("common.cancel"))
-            }
-        },
-    )
 }

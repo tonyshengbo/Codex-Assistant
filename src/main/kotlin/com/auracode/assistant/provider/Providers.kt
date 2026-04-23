@@ -14,6 +14,7 @@ private val codexCapabilities = EngineCapabilities(
     supportsToolEvents = true,
     supportsCommandProposal = true,
     supportsDiffProposal = true,
+    supportsReasoningEffortSelection = true,
 )
 
 private val claudeCapabilities = EngineCapabilities(
@@ -21,6 +22,7 @@ private val claudeCapabilities = EngineCapabilities(
     supportsToolEvents = false,
     supportsCommandProposal = false,
     supportsDiffProposal = false,
+    supportsReasoningEffortSelection = false,
 )
 
 /** Registers the Codex provider implementation behind the shared provider factory contract. */

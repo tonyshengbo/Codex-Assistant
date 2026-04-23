@@ -201,6 +201,31 @@ class TimelineNodeMapperTest {
     }
 
     @Test
+    fun `collab agent tool item maps to a timeline tool call`() {
+        val mutation = TimelineNodeMapper.fromUnifiedEvent(
+            UnifiedEvent.ItemUpdated(
+                UnifiedItem(
+                    id = "request-1:item-collab",
+                    kind = ItemKind.TOOL_CALL,
+                    status = ItemStatus.RUNNING,
+                    name = "spawnAgent",
+                    text = """
+                        - Tool: `spawnAgent`
+                        - Prompt: Review the latest diff.
+                        - Agent Threads: `thread-review-1`
+                        - Agent Status: `thread-review-1` -> `pendingInit`
+                    """.trimIndent(),
+                ),
+            ),
+        )
+
+        val tool = assertIs<TimelineMutation.UpsertToolCall>(mutation)
+        assertEquals("Spawn Agent", tool.title)
+        assertEquals(true, tool.body.contains("Agent Threads"))
+        assertEquals(ItemStatus.RUNNING, tool.status)
+    }
+
+    @Test
     fun `skill file read command exposes clickable title target`() {
         val mutation = TimelineNodeMapper.fromUnifiedEvent(
             UnifiedEvent.ItemUpdated(

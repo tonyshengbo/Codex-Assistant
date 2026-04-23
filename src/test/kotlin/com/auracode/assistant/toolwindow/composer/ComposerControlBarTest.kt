@@ -8,7 +8,13 @@ import kotlin.test.assertTrue
 
 class ComposerControlBarTest {
     @Test
-    fun `switching engine from a populated session requests confirmation instead of selecting immediately`() {
+    fun `running session disables engine switching affordance`() {
+        assertFalse(resolveEngineSwitchEnabled(running = true))
+        assertTrue(resolveEngineSwitchEnabled(running = false))
+    }
+
+    @Test
+    fun `switching engine from a populated session selects immediately`() {
         val intent = resolveEngineSelectionIntent(
             state = ComposerAreaState(
                 selectedEngineId = "codex",
@@ -17,7 +23,7 @@ class ComposerControlBarTest {
             engineId = "claude",
         )
 
-        assertEquals(UiIntent.RequestEngineSwitch("claude"), intent)
+        assertEquals(UiIntent.SelectEngine("claude"), intent)
     }
 
     @Test

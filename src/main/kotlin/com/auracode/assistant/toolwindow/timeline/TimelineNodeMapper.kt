@@ -55,6 +55,7 @@ internal object TimelineNodeMapper {
 
     fun fromUnifiedEvent(event: UnifiedEvent): TimelineMutation? {
         return when (event) {
+            is UnifiedEvent.SubagentsUpdated -> null
             is UnifiedEvent.ApprovalRequested -> TimelineMutation.UpsertApproval(
                 sourceId = event.request.itemId,
                 title = event.request.title,
@@ -218,7 +219,6 @@ internal object TimelineNodeMapper {
         }
     }
 
-
     private fun UnifiedItem.narrativeRole(): MessageRole {
         return when (name) {
             "user_message" -> MessageRole.USER
@@ -240,6 +240,7 @@ internal object TimelineNodeMapper {
                 return candidate
             }
             return candidate
+                .replace(Regex("([a-z])([A-Z])"), "$1 $2")
                 .split('_', '-', ' ')
                 .filter { it.isNotBlank() }
                 .joinToString(" ") { token ->

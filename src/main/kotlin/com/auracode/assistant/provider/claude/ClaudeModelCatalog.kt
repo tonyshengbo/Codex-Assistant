@@ -1,5 +1,11 @@
 package com.auracode.assistant.provider.claude
 
+/** 描述一个可在界面中展示的 Claude 模型选项。 */
+internal data class ClaudeModelOption(
+    val id: String,
+    val shortName: String,
+)
+
 /**
  * 维护 Claude 可选模型列表，并兼容旧版本持久化下来的模型标识。
  */
@@ -12,12 +18,27 @@ internal object ClaudeModelCatalog {
     private const val opusModel: String = "claude-opus-4-6"
     private const val opusOneMillionModel: String = "claude-opus-4-6[1m]"
     private const val haikuModel: String = "claude-haiku-4-5-20251001"
-    private val curatedModelIds: List<String> = listOf(
-        defaultModel,
-        sonnetOneMillionModel,
-        opusModel,
-        opusOneMillionModel,
-        haikuModel,
+    private val curatedOptions: List<ClaudeModelOption> = listOf(
+        ClaudeModelOption(
+            id = defaultModel,
+            shortName = "Sonnet 4.6",
+        ),
+        ClaudeModelOption(
+            id = sonnetOneMillionModel,
+            shortName = "Sonnet 4.6 1M",
+        ),
+        ClaudeModelOption(
+            id = opusModel,
+            shortName = "Opus 4.6",
+        ),
+        ClaudeModelOption(
+            id = opusOneMillionModel,
+            shortName = "Opus 4.6 1M",
+        ),
+        ClaudeModelOption(
+            id = haikuModel,
+            shortName = "Haiku 4.5",
+        ),
     )
     private val legacyModelReplacements: Map<String, String> = mapOf(
         "claude-sonnet-4-5" to defaultModel,
@@ -26,7 +47,17 @@ internal object ClaudeModelCatalog {
     )
 
     /** 返回当前 Claude 引擎内置的模型列表。 */
-    fun ids(): List<String> = curatedModelIds
+    fun ids(): List<String> = curatedOptions.map { it.id }
+
+    /** 返回当前 Claude 引擎内置的模型选项及展示短名。 */
+    fun options(): List<ClaudeModelOption> = curatedOptions
+
+    /** 通过模型标识解析对应的展示选项。 */
+    fun option(modelId: String?): ClaudeModelOption? {
+        val normalized = normalize(modelId.orEmpty())
+        if (normalized.isBlank()) return null
+        return curatedOptions.firstOrNull { it.id == normalized }
+    }
 
     /** 将旧版本保存的 Claude 模型值迁移到当前仍可用的模型标识。 */
     fun normalize(modelId: String): String {

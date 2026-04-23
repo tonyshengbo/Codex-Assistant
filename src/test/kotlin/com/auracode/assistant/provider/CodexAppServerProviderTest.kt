@@ -7,6 +7,7 @@ import com.auracode.assistant.model.AgentApprovalMode
 import com.auracode.assistant.protocol.ItemKind
 import com.auracode.assistant.protocol.ItemStatus
 import com.auracode.assistant.protocol.TurnOutcome
+import com.auracode.assistant.protocol.UnifiedAgentStatus
 import com.auracode.assistant.protocol.UnifiedToolUserInputAnswerDraft
 import com.auracode.assistant.protocol.UnifiedEvent
 import com.auracode.assistant.settings.AgentSettingsService
@@ -29,6 +30,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class CodexAppServerProviderTest {
@@ -355,6 +357,499 @@ class CodexAppServerProviderTest {
         val error = assertIs<UnifiedEvent.Error>(events.single())
         assertEquals("Reconnecting... 1/5", error.message)
         assertFalse(error.terminal)
+    }
+
+    @Test
+    fun `request completion only accepts matching active turn id`() {
+        assertTrue(
+            shouldCompleteActiveTurnForTest(
+                activeTurnId = "turn-parent",
+                event = UnifiedEvent.TurnCompleted(
+                    turnId = "turn-parent",
+                    outcome = TurnOutcome.SUCCESS,
+                ),
+            ),
+        )
+        assertFalse(
+            shouldCompleteActiveTurnForTest(
+                activeTurnId = "turn-parent",
+                event = UnifiedEvent.TurnCompleted(
+                    turnId = "turn-child",
+                    outcome = TurnOutcome.FAILED,
+                ),
+            ),
+        )
+        assertFalse(
+            shouldCompleteActiveTurnForTest(
+                activeTurnId = "turn-parent",
+                event = UnifiedEvent.Error("boom"),
+            ),
+        )
+        assertFalse(
+            shouldCompleteActiveTurnForTest(
+                activeTurnId = null,
+                event = UnifiedEvent.TurnCompleted(
+                    turnId = "turn-parent",
+                    outcome = TurnOutcome.SUCCESS,
+                ),
+            ),
+        )
+    }
+
+    @Test
+    fun `collab agent tool call completion emits timeline item update and subagent snapshot update`() {
+        val parser = CodexAppServerProvider.AppServerNotificationParser(
+            requestId = "req-1",
+            diagnosticLogger = {},
+        )
+
+        val events = parser.parseNotification(
+            method = "item/completed",
+            params = buildJsonObject {
+                put(
+                    "item",
+                    buildJsonObject {
+                        put("type", "collabAgentToolCall")
+                        put("id", "call_1")
+                        put("tool", "spawnAgent")
+                        put("status", "completed")
+                        put("prompt", "Perform a code review of the latest diff.")
+                        put(
+                            "receiverThreadIds",
+                            buildJsonArray {
+                                add(JsonPrimitive("thread-review-1"))
+                            },
+                        )
+                        put(
+                            "agentsStates",
+                            buildJsonObject {
+                                put(
+                                    "thread-review-1",
+                                    buildJsonObject {
+                                        put("status", "pendingInit")
+                                        put("message", "Waiting for initialization")
+                                    },
+                                )
+                            },
+                        )
+                    },
+                )
+            },
+        )
+
+        assertEquals(2, events.size)
+        val toolCall = assertIs<UnifiedEvent.ItemUpdated>(events.first())
+        assertEquals(ItemKind.TOOL_CALL, toolCall.item.kind)
+        assertEquals(ItemStatus.SUCCESS, toolCall.item.status)
+        assertEquals("Dispatch Agent", toolCall.item.name)
+        assertEquals(true, toolCall.item.text.orEmpty().contains("Agent Threads"))
+        val updated = assertIs<UnifiedEvent.SubagentsUpdated>(events.last())
+        assertEquals(1, updated.agents.size)
+        val agent = updated.agents.single()
+        assertEquals("thread-review-1", agent.threadId)
+        assertEquals("review-agent", agent.mentionSlug)
+        assertEquals("Review Agent", agent.displayName)
+        assertEquals(UnifiedAgentStatus.PENDING, agent.status)
+        assertEquals("Waiting for initialization", agent.summary)
+    }
+
+    @Test
+    fun `collab agent tool call failure still emits timeline item update`() {
+        val parser = CodexAppServerProvider.AppServerNotificationParser(
+            requestId = "req-1",
+            diagnosticLogger = {},
+        )
+
+        val events = parser.parseNotification(
+            method = "item/completed",
+            params = buildJsonObject {
+                put(
+                    "item",
+                    buildJsonObject {
+                        put("type", "collabAgentToolCall")
+                        put("id", "call_wait_1")
+                        put("tool", "wait")
+                        put("status", "failed")
+                        put(
+                            "receiverThreadIds",
+                            buildJsonArray {
+                                add(JsonPrimitive("thread-review-1"))
+                            },
+                        )
+                        put(
+                            "agentsStates",
+                            buildJsonObject {
+                                put(
+                                    "thread-review-1",
+                                    buildJsonObject {
+                                        put("status", "errored")
+                                        put("message", "unexpected status 502 Bad Gateway")
+                                    },
+                                )
+                            },
+                        )
+                    },
+                )
+            },
+        )
+
+        assertEquals(2, events.size)
+        val toolCall = assertIs<UnifiedEvent.ItemUpdated>(events.first())
+        assertEquals(ItemKind.TOOL_CALL, toolCall.item.kind)
+        assertEquals(ItemStatus.FAILED, toolCall.item.status)
+        assertEquals("Wait Agent", toolCall.item.name)
+        val updated = assertIs<UnifiedEvent.SubagentsUpdated>(events.last())
+        assertEquals(UnifiedAgentStatus.FAILED, updated.agents.single().status)
+    }
+
+    @Test
+    fun `wait completion with empty receiver thread ids reuses tracked child threads for subagent update`() {
+        val parser = CodexAppServerProvider.AppServerNotificationParser(
+            requestId = "req-1",
+            diagnosticLogger = {},
+        )
+
+        parser.parseNotification(
+            method = "item/completed",
+            params = buildJsonObject {
+                put(
+                    "item",
+                    buildJsonObject {
+                        put("type", "collabAgentToolCall")
+                        put("id", "call_wait_1")
+                        put("tool", "wait")
+                        put("status", "running")
+                        put("prompt", "Wait for the review agent to finish.")
+                        put(
+                            "receiverThreadIds",
+                            buildJsonArray {
+                                add(JsonPrimitive("thread-review-1"))
+                            },
+                        )
+                        put(
+                            "agentsStates",
+                            buildJsonObject {
+                                put(
+                                    "thread-review-1",
+                                    buildJsonObject {
+                                        put("status", "active")
+                                        put("message", "Still reviewing")
+                                    },
+                                )
+                            },
+                        )
+                    },
+                )
+            },
+        )
+
+        val events = parser.parseNotification(
+            method = "item/completed",
+            params = buildJsonObject {
+                put(
+                    "item",
+                    buildJsonObject {
+                        put("type", "collabAgentToolCall")
+                        put("id", "call_wait_1")
+                        put("tool", "wait")
+                        put("status", "failed")
+                        put(
+                            "agentsStates",
+                            buildJsonObject {
+                                put(
+                                    "thread-review-1",
+                                    buildJsonObject {
+                                        put("status", "errored")
+                                        put("message", "unexpected status 502 Bad Gateway")
+                                    },
+                                )
+                            },
+                        )
+                    },
+                )
+            },
+        )
+
+        assertEquals(2, events.size)
+        val toolCall = assertIs<UnifiedEvent.ItemUpdated>(events.first())
+        assertEquals(ItemKind.TOOL_CALL, toolCall.item.kind)
+        assertEquals(ItemStatus.FAILED, toolCall.item.status)
+        assertEquals("Wait Agent", toolCall.item.name)
+        val updated = assertIs<UnifiedEvent.SubagentsUpdated>(events.last())
+        assertEquals("thread-review-1", updated.agents.single().threadId)
+        assertEquals(UnifiedAgentStatus.FAILED, updated.agents.single().status)
+        assertEquals("unexpected status 502 Bad Gateway", updated.agents.single().summary)
+    }
+
+    @Test
+    fun `wait completion with new call id reuses previously spawned child threads for subagent update`() {
+        val parser = CodexAppServerProvider.AppServerNotificationParser(
+            requestId = "req-1",
+            diagnosticLogger = {},
+        )
+
+        parser.parseNotification(
+            method = "turn/started",
+            params = buildJsonObject {
+                put(
+                    "turn",
+                    buildJsonObject {
+                        put("id", "turn-parent")
+                        put("threadId", "thread-main-1")
+                    },
+                )
+            },
+        )
+        parser.parseNotification(
+            method = "item/completed",
+            params = buildJsonObject {
+                put(
+                    "item",
+                    buildJsonObject {
+                        put("type", "collabAgentToolCall")
+                        put("id", "call_spawn_1")
+                        put("tool", "spawnAgent")
+                        put("status", "completed")
+                        put("senderThreadId", "thread-main-1")
+                        put("prompt", "Perform a code review of the latest diff.")
+                        put(
+                            "receiverThreadIds",
+                            buildJsonArray {
+                                add(JsonPrimitive("thread-review-1"))
+                            },
+                        )
+                        put(
+                            "agentsStates",
+                            buildJsonObject {
+                                put(
+                                    "thread-review-1",
+                                    buildJsonObject {
+                                        put("status", "pendingInit")
+                                        put("message", "Waiting for initialization")
+                                    },
+                                )
+                            },
+                        )
+                    },
+                )
+            },
+        )
+
+        val events = parser.parseNotification(
+            method = "item/completed",
+            params = buildJsonObject {
+                put(
+                    "item",
+                    buildJsonObject {
+                        put("type", "collabAgentToolCall")
+                        put("id", "call_wait_2")
+                        put("tool", "wait")
+                        put("status", "completed")
+                        put("senderThreadId", "thread-main-1")
+                        put(
+                            "receiverThreadIds",
+                            buildJsonArray { },
+                        )
+                    },
+                )
+            },
+        )
+
+        assertEquals(2, events.size)
+        val toolCall = assertIs<UnifiedEvent.ItemUpdated>(events.first())
+        assertEquals(ItemKind.TOOL_CALL, toolCall.item.kind)
+        assertEquals(ItemStatus.SUCCESS, toolCall.item.status)
+        assertEquals("Wait Agent", toolCall.item.name)
+        assertEquals(true, toolCall.item.text.orEmpty().contains("thread-review-1"))
+        val updated = assertIs<UnifiedEvent.SubagentsUpdated>(events.last())
+        assertEquals(1, updated.agents.size)
+        assertEquals("thread-review-1", updated.agents.single().threadId)
+        assertEquals(UnifiedAgentStatus.PENDING, updated.agents.single().status)
+        assertEquals("Waiting for initialization", updated.agents.single().summary)
+    }
+
+    @Test
+    fun `thread status changed refreshes existing subagent snapshot`() {
+        val parser = CodexAppServerProvider.AppServerNotificationParser(
+            requestId = "req-1",
+            diagnosticLogger = {},
+        )
+
+        parser.parseNotification(
+            method = "item/completed",
+            params = buildJsonObject {
+                put(
+                    "item",
+                    buildJsonObject {
+                        put("type", "collabAgentToolCall")
+                        put("id", "call_1")
+                        put("tool", "spawnAgent")
+                        put("status", "completed")
+                        put("prompt", "Perform a code review of the latest diff.")
+                        put(
+                            "receiverThreadIds",
+                            buildJsonArray {
+                                add(JsonPrimitive("thread-review-1"))
+                            },
+                        )
+                        put(
+                            "agentsStates",
+                            buildJsonObject {
+                                put(
+                                    "thread-review-1",
+                                    buildJsonObject {
+                                        put("status", "pendingInit")
+                                    },
+                                )
+                            },
+                        )
+                    },
+                )
+            },
+        )
+
+        val events = parser.parseNotification(
+            method = "thread/status/changed",
+            params = buildJsonObject {
+                put("threadId", "thread-review-1")
+                put(
+                    "status",
+                    buildJsonObject {
+                        put("type", "active")
+                    },
+                )
+            },
+        )
+
+        val updated = assertIs<UnifiedEvent.SubagentsUpdated>(events.single())
+        assertEquals(UnifiedAgentStatus.ACTIVE, updated.agents.single().status)
+        assertEquals("active", updated.agents.single().statusText)
+    }
+
+    @Test
+    fun `thread status system error maps to failed subagent state and completes parent turn`() {
+        val parser = CodexAppServerProvider.AppServerNotificationParser(
+            requestId = "req-1",
+            diagnosticLogger = {},
+        )
+
+        parser.parseNotification(
+            method = "turn/started",
+            params = buildJsonObject {
+                put(
+                    "turn",
+                    buildJsonObject {
+                        put("id", "turn-parent")
+                        put("threadId", "thread-main-1")
+                    },
+                )
+            },
+        )
+        parser.parseNotification(
+            method = "item/completed",
+            params = buildJsonObject {
+                put(
+                    "item",
+                    buildJsonObject {
+                        put("type", "collabAgentToolCall")
+                        put("id", "call_1")
+                        put("tool", "spawnAgent")
+                        put("status", "completed")
+                        put("prompt", "Perform a code review of the latest diff.")
+                        put(
+                            "receiverThreadIds",
+                            buildJsonArray {
+                                add(JsonPrimitive("thread-review-1"))
+                            },
+                        )
+                    },
+                )
+            },
+        )
+
+        val events = parser.parseNotification(
+            method = "thread/status/changed",
+            params = buildJsonObject {
+                put("threadId", "thread-review-1")
+                put(
+                    "status",
+                    buildJsonObject {
+                        put("type", "systemError")
+                    },
+                )
+            },
+        )
+
+        val updated = assertIs<UnifiedEvent.SubagentsUpdated>(events.first())
+        assertEquals(UnifiedAgentStatus.FAILED, updated.agents.single().status)
+        assertEquals("systemError", updated.agents.single().statusText)
+        val completed = assertIs<UnifiedEvent.TurnCompleted>(events.last())
+        assertEquals("turn-parent", completed.turnId)
+        assertEquals(TurnOutcome.FAILED, completed.outcome)
+    }
+
+    @Test
+    fun `child turn completed failed refreshes subagent snapshot and completes parent turn`() {
+        val parser = CodexAppServerProvider.AppServerNotificationParser(
+            requestId = "req-1",
+            diagnosticLogger = {},
+        )
+
+        parser.parseNotification(
+            method = "turn/started",
+            params = buildJsonObject {
+                put(
+                    "turn",
+                    buildJsonObject {
+                        put("id", "turn-parent")
+                        put("threadId", "thread-main-1")
+                    },
+                )
+            },
+        )
+        parser.parseNotification(
+            method = "item/completed",
+            params = buildJsonObject {
+                put(
+                    "item",
+                    buildJsonObject {
+                        put("type", "collabAgentToolCall")
+                        put("id", "call_1")
+                        put("tool", "spawnAgent")
+                        put("status", "completed")
+                        put("prompt", "Perform a code review of the latest diff.")
+                        put(
+                            "receiverThreadIds",
+                            buildJsonArray {
+                                add(JsonPrimitive("thread-review-1"))
+                            },
+                        )
+                    },
+                )
+            },
+        )
+
+        val events = parser.parseNotification(
+            method = "turn/completed",
+            params = buildJsonObject {
+                put("threadId", "thread-review-1")
+                put(
+                    "turn",
+                    buildJsonObject {
+                        put("id", "turn-child-1")
+                        put("status", "failed")
+                    },
+                )
+            },
+        )
+
+        assertEquals(2, events.size)
+        val updated = assertIs<UnifiedEvent.SubagentsUpdated>(events.first())
+        assertEquals(UnifiedAgentStatus.FAILED, updated.agents.single().status)
+        assertEquals("failed", updated.agents.single().statusText)
+        val completed = assertIs<UnifiedEvent.TurnCompleted>(events.last())
+        assertEquals("turn-parent", completed.turnId)
+        assertEquals(TurnOutcome.FAILED, completed.outcome)
     }
 
     @Test
@@ -951,6 +1446,11 @@ private fun parseAppServerNotificationForTest(
         diagnosticLogger = {},
     ).parseNotification(method, params)
 }
+
+private fun shouldCompleteActiveTurnForTest(
+    activeTurnId: String?,
+    event: UnifiedEvent,
+) = shouldCompleteActiveTurn(activeTurnId, event)
 
 private fun buildRequestUserInputResponseForTest(serverRequestId: JsonPrimitive) =
     buildRequestUserInputResponse(serverRequestId)

@@ -20,6 +20,7 @@ import kotlin.io.path.createTempDirectory
 import kotlin.test.Test
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
+import kotlin.test.assertEquals
 
 class AgentChatServiceMultiSessionRunTest {
     @Test
@@ -83,6 +84,94 @@ class AgentChatServiceMultiSessionRunTest {
             }
         }
         assertFalse(service.listSessions().associateBy { it.id }.getValue(sessionB).isRunning)
+
+        service.dispose()
+    }
+
+    @Test
+    fun `run state callback fires when request starts and finishes`() = runBlocking {
+        val provider = BlockingProvider()
+        val service = createService(provider)
+        val stateTransitions = mutableListOf<Boolean>()
+        val requestStarted = CompletableDeferred<Unit>()
+
+        service.runAgent(
+            engineId = "codex",
+            model = "gpt-5.3-codex",
+            prompt = "run-state",
+            contextFiles = emptyList(),
+            onUnifiedEvent = { event ->
+                if (event is UnifiedEvent.ThreadStarted) {
+                    requestStarted.complete(Unit)
+                }
+            },
+            onRunStateChanged = {
+                val running = service.listSessions().associateBy { it.id }
+                    .getValue(service.getCurrentSessionId())
+                    .isRunning
+                stateTransitions += running
+            },
+        )
+
+        withTimeout(5_000) { requestStarted.await() }
+        provider.completePrompt("run-state")
+        withTimeout(5_000) { provider.awaitCompletedRequest("run-state") }
+        withTimeout(5_000) {
+            while (service.listSessions().associateBy { it.id }.getValue(service.getCurrentSessionId()).isRunning) {
+                delay(10)
+            }
+        }
+
+        assertEquals(listOf(true, false), stateTransitions)
+        service.dispose()
+    }
+
+    @Test
+    fun `resetting a populated session for engine switch updates provider and clears remote conversation`() = runBlocking {
+        val provider = BlockingProvider()
+        val service = createService(provider)
+        val sessionId = service.getCurrentSessionId()
+        val requestStarted = CompletableDeferred<Unit>()
+
+        service.recordUserMessage(
+            sessionId = sessionId,
+            prompt = "seed-session",
+        )
+        service.runAgent(
+            sessionId = sessionId,
+            engineId = "codex",
+            model = "gpt-5.3-codex",
+            prompt = "seed-session",
+            contextFiles = emptyList(),
+            onUnifiedEvent = { event ->
+                if (event is UnifiedEvent.ThreadStarted) {
+                    requestStarted.complete(Unit)
+                }
+            },
+        )
+
+        withTimeout(5_000) { requestStarted.await() }
+        provider.completePrompt("seed-session")
+        withTimeout(5_000) { provider.awaitCompletedRequest("seed-session") }
+        withTimeout(5_000) {
+            while (service.listSessions().associateBy { it.id }.getValue(sessionId).isRunning) {
+                delay(10)
+            }
+        }
+
+        val beforeReset = service.listSessions().associateBy { it.id }.getValue(sessionId)
+        assertEquals("thread-seed-session", beforeReset.remoteConversationId)
+        assertEquals("codex", beforeReset.providerId)
+        assertEquals(1, beforeReset.messageCount)
+
+        assertTrue(service.resetSessionForEngineSwitch(sessionId = sessionId, providerId = "claude"))
+
+        val afterReset = service.listSessions().associateBy { it.id }.getValue(sessionId)
+        assertEquals("claude", afterReset.providerId)
+        assertEquals("", afterReset.remoteConversationId)
+        assertEquals("", afterReset.title)
+        assertEquals(0, afterReset.messageCount)
+        assertEquals(null, afterReset.usageSnapshot)
 
         service.dispose()
     }

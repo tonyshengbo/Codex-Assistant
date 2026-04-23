@@ -21,6 +21,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.Text
+import androidx.compose.material.Icon
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -42,6 +43,7 @@ import com.auracode.assistant.protocol.ItemStatus
 import com.auracode.assistant.toolwindow.shared.DesignPalette
 import com.auracode.assistant.toolwindow.shared.HoverTooltip
 import com.auracode.assistant.toolwindow.shared.assistantUiTokens
+import androidx.compose.ui.res.painterResource
 
 @Composable
 internal fun LoadOlderHistoryButton(
@@ -69,6 +71,7 @@ internal fun LoadOlderHistoryButton(
 @Composable
 internal fun TimelineExpandableCard(
     title: String,
+    titleIconPath: String? = null,
     headerBadge: String? = null,
     titleTargetLabel: String? = null,
     titleTargetPath: String? = null,
@@ -129,6 +132,7 @@ internal fun TimelineExpandableCard(
                         }
                         TimelineExpandableCardTitle(
                             title = title,
+                            titleIconPath = titleIconPath,
                             titleTargetLabel = titleTargetLabel,
                             titleTargetPath = titleTargetPath,
                             palette = palette,
@@ -194,6 +198,7 @@ internal fun TimelineExpandableCard(
 @Composable
 internal fun TimelineMarkdownActivityBody(
     title: String,
+    titleIconPath: String? = null,
     headerBadge: String? = null,
     titleTargetLabel: String? = null,
     titleTargetPath: String? = null,
@@ -214,6 +219,7 @@ internal fun TimelineMarkdownActivityBody(
 ) {
     TimelineExpandableCard(
         title = title,
+        titleIconPath = titleIconPath,
         headerBadge = headerBadge,
         titleTargetLabel = titleTargetLabel,
         titleTargetPath = titleTargetPath,
@@ -382,6 +388,7 @@ private fun TimelineHeaderBadge(
 @Composable
 private fun TimelineExpandableCardTitle(
     title: String,
+    titleIconPath: String?,
     titleTargetLabel: String?,
     titleTargetPath: String?,
     palette: DesignPalette,
@@ -389,48 +396,59 @@ private fun TimelineExpandableCardTitle(
 ) {
     val targetLabel = titleTargetLabel
     val targetPath = titleTargetPath
-    if (targetLabel.isNullOrBlank() || targetPath.isNullOrBlank() || onOpenTitleTarget == null) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        titleIconPath?.let { iconPath ->
+            Icon(
+                painter = painterResource(iconPath),
+                contentDescription = null,
+                tint = palette.textSecondary,
+                modifier = Modifier.size(16.dp),
+            )
+            Spacer(Modifier.width(6.dp))
+        }
+        if (targetLabel.isNullOrBlank() || targetPath.isNullOrBlank() || onOpenTitleTarget == null) {
+            Text(
+                text = title,
+                color = palette.timelineCardText,
+                fontWeight = FontWeight.Medium,
+                style = androidx.compose.material.MaterialTheme.typography.subtitle1,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            return@Row
+        }
+
+        val prefix = title.substringBefore(targetLabel).ifBlank { title.removeSuffix(targetLabel).trimEnd() }
+        val suffix = title.substringAfter(targetLabel, "")
+        val annotated = buildAnnotatedString {
+            append(prefix)
+            if (prefix.isNotBlank() && !prefix.endsWith(" ")) append(" ")
+            withLink(
+                LinkAnnotation.Clickable(
+                    tag = targetPath,
+                    styles = TextLinkStyles(
+                        style = SpanStyle(
+                            color = palette.linkColor,
+                            textDecoration = TextDecoration.Underline,
+                            fontWeight = FontWeight.Medium,
+                        ),
+                    ),
+                    linkInteractionListener = { onOpenTitleTarget(targetPath) },
+                ),
+            ) {
+                append(targetLabel)
+            }
+            append(suffix)
+        }
         Text(
-            text = title,
+            text = annotated,
             color = palette.timelineCardText,
             fontWeight = FontWeight.Medium,
             style = androidx.compose.material.MaterialTheme.typography.subtitle1,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
-        return
     }
-
-    val prefix = title.substringBefore(targetLabel).ifBlank { title.removeSuffix(targetLabel).trimEnd() }
-    val suffix = title.substringAfter(targetLabel, "")
-    val annotated = buildAnnotatedString {
-        append(prefix)
-        if (prefix.isNotBlank() && !prefix.endsWith(" ")) append(" ")
-        withLink(
-            LinkAnnotation.Clickable(
-                tag = targetPath,
-                styles = TextLinkStyles(
-                    style = SpanStyle(
-                        color = palette.linkColor,
-                        textDecoration = TextDecoration.Underline,
-                        fontWeight = FontWeight.Medium,
-                    ),
-                ),
-                linkInteractionListener = { onOpenTitleTarget(targetPath) },
-            ),
-        ) {
-            append(targetLabel)
-        }
-        append(suffix)
-    }
-    Text(
-        text = annotated,
-        color = palette.timelineCardText,
-        fontWeight = FontWeight.Medium,
-        style = androidx.compose.material.MaterialTheme.typography.subtitle1,
-        maxLines = 1,
-        overflow = TextOverflow.Ellipsis,
-    )
 }
 
 internal fun timelineExpandedBodyMaxHeight(): Dp = 220.dp

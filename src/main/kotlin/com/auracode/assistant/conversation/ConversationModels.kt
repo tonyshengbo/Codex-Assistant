@@ -29,6 +29,7 @@ data class ConversationCapabilities(
     val supportsResume: Boolean,
     val supportsAttachments: Boolean,
     val supportsImageInputs: Boolean,
+    val supportsSubagents: Boolean = false,
 )
 
 data class ConversationHistoryPage(

@@ -11,6 +11,7 @@ import com.auracode.assistant.persistence.chat.PersistedMessageAttachment
 import com.auracode.assistant.provider.EngineDescriptor
 import com.auracode.assistant.provider.claude.ClaudeModelCatalog
 import com.auracode.assistant.provider.codex.CodexModelCatalog
+import com.auracode.assistant.protocol.UnifiedEvent
 import com.auracode.assistant.settings.SavedAgentDefinition
 import com.auracode.assistant.toolwindow.engineDisplayLabel
 import com.auracode.assistant.toolwindow.approval.PendingApprovalRequestUiModel
@@ -53,11 +54,17 @@ internal data class FocusedContextSnapshot(
 
 internal data class MentionEntry(
     val id: String,
+    val kind: MentionEntryKind = MentionEntryKind.FILE,
     val path: String,
     val displayName: String,
     val start: Int = 0,
     val endExclusive: Int = 0,
 )
+
+internal enum class MentionEntryKind {
+    FILE,
+    AGENT,
+}
 
 internal enum class AttachmentKind {
     TEXT,
@@ -123,6 +130,7 @@ internal data class ComposerRunningPlanState(
 
 internal data class ComposerModelOption(
     val id: String,
+    val shortName: String,
     val isCustom: Boolean,
 )
 
@@ -175,6 +183,7 @@ internal data class PendingComposerSubmission(
 }
 
 internal data class ComposerAreaState(
+    val currentSessionId: String? = null,
     val document: TextFieldValue = TextFieldValue(""),
     val documentVersion: Long = 0L,
     val executionMode: ComposerMode = ComposerMode.AUTO,
@@ -202,9 +211,12 @@ internal data class ComposerAreaState(
     val previewAttachmentId: String? = null,
     val mentionEntries: List<MentionEntry> = emptyList(),
     val mentionQuery: String = "",
-    val mentionSuggestions: List<ContextEntry> = emptyList(),
+    val mentionSuggestions: List<MentionSuggestion> = emptyList(),
     val mentionPopupVisible: Boolean = false,
     val activeMentionIndex: Int = 0,
+    val sessionSubagents: List<SessionSubagentUiModel> = emptyList(),
+    val subagentTrayExpanded: Boolean = false,
+    val selectedSubagentThreadId: String? = null,
     val agentQuery: String = "",
     val agentSuggestions: List<SavedAgentDefinition> = emptyList(),
     val agentPopupVisible: Boolean = false,
@@ -230,29 +242,57 @@ internal data class ComposerAreaState(
     val planCompletion: ComposerPlanCompletionState? = null,
     val pendingSubmissions: List<PendingComposerSubmission> = emptyList(),
 ) {
+    val subagentTrayVisible: Boolean
+        get() = sessionSubagents.isNotEmpty()
+
+    /**
+     * Exposes the currently selected subagent details row for the tray detail card.
+     */
+    val selectedSubagent: SessionSubagentUiModel?
+        get() = sessionSubagents.firstOrNull { it.threadId == selectedSubagentThreadId }
+
     val modelOptions: List<ComposerModelOption>
         get() = composerModelOptions(
+            engineId = selectedEngineId,
             builtInModelIds = availableEngines.firstOrNull { it.id == selectedEngineId }?.models
                 ?: defaultModelIdsForEngine(selectedEngineId),
             customModelIds = customModelIds,
         )
 
-    val inputText: String
-        get() = normalizePromptBody(removeMentionRanges(document.text, mentionEntries))
+    /**
+     * 返回当前选中模型对应的展示选项。
+     *
+     * 状态和提交流程仍继续持有原始模型 id，这里只负责给 UI 提供短名称。
+     */
+    val selectedModelOption: ComposerModelOption?
+        get() = modelOptions.firstOrNull { it.id == selectedModel }
 
+    val inputText: String
+        get() = normalizePromptBody(removeMentionRanges(document.text, mentionEntries, setOf(MentionEntryKind.FILE)))
+
+    /**
+     * 空态提示区域已移除，因此这里始终返回空，避免旧逻辑继续驱动 UI。
+     */
     val emptyStateHint: String?
-        get() = activeSessionMessageCount
-            ?.takeIf { it == 0 }
-            ?.let {
-                AuraCodeBundle.message(
-                    "composer.emptyState.newSession",
-                    engineDisplayLabel(selectedEngineId, availableEngines),
-                )
-            }
+        get() = null
+
+    /**
+     * 根据当前引擎能力决定是否显示推理等级选择器。
+     */
+    val reasoningSelectorVisible: Boolean
+        get() = availableEngines
+            .firstOrNull { it.id == selectedEngineId }
+            ?.capabilities
+            ?.supportsReasoningEffortSelection
+            ?: true
 
     fun serializedPrompt(): String {
-        val mentionBlock = mentionEntries.sortedBy { it.start }.joinToString("\n") { it.path.trim() }.trim()
-        val textBlock = normalizePromptBody(removeMentionRanges(document.text, mentionEntries))
+        val mentionBlock = mentionEntries
+            .filter { it.kind == MentionEntryKind.FILE }
+            .sortedBy { it.start }
+            .joinToString("\n") { it.path.trim() }
+            .trim()
+        val textBlock = normalizePromptBody(removeMentionRanges(document.text, mentionEntries, setOf(MentionEntryKind.FILE)))
         return when {
             mentionBlock.isBlank() -> textBlock
             textBlock.isBlank() -> mentionBlock
@@ -313,21 +353,11 @@ internal class ComposerAreaStore(
                         reasoningMenuExpanded = false,
                     )
                     is UiIntent.RequestEngineSwitch -> {
-                        val targetEngineId = intent.engineId.trim().ifBlank { _state.value.selectedEngineId }
-                        val requiresConfirmation = targetEngineId != _state.value.selectedEngineId &&
-                            (_state.value.activeSessionMessageCount ?: 0) > 0
                         _state.value = _state.value.copy(
                             engineMenuExpanded = false,
                             modelMenuExpanded = false,
                             reasoningMenuExpanded = false,
-                            engineSwitchConfirmation = if (requiresConfirmation) {
-                                EngineSwitchConfirmationState(
-                                    targetEngineId = targetEngineId,
-                                    targetEngineLabel = engineDisplayLabel(targetEngineId, _state.value.availableEngines),
-                                )
-                            } else {
-                                null
-                            },
+                            engineSwitchConfirmation = null,
                         )
                     }
                     is UiIntent.SelectEngine -> {
@@ -335,6 +365,7 @@ internal class ComposerAreaStore(
                         val nextBuiltInModels = _state.value.availableEngines.firstOrNull { it.id == nextEngineId }?.models
                             ?: defaultModelIdsForEngine(nextEngineId)
                         val nextAvailableModels = composerModelOptions(
+                            engineId = nextEngineId,
                             builtInModelIds = nextBuiltInModels,
                             customModelIds = _state.value.customModelIds,
                         ).map { it.id }.toSet()
@@ -455,10 +486,15 @@ internal class ComposerAreaStore(
                         appliedTurnDiffs = emptyMap(),
                     )
                     is UiIntent.SelectMentionFile -> addMention(intent.path)
+                    is UiIntent.SelectSessionSubagentMention -> addSubagentMention(intent.threadId)
+                    is UiIntent.ToggleSubagentDetails -> toggleSubagentDetails(intent.threadId)
                     is UiIntent.RemoveMentionFile -> removeMention(intent.id)
                     is UiIntent.SelectAgent -> addAgent(intent.agent)
                     is UiIntent.RemoveSelectedAgent -> _state.value = _state.value.copy(
                         agentEntries = _state.value.agentEntries.filterNot { it.id == intent.id },
+                    )
+                    UiIntent.ToggleSubagentTrayExpanded -> _state.value = _state.value.copy(
+                        subagentTrayExpanded = !_state.value.subagentTrayExpanded && _state.value.sessionSubagents.isNotEmpty(),
                     )
                     UiIntent.MoveMentionSelectionNext -> {
                         val size = _state.value.mentionSuggestions.size
@@ -529,6 +565,34 @@ internal class ComposerAreaStore(
                     mentionPopupVisible = event.suggestions.isNotEmpty(),
                     activeMentionIndex = 0,
                 )
+            }
+
+            is AppEvent.UnifiedEventPublished -> {
+                when (val unified = event.event) {
+                    is UnifiedEvent.SubagentsUpdated -> {
+                        val nextSubagents = sortSessionSubagents(unified.agents.map { it.toSessionSubagentUiModel() })
+                        _state.value = _state.value.copy(
+                            sessionSubagents = nextSubagents,
+                            subagentTrayExpanded = _state.value.subagentTrayExpanded &&
+                                nextSubagents.isNotEmpty(),
+                            selectedSubagentThreadId = _state.value.selectedSubagentThreadId
+                                ?.takeIf { selectedThreadId -> nextSubagents.any { it.threadId == selectedThreadId } },
+                            mentionSuggestions = _state.value.mentionSuggestions.mapNotNull { suggestion ->
+                                when (suggestion) {
+                                    is MentionSuggestion.File -> suggestion
+                                    is MentionSuggestion.Agent -> nextSubagents
+                                        .firstOrNull { it.threadId == suggestion.agent.threadId }
+                                        ?.let(MentionSuggestion::Agent)
+                                }
+                            },
+                            mentionPopupVisible = _state.value.mentionPopupVisible &&
+                                _state.value.mentionQuery.isNotBlank() &&
+                                (_state.value.mentionSuggestions.isNotEmpty() || nextSubagents.isNotEmpty()),
+                        )
+                    }
+
+                    else -> Unit
+                }
             }
 
             is AppEvent.ConversationCapabilitiesUpdated -> {
@@ -650,16 +714,38 @@ internal class ComposerAreaStore(
                 val builtInModelIds = _state.value.availableEngines.firstOrNull { it.id == selectedEngineId }?.models
                     ?: defaultModelIdsForEngine(selectedEngineId)
                 val availableModelIds = composerModelOptions(
+                    engineId = selectedEngineId,
                     builtInModelIds = builtInModelIds,
                     customModelIds = _state.value.customModelIds,
                 ).map { it.id }.toSet()
+                val switchedSession = _state.value.currentSessionId != null &&
+                    _state.value.currentSessionId != event.activeSessionId
+                val filteredMentionSuggestions = if (switchedSession) {
+                    _state.value.mentionSuggestions.filterIsInstance<MentionSuggestion.File>()
+                } else {
+                    _state.value.mentionSuggestions
+                }
                 _state.value = _state.value.copy(
+                    currentSessionId = event.activeSessionId,
                     selectedEngineId = selectedEngineId,
                     selectedModel = _state.value.selectedModel.takeIf { it in availableModelIds }
                         ?: defaultModelForEngine(selectedEngineId),
                     usageSnapshot = activeSession?.usageSnapshot,
                     activeSessionMessageCount = activeSession?.messageCount,
                     engineSwitchConfirmation = null,
+                    sessionSubagents = if (switchedSession) emptyList() else _state.value.sessionSubagents,
+                    subagentTrayExpanded = if (switchedSession) false else _state.value.subagentTrayExpanded,
+                    selectedSubagentThreadId = if (switchedSession) null else _state.value.selectedSubagentThreadId,
+                    mentionSuggestions = filteredMentionSuggestions,
+                    mentionPopupVisible = _state.value.mentionPopupVisible && filteredMentionSuggestions.isNotEmpty(),
+                    activeMentionIndex = if (
+                        filteredMentionSuggestions.isEmpty() ||
+                        _state.value.activeMentionIndex >= filteredMentionSuggestions.size
+                    ) {
+                        0
+                    } else {
+                        _state.value.activeMentionIndex
+                    },
                 )
             }
 
@@ -680,6 +766,7 @@ internal class ComposerAreaStore(
                 val builtInModelIds = event.availableEngines.firstOrNull { it.id == selectedEngineId }?.models
                     ?: defaultModelIdsForEngine(selectedEngineId)
                 val availableModelIds = composerModelOptions(
+                    engineId = selectedEngineId,
                     builtInModelIds = builtInModelIds,
                     customModelIds = event.customModelIds,
                 ).map { it.id }.toSet()
@@ -720,6 +807,7 @@ internal class ComposerAreaStore(
             }
 
             AppEvent.ConversationReset -> _state.value = ComposerAreaState(
+                currentSessionId = _state.value.currentSessionId,
                 autoContextEnabled = _state.value.autoContextEnabled,
                 agentEntries = _state.value.agentEntries,
                 selectedEngineId = _state.value.selectedEngineId,
@@ -801,12 +889,52 @@ internal class ComposerAreaStore(
             mentions = current.mentionEntries,
             mentionPath = entry.path,
             displayName = entry.displayName,
+            kind = MentionEntryKind.FILE,
         ) ?: return
         val nextValue = inserted.first
         val newMention = inserted.second
         _state.value = current.nextDocumentState(
             document = nextValue,
             mentionEntries = syncMentions(current.mentionEntries, current.document.text, nextValue) + newMention,
+        )
+    }
+
+    private fun addSubagentMention(threadId: String) {
+        val current = _state.value
+        val subagent = current.sessionSubagents.firstOrNull { it.threadId == threadId } ?: return
+        val inserted = insertMentionLabel(
+            document = current.document,
+            mentions = current.mentionEntries,
+            mentionPath = subagent.threadId,
+            displayName = subagent.mentionSlug,
+            kind = MentionEntryKind.AGENT,
+        ) ?: insertMentionAtCursor(
+            document = current.document,
+            mentions = current.mentionEntries,
+            mentionPath = subagent.threadId,
+            displayName = subagent.mentionSlug,
+            kind = MentionEntryKind.AGENT,
+        )
+        val nextValue = inserted.first
+        val newMention = inserted.second
+        _state.value = current.nextDocumentState(
+            document = nextValue,
+            mentionEntries = syncMentions(current.mentionEntries, current.document.text, nextValue) + newMention,
+        )
+    }
+
+    /**
+     * Toggles the inline tray detail card for one concrete subagent row without affecting @ mention flows.
+     */
+    private fun toggleSubagentDetails(threadId: String) {
+        val current = _state.value
+        if (current.sessionSubagents.none { it.threadId == threadId }) return
+        _state.value = current.copy(
+            selectedSubagentThreadId = if (current.selectedSubagentThreadId == threadId) {
+                null
+            } else {
+                threadId
+            },
         )
     }
 
@@ -1161,17 +1289,44 @@ internal class ComposerAreaStore(
 }
 
 internal fun composerModelOptions(
+    engineId: String,
     builtInModelIds: List<String>,
     customModelIds: List<String>,
 ): List<ComposerModelOption> {
-    val builtIns = builtInModelIds.map { ComposerModelOption(id = it, isCustom = false) }
+    val builtIns = builtInModelIds.map { modelId ->
+        ComposerModelOption(
+            id = modelId,
+            shortName = modelShortName(engineId = engineId, modelId = modelId),
+            isCustom = false,
+        )
+    }
     val builtInIds = builtIns.mapTo(linkedSetOf()) { it.id }
     val customs = customModelIds
         .map { it.trim() }
         .filter { it.isNotBlank() && it !in builtInIds }
         .distinct()
-        .map { ComposerModelOption(id = it, isCustom = true) }
+        .map {
+            ComposerModelOption(
+                id = it,
+                shortName = it,
+                isCustom = true,
+            )
+        }
     return builtIns + customs
+}
+
+/** 为 composer 里的模型展示解析稳定的短名称。 */
+internal fun modelShortName(
+    engineId: String,
+    modelId: String,
+): String {
+    val normalizedEngineId = engineId.trim()
+    val normalizedModelId = modelId.trim()
+    if (normalizedModelId.isBlank()) return modelId
+    return when (normalizedEngineId) {
+        "claude" -> ClaudeModelCatalog.option(normalizedModelId)?.shortName
+        else -> CodexModelCatalog.option(normalizedModelId)?.description
+    } ?: normalizedModelId
 }
 
 private fun defaultModelIdsForEngine(engineId: String): List<String> {

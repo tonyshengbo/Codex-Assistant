@@ -3,6 +3,9 @@ package com.auracode.assistant.toolwindow.composer
 import com.auracode.assistant.protocol.ItemStatus
 import com.auracode.assistant.protocol.UnifiedApprovalRequestKind
 import com.auracode.assistant.conversation.ConversationCapabilities
+import com.auracode.assistant.protocol.UnifiedAgentSnapshot
+import com.auracode.assistant.protocol.UnifiedAgentStatus
+import com.auracode.assistant.protocol.UnifiedEvent
 import com.auracode.assistant.model.ContextFile
 import com.auracode.assistant.model.TurnUsageSnapshot
 import com.auracode.assistant.provider.EngineDescriptor
@@ -32,6 +35,319 @@ import kotlin.test.assertFalse
 
 class ComposerAreaStoreTest {
     @Test
+    fun `session switch clears visible subagent state and removes stale agent mention suggestions`() {
+        val store = ComposerAreaStore()
+        store.onEvent(
+            AppEvent.SessionSnapshotUpdated(
+                sessions = listOf(
+                    AgentChatService.SessionSummary(
+                        id = "session-a",
+                        title = "A",
+                        updatedAt = 1L,
+                        messageCount = 1,
+                        remoteConversationId = "",
+                        providerId = "codex",
+                    ),
+                ),
+                activeSessionId = "session-a",
+            ),
+        )
+        store.onEvent(
+            AppEvent.UnifiedEventPublished(
+                UnifiedEvent.SubagentsUpdated(
+                    threadId = "thread-main-1",
+                    turnId = "turn-1",
+                    agents = listOf(
+                        UnifiedAgentSnapshot(
+                            threadId = "thread-review-1",
+                            displayName = "Review Agent",
+                            mentionSlug = "review-agent",
+                            status = UnifiedAgentStatus.ACTIVE,
+                            statusText = "active",
+                            summary = "Reviewing diff",
+                            updatedAt = 100L,
+                        ),
+                    ),
+                ),
+            ),
+        )
+        store.onEvent(
+            AppEvent.MentionSuggestionsUpdated(
+                query = "re",
+                documentVersion = store.state.value.documentVersion,
+                suggestions = listOf(
+                    MentionSuggestion.Agent(
+                        SessionSubagentUiModel(
+                            threadId = "thread-review-1",
+                            displayName = "Review Agent",
+                            mentionSlug = "review-agent",
+                            status = SessionSubagentStatus.ACTIVE,
+                            statusText = "active",
+                            summary = "Reviewing diff",
+                            updatedAt = 100L,
+                        ),
+                    ),
+                ),
+            ),
+        )
+
+        store.onEvent(
+            AppEvent.SessionSnapshotUpdated(
+                sessions = listOf(
+                    AgentChatService.SessionSummary(
+                        id = "session-b",
+                        title = "B",
+                        updatedAt = 2L,
+                        messageCount = 0,
+                        remoteConversationId = "",
+                        providerId = "codex",
+                    ),
+                ),
+                activeSessionId = "session-b",
+            ),
+        )
+
+        assertTrue(store.state.value.sessionSubagents.isEmpty())
+        assertFalse(store.state.value.subagentTrayVisible)
+        assertTrue(store.state.value.mentionSuggestions.isEmpty())
+        assertFalse(store.state.value.mentionPopupVisible)
+    }
+
+    @Test
+    fun `subagent tray stays hidden until a collaboration snapshot arrives`() {
+        val store = ComposerAreaStore()
+
+        assertFalse(store.state.value.subagentTrayVisible)
+
+        store.onEvent(
+            AppEvent.UnifiedEventPublished(
+                UnifiedEvent.SubagentsUpdated(
+                    threadId = "thread-main-1",
+                    turnId = "turn-1",
+                    agents = listOf(
+                        UnifiedAgentSnapshot(
+                            threadId = "thread-review-1",
+                            displayName = "Review Agent",
+                            mentionSlug = "review-agent",
+                            status = UnifiedAgentStatus.ACTIVE,
+                            statusText = "active",
+                            summary = "Reviewing diff",
+                            updatedAt = 100L,
+                        ),
+                    ),
+                ),
+            ),
+        )
+
+        assertTrue(store.state.value.subagentTrayVisible)
+        assertFalse(store.state.value.subagentTrayExpanded)
+    }
+
+    @Test
+    fun `selecting session subagent mention keeps inline agent token in serialized prompt`() {
+        val store = ComposerAreaStore()
+        store.onEvent(
+            AppEvent.UnifiedEventPublished(
+                UnifiedEvent.SubagentsUpdated(
+                    threadId = "thread-main-1",
+                    turnId = "turn-1",
+                    agents = listOf(
+                        UnifiedAgentSnapshot(
+                            threadId = "thread-review-1",
+                            displayName = "Review Agent",
+                            mentionSlug = "review-agent",
+                            status = UnifiedAgentStatus.ACTIVE,
+                            statusText = "active",
+                            summary = "Reviewing diff",
+                            updatedAt = 100L,
+                        ),
+                    ),
+                ),
+            ),
+        )
+        store.onEvent(
+            AppEvent.UiIntentPublished(
+                UiIntent.UpdateDocument(
+                    androidx.compose.ui.text.input.TextFieldValue("Ask @rev about this", androidx.compose.ui.text.TextRange(8)),
+                ),
+            ),
+        )
+
+        store.onEvent(
+            AppEvent.UiIntentPublished(
+                UiIntent.SelectSessionSubagentMention(threadId = "thread-review-1"),
+            ),
+        )
+
+        assertEquals("Ask @review-agent about this", store.state.value.document.text)
+        assertEquals("Ask @review-agent about this", store.state.value.serializedPrompt())
+        assertEquals(1, store.state.value.mentionEntries.size)
+        assertEquals(MentionEntryKind.AGENT, store.state.value.mentionEntries.single().kind)
+    }
+
+    @Test
+    fun `selecting session subagent mention from tray inserts token without an active query`() {
+        val store = ComposerAreaStore()
+        store.onEvent(
+            AppEvent.UnifiedEventPublished(
+                UnifiedEvent.SubagentsUpdated(
+                    threadId = "thread-main-1",
+                    turnId = "turn-1",
+                    agents = listOf(
+                        UnifiedAgentSnapshot(
+                            threadId = "thread-review-1",
+                            displayName = "Review Agent",
+                            mentionSlug = "review-agent",
+                            status = UnifiedAgentStatus.ACTIVE,
+                            statusText = "active",
+                            summary = "Reviewing diff",
+                            updatedAt = 100L,
+                        ),
+                    ),
+                ),
+            ),
+        )
+        store.onEvent(
+            AppEvent.UiIntentPublished(
+                UiIntent.UpdateDocument(
+                    androidx.compose.ui.text.input.TextFieldValue("Check this", androidx.compose.ui.text.TextRange(10)),
+                ),
+            ),
+        )
+
+        store.onEvent(
+            AppEvent.UiIntentPublished(
+                UiIntent.SelectSessionSubagentMention(threadId = "thread-review-1"),
+            ),
+        )
+
+        assertEquals("Check this @review-agent", store.state.value.document.text)
+        assertEquals("Check this @review-agent", store.state.value.serializedPrompt())
+    }
+
+    @Test
+    fun `failed subagent snapshot is exposed as failed ui status`() {
+        val store = ComposerAreaStore()
+
+        store.onEvent(
+            AppEvent.UnifiedEventPublished(
+                UnifiedEvent.SubagentsUpdated(
+                    threadId = "thread-main-1",
+                    turnId = "turn-1",
+                    agents = listOf(
+                        UnifiedAgentSnapshot(
+                            threadId = "thread-review-1",
+                            displayName = "Review Agent",
+                            mentionSlug = "review-agent",
+                            status = UnifiedAgentStatus.FAILED,
+                            statusText = "systemError",
+                            summary = "unexpected status 502 Bad Gateway",
+                            updatedAt = 100L,
+                        ),
+                    ),
+                ),
+            ),
+        )
+
+        assertEquals(SessionSubagentStatus.FAILED, store.state.value.sessionSubagents.single().status)
+    }
+
+    @Test
+    fun `subagent snapshots are sorted by status priority then recency`() {
+        val store = ComposerAreaStore()
+
+        store.onEvent(
+            AppEvent.UnifiedEventPublished(
+                UnifiedEvent.SubagentsUpdated(
+                    threadId = "thread-main-1",
+                    turnId = "turn-1",
+                    agents = listOf(
+                        UnifiedAgentSnapshot(
+                            threadId = "thread-idle-1",
+                            displayName = "Idle Agent",
+                            mentionSlug = "idle-agent",
+                            status = UnifiedAgentStatus.IDLE,
+                            statusText = "idle",
+                            summary = "Waiting",
+                            updatedAt = 50L,
+                        ),
+                        UnifiedAgentSnapshot(
+                            threadId = "thread-active-1",
+                            displayName = "Active Agent",
+                            mentionSlug = "active-agent",
+                            status = UnifiedAgentStatus.ACTIVE,
+                            statusText = "active",
+                            summary = "Reviewing diff",
+                            updatedAt = 60L,
+                        ),
+                        UnifiedAgentSnapshot(
+                            threadId = "thread-failed-1",
+                            displayName = "Failed Agent",
+                            mentionSlug = "failed-agent",
+                            status = UnifiedAgentStatus.FAILED,
+                            statusText = "failed",
+                            summary = "Crashed",
+                            updatedAt = 40L,
+                        ),
+                        UnifiedAgentSnapshot(
+                            threadId = "thread-active-2",
+                            displayName = "Newer Active Agent",
+                            mentionSlug = "newer-active-agent",
+                            status = UnifiedAgentStatus.ACTIVE,
+                            statusText = "active",
+                            summary = "Running tests",
+                            updatedAt = 90L,
+                        ),
+                    ),
+                ),
+            ),
+        )
+
+        assertEquals(
+            listOf("thread-failed-1", "thread-active-2", "thread-active-1", "thread-idle-1"),
+            store.state.value.sessionSubagents.map { it.threadId },
+        )
+    }
+
+    @Test
+    fun `toggling subagent details selects and collapses the requested agent`() {
+        val store = ComposerAreaStore()
+        store.onEvent(
+            AppEvent.UnifiedEventPublished(
+                UnifiedEvent.SubagentsUpdated(
+                    threadId = "thread-main-1",
+                    turnId = "turn-1",
+                    agents = listOf(
+                        UnifiedAgentSnapshot(
+                            threadId = "thread-review-1",
+                            displayName = "Review Agent",
+                            mentionSlug = "review-agent",
+                            status = UnifiedAgentStatus.ACTIVE,
+                            statusText = "active",
+                            summary = "Reviewing diff",
+                            updatedAt = 100L,
+                        ),
+                    ),
+                ),
+            ),
+        )
+
+        store.onEvent(
+            AppEvent.UiIntentPublished(
+                UiIntent.ToggleSubagentDetails(threadId = "thread-review-1"),
+            ),
+        )
+        assertEquals("thread-review-1", store.state.value.selectedSubagentThreadId)
+
+        store.onEvent(
+            AppEvent.UiIntentPublished(
+                UiIntent.ToggleSubagentDetails(threadId = "thread-review-1"),
+            ),
+        )
+        assertNull(store.state.value.selectedSubagentThreadId)
+    }
+
+    @Test
     fun `session snapshot switches composer engine and shows empty session hint`() {
         val store = ComposerAreaStore()
         store.onEvent(
@@ -59,6 +375,7 @@ class ComposerAreaStoreTest {
                             supportsToolEvents = false,
                             supportsCommandProposal = false,
                             supportsDiffProposal = false,
+                            supportsReasoningEffortSelection = false,
                         ),
                     ),
                 ),
@@ -89,10 +406,7 @@ class ComposerAreaStoreTest {
 
         assertEquals("claude", store.state.value.selectedEngineId)
         assertEquals("claude-sonnet-4-6", store.state.value.selectedModel)
-        assertEquals(
-            "This session is empty. Your first message will start it on Claude.",
-            store.state.value.emptyStateHint,
-        )
+        assertNull(store.state.value.emptyStateHint)
     }
 
     @Test
@@ -112,6 +426,7 @@ class ComposerAreaStoreTest {
                             supportsToolEvents = false,
                             supportsCommandProposal = false,
                             supportsDiffProposal = false,
+                            supportsReasoningEffortSelection = false,
                         ),
                     ),
                 ),
@@ -141,6 +456,71 @@ class ComposerAreaStoreTest {
         )
 
         assertNull(store.state.value.emptyStateHint)
+    }
+
+    @Test
+    fun `claude session hides reasoning selector`() {
+        val store = ComposerAreaStore()
+        store.onEvent(
+            AppEvent.SettingsSnapshotUpdated(
+                codexCliPath = "codex",
+                selectedEngineId = "claude",
+                availableEngines = listOf(
+                    EngineDescriptor(
+                        id = "claude",
+                        displayName = "Claude",
+                        models = listOf("claude-sonnet-4-6"),
+                        capabilities = EngineCapabilities(
+                            supportsThinking = true,
+                            supportsToolEvents = false,
+                            supportsCommandProposal = false,
+                            supportsDiffProposal = false,
+                            supportsReasoningEffortSelection = false,
+                        ),
+                    ),
+                ),
+                languageMode = com.auracode.assistant.settings.UiLanguageMode.FOLLOW_IDE,
+                themeMode = com.auracode.assistant.settings.UiThemeMode.FOLLOW_IDE,
+                autoContextEnabled = true,
+                savedAgents = emptyList(),
+                customModelIds = emptyList(),
+                selectedModel = "claude-sonnet-4-6",
+            ),
+        )
+
+        assertFalse(store.state.value.reasoningSelectorVisible)
+    }
+
+    @Test
+    fun `codex session keeps reasoning selector visible`() {
+        val store = ComposerAreaStore()
+        store.onEvent(
+            AppEvent.SettingsSnapshotUpdated(
+                codexCliPath = "codex",
+                selectedEngineId = "codex",
+                availableEngines = listOf(
+                    EngineDescriptor(
+                        id = "codex",
+                        displayName = "Codex",
+                        models = listOf("gpt-5.4"),
+                        capabilities = EngineCapabilities(
+                            supportsThinking = true,
+                            supportsToolEvents = true,
+                            supportsCommandProposal = true,
+                            supportsDiffProposal = true,
+                        ),
+                    ),
+                ),
+                languageMode = com.auracode.assistant.settings.UiLanguageMode.FOLLOW_IDE,
+                themeMode = com.auracode.assistant.settings.UiThemeMode.FOLLOW_IDE,
+                autoContextEnabled = true,
+                savedAgents = emptyList(),
+                customModelIds = emptyList(),
+                selectedModel = "gpt-5.4",
+            ),
+        )
+
+        assertTrue(store.state.value.reasoningSelectorVisible)
     }
 
     @Test
@@ -247,13 +627,7 @@ class ComposerAreaStoreTest {
         store.onEvent(AppEvent.UiIntentPublished(UiIntent.RequestEngineSwitch("claude")))
 
         assertEquals("codex", store.state.value.selectedEngineId)
-        assertEquals(
-            EngineSwitchConfirmationState(
-                targetEngineId = "claude",
-                targetEngineLabel = "Claude",
-            ),
-            store.state.value.engineSwitchConfirmation,
-        )
+        assertNull(store.state.value.engineSwitchConfirmation)
     }
 
     @Test
@@ -1068,6 +1442,59 @@ class ComposerAreaStoreTest {
         assertEquals("gpt-4.1-custom", store.state.value.selectedModel)
         assertEquals(com.auracode.assistant.toolwindow.eventing.ComposerReasoning.HIGH, store.state.value.selectedReasoning)
         assertTrue(store.state.value.modelOptions.any { it.id == "gpt-4.1-custom" && it.isCustom })
+    }
+
+    @Test
+    fun `model options expose curated short names while preserving ids`() {
+        val store = ComposerAreaStore()
+
+        store.onEvent(
+            AppEvent.SettingsSnapshotUpdated(
+                codexCliPath = "codex",
+                selectedEngineId = "claude",
+                availableEngines = listOf(
+                    EngineDescriptor(
+                        id = "codex",
+                        displayName = "Codex",
+                        models = listOf("gpt-5.3-codex", "gpt-5.4"),
+                        capabilities = EngineCapabilities(
+                            supportsThinking = true,
+                            supportsToolEvents = true,
+                            supportsCommandProposal = true,
+                            supportsDiffProposal = true,
+                        ),
+                    ),
+                    EngineDescriptor(
+                        id = "claude",
+                        displayName = "Claude",
+                        models = listOf("claude-sonnet-4-6", "claude-haiku-4-5-20251001"),
+                        capabilities = EngineCapabilities(
+                            supportsThinking = true,
+                            supportsToolEvents = false,
+                            supportsCommandProposal = false,
+                            supportsDiffProposal = false,
+                        ),
+                    ),
+                ),
+                languageMode = com.auracode.assistant.settings.UiLanguageMode.FOLLOW_IDE,
+                themeMode = com.auracode.assistant.settings.UiThemeMode.FOLLOW_IDE,
+                autoContextEnabled = true,
+                savedAgents = emptyList(),
+                customModelIds = listOf("custom-model-1"),
+                selectedModel = "claude-sonnet-4-6",
+            ),
+        )
+
+        assertEquals("claude-sonnet-4-6", store.state.value.selectedModel)
+        assertEquals("Sonnet 4.6", store.state.value.selectedModelOption?.shortName)
+        assertEquals(
+            listOf("Sonnet 4.6", "Haiku 4.5", "custom-model-1"),
+            store.state.value.modelOptions.map { it.shortName },
+        )
+        assertEquals(
+            listOf("claude-sonnet-4-6", "claude-haiku-4-5-20251001", "custom-model-1"),
+            store.state.value.modelOptions.map { it.id },
+        )
     }
 
     @Test

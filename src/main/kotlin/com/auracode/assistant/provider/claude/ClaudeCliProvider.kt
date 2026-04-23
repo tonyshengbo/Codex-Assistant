@@ -95,6 +95,7 @@ internal class ClaudeCliProvider(
         supportsResume = true,
         supportsAttachments = true,
         supportsImageInputs = true,
+        supportsSubagents = false,
     )
 
     /** 从 Claude CLI 本地 JSONL 文件中读取历史会话记录。 */
@@ -273,6 +274,7 @@ internal class ClaudeCliProvider(
             is UnifiedEvent.TurnStarted -> "turn-started turnId=$turnId threadId=${threadId.orEmpty()}"
             is UnifiedEvent.ApprovalRequested -> "approval-request requestId=${request.requestId}"
             is UnifiedEvent.RunningPlanUpdated -> "running-plan turnId=$turnId steps=${steps.size}"
+            is UnifiedEvent.SubagentsUpdated -> "subagents-updated count=${agents.size}"
             is UnifiedEvent.ThreadTokenUsageUpdated -> {
                 "token-usage threadId=$threadId turnId=${turnId.orEmpty()} outputTokens=$outputTokens"
             }

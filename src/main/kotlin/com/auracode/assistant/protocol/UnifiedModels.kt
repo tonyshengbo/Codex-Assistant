@@ -133,6 +133,12 @@ data class UnifiedItem(
 )
 
 sealed class UnifiedEvent {
+    data class SubagentsUpdated(
+        val threadId: String?,
+        val turnId: String?,
+        val agents: List<UnifiedAgentSnapshot>,
+    ) : UnifiedEvent()
+
     data class ApprovalRequested(
         val request: UnifiedApprovalRequest,
     ) : UnifiedEvent()

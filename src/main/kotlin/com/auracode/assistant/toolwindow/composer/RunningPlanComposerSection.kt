@@ -38,16 +38,43 @@ import com.auracode.assistant.toolwindow.eventing.UiIntent
 import com.auracode.assistant.toolwindow.shared.DesignPalette
 import com.auracode.assistant.toolwindow.shared.assistantUiTokens
 
+/**
+ * Collects the compact visual chrome used by the running plan progress badge.
+ */
+internal data class RunningPlanProgressBadgeChrome(
+    val horizontalPadding: androidx.compose.ui.unit.Dp,
+    val verticalPadding: androidx.compose.ui.unit.Dp,
+    val cornerRadius: androidx.compose.ui.unit.Dp,
+    val backgroundAlpha: Float,
+    val borderAlpha: Float,
+)
+
+/**
+ * Describes the step-row alignment so the status dot stays vertically centered with the label.
+ */
+internal data class RunningPlanStepRowSpec(
+    val rowVerticalAlignment: Alignment.Vertical,
+    val dotTopPadding: androidx.compose.ui.unit.Dp,
+    val inactiveDotSize: androidx.compose.ui.unit.Dp,
+    val activeDotSize: androidx.compose.ui.unit.Dp,
+)
+
 internal data class RunningPlanHeaderSummary(
     val title: String,
     val currentStep: String,
     val progressLabel: String,
 )
 
+/**
+ * Resolves the local icon resource for the expand/collapse affordance.
+ */
 internal fun runningPlanToggleIconPath(expanded: Boolean): String {
     return if (expanded) "/icons/arrow-down.svg" else "/icons/arrow-up.svg"
 }
 
+/**
+ * Builds the compact summary content shown in the running-plan header.
+ */
 internal fun runningPlanHeaderSummary(state: ComposerRunningPlanState): RunningPlanHeaderSummary {
     val totalCount = state.steps.size
     val completedCount = state.steps.count { it.status == ComposerRunningPlanStepStatus.COMPLETED }
@@ -61,6 +88,31 @@ internal fun runningPlanHeaderSummary(state: ComposerRunningPlanState): RunningP
     )
 }
 
+/**
+ * Keeps the progress badge visually secondary so it doesn't overpower the step text.
+ */
+internal fun runningPlanProgressBadgeChrome(): RunningPlanProgressBadgeChrome {
+    return RunningPlanProgressBadgeChrome(
+        horizontalPadding = 4.dp,
+        verticalPadding = 0.dp,
+        cornerRadius = 999.dp,
+        backgroundAlpha = 0.04f,
+        borderAlpha = 0.12f,
+    )
+}
+
+/**
+ * Keeps step dots aligned to the label center without changing the surrounding structure.
+ */
+internal fun runningPlanStepRowSpec(): RunningPlanStepRowSpec {
+    return RunningPlanStepRowSpec(
+        rowVerticalAlignment = Alignment.CenterVertically,
+        dotTopPadding = 0.dp,
+        inactiveDotSize = 6.dp,
+        activeDotSize = 7.dp,
+    )
+}
+
 @Composable
 internal fun RunningPlanComposerSection(
     p: DesignPalette,
@@ -70,6 +122,7 @@ internal fun RunningPlanComposerSection(
 ) {
     val t = assistantUiTokens()
     val summary = runningPlanHeaderSummary(state)
+    val stepRowSpec = runningPlanStepRowSpec()
     val containerShape = RoundedCornerShape(12.dp)
     val bodyShape = RoundedCornerShape(bottomStart = 12.dp, bottomEnd = 12.dp)
     Column(
@@ -158,12 +211,18 @@ internal fun RunningPlanComposerSection(
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        verticalAlignment = Alignment.Top,
+                        verticalAlignment = stepRowSpec.rowVerticalAlignment,
                     ) {
                         Box(
                             modifier = Modifier
-                                .padding(top = 3.dp)
-                                .size(if (step.status == ComposerRunningPlanStepStatus.IN_PROGRESS) 7.dp else 6.dp)
+                                .padding(top = stepRowSpec.dotTopPadding)
+                                .size(
+                                    if (step.status == ComposerRunningPlanStepStatus.IN_PROGRESS) {
+                                        stepRowSpec.activeDotSize
+                                    } else {
+                                        stepRowSpec.inactiveDotSize
+                                    },
+                                )
                                 .background(step.status.dotColor(p), CircleShape),
                         )
                         Text(
@@ -189,16 +248,16 @@ private fun RowScope.RunningPlanProgressBadge(
     label: String,
 ) {
     if (label.isBlank()) return
-    val t = assistantUiTokens()
+    val chrome = runningPlanProgressBadgeChrome()
     Box(
         modifier = Modifier
-            .background(p.accent.copy(alpha = 0.1f), RoundedCornerShape(8.dp))
-            .border(1.dp, p.accent.copy(alpha = 0.18f), RoundedCornerShape(8.dp))
-            .padding(horizontal = 5.dp, vertical = 1.dp),
+            .background(p.topStripBg.copy(alpha = chrome.backgroundAlpha), RoundedCornerShape(chrome.cornerRadius))
+            .border(1.dp, p.markdownDivider.copy(alpha = chrome.borderAlpha), RoundedCornerShape(chrome.cornerRadius))
+            .padding(horizontal = chrome.horizontalPadding, vertical = chrome.verticalPadding),
     ) {
         Text(
             text = label,
-            color = p.textSecondary,
+            color = p.textMuted,
             fontSize = 10.sp,
             fontWeight = FontWeight.Medium,
             maxLines = 1,

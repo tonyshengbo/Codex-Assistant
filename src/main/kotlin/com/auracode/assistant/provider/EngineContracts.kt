@@ -5,6 +5,7 @@ data class EngineCapabilities(
     val supportsToolEvents: Boolean,
     val supportsCommandProposal: Boolean,
     val supportsDiffProposal: Boolean,
+    val supportsReasoningEffortSelection: Boolean = true,
 )
 
 data class EngineDescriptor(

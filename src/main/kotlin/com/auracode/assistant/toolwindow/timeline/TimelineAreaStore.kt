@@ -149,7 +149,7 @@ internal class TimelineAreaStore {
     }
 
     private fun shouldExpandByDefault(node: TimelineNode, previousNode: TimelineNode?): Boolean {
-        return previousNode == null && node is TimelineNode.PlanNode
+        return previousNode == null && (node is TimelineNode.PlanNode || node is TimelineNode.EngineSwitchedNode)
     }
 }
 

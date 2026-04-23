@@ -130,7 +130,12 @@ internal fun ComposerInputSection(
                                 }
                                 Key.Enter -> {
                                     if (!it.isShiftPressed && selectedMention != null) {
-                                        onIntent(UiIntent.SelectMentionFile(selectedMention.path))
+                                        when (selectedMention) {
+                                            is MentionSuggestion.File -> onIntent(UiIntent.SelectMentionFile(selectedMention.entry.path))
+                                            is MentionSuggestion.Agent -> {
+                                                onIntent(UiIntent.SelectSessionSubagentMention(selectedMention.agent.threadId))
+                                            }
+                                        }
                                         return@onPreviewKeyEvent true
                                     }
                                 }
@@ -321,13 +326,31 @@ internal fun ComposerInputSection(
                                 is ComposerPopupRow.MentionItem -> {
                                     DropdownMenuItem(
                                         modifier = Modifier.bringIntoViewRequester(popupRowRequesters[index]),
-                                        onClick = { onIntent(UiIntent.SelectMentionFile(row.entry.path)) },
+                                        onClick = {
+                                            when (row) {
+                                                is ComposerPopupRow.MentionAgentItem -> {
+                                                    onIntent(UiIntent.SelectSessionSubagentMention(row.agent.threadId))
+                                                }
+
+                                                is ComposerPopupRow.MentionFileItem -> {
+                                                    onIntent(UiIntent.SelectMentionFile(row.entry.path))
+                                                }
+                                            }
+                                        },
                                     ) {
-                                        MentionSuggestionRow(
-                                            entry = row.entry,
-                                            selected = index == popupContent.selectedRowIndex,
-                                            p = p,
-                                        )
+                                        when (row) {
+                                            is ComposerPopupRow.MentionAgentItem -> MentionAgentSuggestionRow(
+                                                agent = row.agent,
+                                                selected = index == popupContent.selectedRowIndex,
+                                                p = p,
+                                            )
+
+                                            is ComposerPopupRow.MentionFileItem -> MentionFileSuggestionRow(
+                                                entry = row.entry,
+                                                selected = index == popupContent.selectedRowIndex,
+                                                p = p,
+                                            )
+                                        }
                                     }
                                 }
                             }
@@ -335,13 +358,6 @@ internal fun ComposerInputSection(
                     }
                 }
             }
-        }
-        state.emptyStateHint?.takeIf(String::isNotBlank)?.let { hint ->
-            Text(
-                text = hint,
-                color = p.textMuted,
-                style = androidx.compose.material.MaterialTheme.typography.caption,
-            )
         }
     }
 }
@@ -420,7 +436,7 @@ private class MentionVisualTransformation(
 }
 
 @Composable
-private fun MentionSuggestionRow(
+private fun MentionFileSuggestionRow(
     entry: ContextEntry,
     selected: Boolean,
     p: DesignPalette,
@@ -451,6 +467,46 @@ private fun MentionSuggestionRow(
                 color = p.textMuted,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
+            )
+        }
+    }
+}
+
+@Composable
+private fun MentionAgentSuggestionRow(
+    agent: SessionSubagentUiModel,
+    selected: Boolean,
+    p: DesignPalette,
+) {
+    val t = assistantUiTokens()
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(if (selected) p.topStripBg else Color.Transparent, RoundedCornerShape(t.spacing.sm))
+            .padding(horizontal = t.spacing.sm, vertical = t.spacing.xs),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            painter = painterResource("/icons/community.svg"),
+            contentDescription = null,
+            tint = p.textSecondary,
+            modifier = Modifier.size(t.controls.iconMd),
+        )
+        Spacer(Modifier.width(t.spacing.sm))
+        Column(
+            verticalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
+            Text(
+                text = "@${agent.mentionSlug}",
+                color = if (selected) p.textPrimary else p.textSecondary,
+                maxLines = 1,
+            )
+            Text(
+                text = agent.summary ?: agent.displayName,
+                color = p.textMuted,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                style = androidx.compose.material.MaterialTheme.typography.caption,
             )
         }
     }
@@ -500,7 +556,9 @@ internal data class ComposerPopupContent(
 internal sealed interface ComposerPopupRow {
     data class Header(val title: String) : ComposerPopupRow
     data class SlashItem(val item: SlashSuggestionItem) : ComposerPopupRow
-    data class MentionItem(val entry: ContextEntry) : ComposerPopupRow
+    sealed interface MentionItem : ComposerPopupRow
+    data class MentionFileItem(val entry: ContextEntry) : MentionItem
+    data class MentionAgentItem(val agent: SessionSubagentUiModel) : MentionItem
     data class AgentItem(val agent: com.auracode.assistant.settings.SavedAgentDefinition) : ComposerPopupRow
 }
 
@@ -508,7 +566,7 @@ internal sealed interface ComposerPopupRow {
 internal fun buildComposerPopupContent(
     slashSuggestions: List<SlashSuggestionItem>,
     activeSlashIndex: Int,
-    mentionSuggestions: List<ContextEntry>,
+    mentionSuggestions: List<MentionSuggestion>,
     activeMentionIndex: Int,
     agentSuggestions: List<com.auracode.assistant.settings.SavedAgentDefinition>,
     activeAgentIndex: Int,
@@ -541,10 +599,32 @@ internal fun buildComposerPopupContent(
             }
             ComposerPopupContent(rows = rows, selectedRowIndex = selectedRowIndex)
         }
-        ComposerPopupMode.MENTION -> ComposerPopupContent(
-            rows = mentionSuggestions.map { ComposerPopupRow.MentionItem(it) },
-            selectedRowIndex = mentionSuggestions.indices.firstOrNull { it == activeMentionIndex },
-        )
+        ComposerPopupMode.MENTION -> {
+            val rows = mutableListOf<ComposerPopupRow>()
+            var selectedRowIndex: Int? = null
+            val agents = mentionSuggestions.filterIsInstance<MentionSuggestion.Agent>()
+            val files = mentionSuggestions.filterIsInstance<MentionSuggestion.File>()
+            if (agents.isNotEmpty()) {
+                rows += ComposerPopupRow.Header(AuraCodeBundle.message("composer.mention.section.agents"))
+                agents.forEachIndexed { index, item ->
+                    if (index == activeMentionIndex) {
+                        selectedRowIndex = rows.size
+                    }
+                    rows += ComposerPopupRow.MentionAgentItem(item.agent)
+                }
+            }
+            if (files.isNotEmpty()) {
+                rows += ComposerPopupRow.Header(AuraCodeBundle.message("composer.mention.section.files"))
+                files.forEachIndexed { index, item ->
+                    val overallIndex = agents.size + index
+                    if (overallIndex == activeMentionIndex) {
+                        selectedRowIndex = rows.size
+                    }
+                    rows += ComposerPopupRow.MentionFileItem(item.entry)
+                }
+            }
+            ComposerPopupContent(rows = rows, selectedRowIndex = selectedRowIndex)
+        }
         ComposerPopupMode.AGENT -> ComposerPopupContent(
             rows = agentSuggestions.map { ComposerPopupRow.AgentItem(it) },
             selectedRowIndex = agentSuggestions.indices.firstOrNull { it == activeAgentIndex },
@@ -574,7 +654,8 @@ private fun ComposerPopupRow.stableKey(index: Int): String {
     return when (this) {
         is ComposerPopupRow.Header -> "header:$title:$index"
         is ComposerPopupRow.SlashItem -> "slash:${item.title}"
-        is ComposerPopupRow.MentionItem -> "mention:${entry.path}"
+        is ComposerPopupRow.MentionAgentItem -> "mention-agent:${agent.threadId}"
+        is ComposerPopupRow.MentionFileItem -> "mention-file:${entry.path}"
         is ComposerPopupRow.AgentItem -> "agent:${agent.id}"
     }
 }

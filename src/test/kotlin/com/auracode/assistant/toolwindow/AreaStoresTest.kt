@@ -27,6 +27,7 @@ import com.auracode.assistant.conversation.ConversationCapabilities
 import com.auracode.assistant.toolwindow.composer.ComposerAreaStore
 import com.auracode.assistant.toolwindow.composer.ContextEntry
 import com.auracode.assistant.toolwindow.composer.FocusedContextSnapshot
+import com.auracode.assistant.toolwindow.composer.MentionSuggestion
 import com.auracode.assistant.toolwindow.drawer.RightDrawerAreaStore
 import com.auracode.assistant.toolwindow.drawer.AgentSettingsPage
 import com.auracode.assistant.toolwindow.drawer.McpSettingsPage
@@ -1266,7 +1267,7 @@ class AreaStoresTest {
             AppEvent.MentionSuggestionsUpdated(
                 query = "App",
                 documentVersion = store.state.value.documentVersion,
-                suggestions = listOf(candidate),
+                suggestions = listOf(MentionSuggestion.File(candidate)),
             ),
         )
         store.onEvent(AppEvent.UiIntentPublished(UiIntent.SelectMentionFile(path = candidate.path)))
@@ -1290,7 +1291,7 @@ class AreaStoresTest {
             AppEvent.MentionSuggestionsUpdated(
                 query = "App",
                 documentVersion = store.state.value.documentVersion,
-                suggestions = listOf(candidate),
+                suggestions = listOf(MentionSuggestion.File(candidate)),
             ),
         )
         store.onEvent(AppEvent.UiIntentPublished(UiIntent.SelectMentionFile(path = candidate.path)))
@@ -1322,7 +1323,7 @@ class AreaStoresTest {
             AppEvent.MentionSuggestionsUpdated(
                 query = "A",
                 documentVersion = store.state.value.documentVersion,
-                suggestions = items,
+                suggestions = items.map(MentionSuggestion::File),
             ),
         )
         assertEquals(0, store.state.value.activeMentionIndex)
@@ -1348,7 +1349,7 @@ class AreaStoresTest {
             AppEvent.MentionSuggestionsUpdated(
                 query = "Ap",
                 documentVersion = store.state.value.documentVersion,
-                suggestions = listOf(candidate),
+                suggestions = listOf(MentionSuggestion.File(candidate)),
             ),
         )
 
@@ -1608,7 +1609,7 @@ class AreaStoresTest {
             AppEvent.MentionSuggestionsUpdated(
                 query = "Ap",
                 documentVersion = store.state.value.documentVersion,
-                suggestions = listOf(oldCandidate),
+                suggestions = listOf(MentionSuggestion.File(oldCandidate)),
             ),
         )
 
@@ -1621,7 +1622,7 @@ class AreaStoresTest {
             AppEvent.MentionSuggestionsUpdated(
                 query = "Ap",
                 documentVersion = store.state.value.documentVersion - 1,
-                suggestions = listOf(oldCandidate),
+                suggestions = listOf(MentionSuggestion.File(oldCandidate)),
             ),
         )
 

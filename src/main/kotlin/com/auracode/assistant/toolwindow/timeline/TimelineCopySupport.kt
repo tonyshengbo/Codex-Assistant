@@ -48,6 +48,7 @@ internal fun timelineNodeCopyText(node: TimelineNode): String? {
         is TimelineNode.UserInputNode -> node.body.takeIf { it.isNotBlank() }
         is TimelineNode.UnknownActivityNode -> node.body.takeIf { it.isNotBlank() }
         is TimelineNode.ErrorNode -> node.body.takeIf { it.isNotBlank() }
+        is TimelineNode.EngineSwitchedNode -> node.body.takeIf { it.isNotBlank() }
         is TimelineNode.FileChangeNode,
         is TimelineNode.LoadMoreNode,
         -> null

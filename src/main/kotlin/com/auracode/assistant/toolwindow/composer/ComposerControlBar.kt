@@ -86,21 +86,20 @@ internal fun resolveComposerTrailingActionState(
 }
 
 /**
- * Resolves whether engine selection should happen immediately or wait for confirmation.
+ * Resolves the target engine selection intent for the composer control bar.
  */
 internal fun resolveEngineSelectionIntent(
     state: ComposerAreaState,
     engineId: String,
 ): UiIntent {
     val normalizedEngineId = engineId.trim().ifBlank { state.selectedEngineId }
-    val requiresConfirmation = normalizedEngineId != state.selectedEngineId &&
-        (state.activeSessionMessageCount ?: 0) > 0
-    return if (requiresConfirmation) {
-        UiIntent.RequestEngineSwitch(normalizedEngineId)
-    } else {
-        UiIntent.SelectEngine(normalizedEngineId)
-    }
+    return UiIntent.SelectEngine(normalizedEngineId)
 }
+
+/**
+ * Returns whether engine switching controls should stay interactive for the current composer state.
+ */
+internal fun resolveEngineSwitchEnabled(running: Boolean): Boolean = !running
 
 @Composable
 internal fun ComposerControlBar(
@@ -114,6 +113,7 @@ internal fun ComposerControlBar(
         running = running,
         hasPromptContent = state.hasPromptContent(),
     )
+    val engineSwitchEnabled = resolveEngineSwitchEnabled(running = running)
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -128,6 +128,7 @@ internal fun ComposerControlBar(
         DropdownChip(
             label = selectedEngineLabel,
             expanded = state.engineMenuExpanded,
+            enabled = engineSwitchEnabled,
             onToggle = { onIntent(UiIntent.ToggleEngineMenu) },
             onDismiss = { onIntent(UiIntent.ToggleEngineMenu) },
             p = p,
@@ -146,8 +147,9 @@ internal fun ComposerControlBar(
         }
         Spacer(Modifier.width(t.spacing.sm))
         DropdownChip(
-            label = state.selectedModel,
+            label = state.selectedModelOption?.shortName ?: state.selectedModel,
             expanded = state.modelMenuExpanded,
+            enabled = true,
             onToggle = { onIntent(UiIntent.ToggleModelMenu) },
             onDismiss = { onIntent(UiIntent.ToggleModelMenu) },
             p = p,
@@ -155,7 +157,7 @@ internal fun ComposerControlBar(
             state.modelOptions.forEach { option ->
                 DropdownMenuItem(onClick = { onIntent(UiIntent.SelectModel(option.id)) }) {
                     DropdownOptionRow(
-                        label = option.id,
+                        label = option.shortName,
                         selected = state.selectedModel == option.id,
                         isCustom = option.isCustom,
                         onDelete = if (option.isCustom) {
@@ -184,27 +186,30 @@ internal fun ComposerControlBar(
                 )
             }
         }
-        Spacer(Modifier.width(t.spacing.sm))
-        DropdownChip(
-            label = state.selectedReasoning.localizedLabel(),
-            expanded = state.reasoningMenuExpanded,
-            onToggle = { onIntent(UiIntent.ToggleReasoningMenu) },
-            onDismiss = { onIntent(UiIntent.ToggleReasoningMenu) },
-            p = p,
-        ) {
-            ComposerReasoning.entries.forEach { level ->
-                DropdownMenuItem(onClick = { onIntent(UiIntent.SelectReasoning(level)) }) {
-                    DropdownOptionRow(
-                        label = level.localizedLabel(),
-                        selected = state.selectedReasoning == level,
-                        isCustom = false,
-                        onDelete = null,
-                        p = p,
-                    )
+        if (state.reasoningSelectorVisible) {
+            Spacer(Modifier.width(t.spacing.sm))
+            DropdownChip(
+                label = state.selectedReasoning.localizedLabel(),
+                expanded = state.reasoningMenuExpanded,
+                enabled = true,
+                onToggle = { onIntent(UiIntent.ToggleReasoningMenu) },
+                onDismiss = { onIntent(UiIntent.ToggleReasoningMenu) },
+                p = p,
+            ) {
+                ComposerReasoning.entries.forEach { level ->
+                    DropdownMenuItem(onClick = { onIntent(UiIntent.SelectReasoning(level)) }) {
+                        DropdownOptionRow(
+                            label = level.localizedLabel(),
+                            selected = state.selectedReasoning == level,
+                            isCustom = false,
+                            onDelete = null,
+                            p = p,
+                        )
+                    }
                 }
             }
+            Spacer(Modifier.width(t.spacing.sm))
         }
-        Spacer(Modifier.width(t.spacing.sm))
         Box(
             modifier = Modifier
                 .width(1.dp)
@@ -277,6 +282,7 @@ internal fun resolvePlanModeTooltip(
 private fun DropdownChip(
     label: String,
     expanded: Boolean,
+    enabled: Boolean,
     onToggle: () -> Unit,
     onDismiss: () -> Unit,
     p: DesignPalette,
@@ -287,16 +293,16 @@ private fun DropdownChip(
         Row(
             modifier = Modifier
                 .background(Color.Transparent, RoundedCornerShape(t.spacing.sm))
-                .clickable(onClick = onToggle)
+                .clickable(enabled = enabled, onClick = onToggle)
                 .padding(horizontal = 6.dp, vertical = 3.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text(label, color = p.textSecondary)
+            Text(label, color = if (enabled) p.textSecondary else p.textMuted)
             Spacer(Modifier.width(t.spacing.xs))
             Icon(
                 painter = painterResource("/icons/arrow-down.svg"),
                 contentDescription = null,
-                tint = p.textMuted,
+                tint = if (enabled) p.textMuted else p.textMuted.copy(alpha = 0.6f),
                 modifier = Modifier.size(20.dp),
             )
         }

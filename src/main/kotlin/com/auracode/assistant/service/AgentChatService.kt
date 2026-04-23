@@ -335,6 +335,31 @@ class AgentChatService private constructor(
         return updated
     }
 
+    /**
+     * Resets the current session's engine binding so the next submission starts a fresh remote conversation.
+     */
+    fun resetSessionForEngineSwitch(
+        sessionId: String = getCurrentSessionId(),
+        providerId: String,
+    ): Boolean {
+        val normalizedProviderId = providerId.trim()
+        if (normalizedProviderId.isBlank()) return false
+        val updated = synchronized(stateLock) {
+            val session = sessions[sessionId] ?: return@synchronized false
+            session.providerId = normalizedProviderId
+            session.title = ""
+            session.messageCount = 0
+            session.remoteConversationId = ""
+            session.usageSnapshot = null
+            session.updatedAt = System.currentTimeMillis()
+            true
+        }
+        if (updated) {
+            persistSessionSnapshot(sessionId)
+        }
+        return updated
+    }
+
     fun switchSession(sessionId: String): Boolean {
         val switched = synchronized(stateLock) {
             if (!sessions.containsKey(sessionId)) {
@@ -486,6 +511,7 @@ class AgentChatService private constructor(
         collaborationMode: AgentCollaborationMode = AgentCollaborationMode.DEFAULT,
         onTurnPersisted: () -> Unit = {},
         onUnifiedEvent: (UnifiedEvent) -> Unit = {},
+        onRunStateChanged: () -> Unit = {},
     ) {
         cancelSessionRun(sessionId)
         val resolvedModel = resolveModel(engineId, model)
@@ -577,12 +603,14 @@ class AgentChatService private constructor(
                 synchronized(stateLock) {
                     sessionRuns.clearRun(sessionId, request.requestId)
                 }
+                onRunStateChanged()
             }
         }
         synchronized(stateLock) {
             sessionRuns.ensureSession(sessionId)
             sessionRuns.replaceRun(sessionId, request.requestId, job)
         }
+        onRunStateChanged()
     }
 
     fun cancelCurrent() {
@@ -713,6 +741,7 @@ class AgentChatService private constructor(
     ): PersistResult {
         var nextTurnId = activeTurnId
         when (event) {
+            is UnifiedEvent.SubagentsUpdated -> Unit
             is UnifiedEvent.ApprovalRequested -> Unit
             is UnifiedEvent.ToolUserInputRequested -> Unit
             is UnifiedEvent.ToolUserInputResolved -> Unit

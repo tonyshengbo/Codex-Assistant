@@ -5,6 +5,8 @@ import com.auracode.assistant.persistence.chat.PersistedMessageAttachment
 import com.auracode.assistant.toolwindow.composer.AttachmentEntry
 import com.auracode.assistant.toolwindow.composer.AttachmentKind
 import com.auracode.assistant.toolwindow.composer.ContextEntry
+import com.auracode.assistant.toolwindow.composer.MentionSuggestion
+import com.auracode.assistant.toolwindow.composer.sortSessionSubagents
 import com.auracode.assistant.toolwindow.timeline.TimelineFileChange
 import com.auracode.assistant.toolwindow.timeline.TimelineFileChangePreview
 import com.auracode.assistant.toolwindow.shared.UiText
@@ -36,12 +38,21 @@ internal class WorkspaceInteractionHandler(
 
     fun requestMentionSuggestions(query: String, documentVersion: Long, mentionLimit: Int) {
         val normalizedQuery = query.trim()
+        val subagents = context.composerStore.state.value.sessionSubagents
+            .filter { agent ->
+                normalizedQuery.isBlank() ||
+                    agent.displayName.contains(normalizedQuery, ignoreCase = true) ||
+                    agent.mentionSlug.contains(normalizedQuery, ignoreCase = true)
+            }
+            .let(::sortSessionSubagents)
+            .take(mentionLimit)
+            .map(MentionSuggestion::Agent)
         val paths = if (normalizedQuery.isBlank()) {
             context.recentFocusedFiles.toList().take(mentionLimit)
         } else {
             context.searchProjectFiles(normalizedQuery, mentionLimit)
         }
-        val suggestions = paths.map(::toContextEntry)
+        val suggestions = subagents + paths.map(::toContextEntry).map(MentionSuggestion::File)
         context.eventHub.publish(
             AppEvent.MentionSuggestionsUpdated(
                 query = normalizedQuery,

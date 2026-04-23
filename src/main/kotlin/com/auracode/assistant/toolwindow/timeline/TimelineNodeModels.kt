@@ -178,6 +178,21 @@ internal sealed interface TimelineNode {
         override val turnId: String?,
     ) : TimelineNode
 
+    /**
+     * Marks the visible boundary where the current tab switches to a different engine.
+     */
+    data class EngineSwitchedNode(
+        override val id: String,
+        override val sourceId: String,
+        val title: String,
+        val targetEngineLabel: String,
+        val body: String,
+        val iconPath: String,
+        val timestamp: Long?,
+        override val status: ItemStatus,
+        override val turnId: String?,
+    ) : TimelineNode
+
     data class LoadMoreNode(
         override val id: String = LOAD_MORE_NODE_ID,
         val isLoading: Boolean,
@@ -308,6 +323,16 @@ internal sealed interface TimelineMutation {
      */
     data class AppendError(
         val message: String,
+    ) : TimelineMutation
+
+    /**
+     * Inserts a local-only timeline marker after the user switches the active engine in place.
+     */
+    data class AppendEngineSwitched(
+        val sourceId: String,
+        val targetEngineLabel: String,
+        val body: String,
+        val timestamp: Long? = null,
     ) : TimelineMutation
 }
 

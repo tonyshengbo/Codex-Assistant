@@ -18,6 +18,8 @@ import com.auracode.assistant.protocol.ItemStatus
 import com.auracode.assistant.protocol.TurnOutcome
 import com.auracode.assistant.protocol.UnifiedApprovalRequest
 import com.auracode.assistant.protocol.UnifiedApprovalRequestKind
+import com.auracode.assistant.protocol.UnifiedAgentSnapshot
+import com.auracode.assistant.protocol.UnifiedAgentStatus
 import com.auracode.assistant.protocol.TurnUsage
 import com.auracode.assistant.protocol.UnifiedEvent
 import com.auracode.assistant.protocol.UnifiedFileChange
@@ -143,7 +145,7 @@ internal class CodexAppServerProvider(
                 diagnosticLogger = diagnosticLogger,
                 emitUnified = { event ->
                     trySend(event)
-                    if (event is UnifiedEvent.TurnCompleted) {
+                    if (shouldCompleteActiveTurn(active.turnId, event)) {
                         active.turnCompleted.complete(Unit)
                     }
                 },
@@ -163,7 +165,7 @@ internal class CodexAppServerProvider(
                     active = active,
                     emitUnified = { event ->
                         trySend(event)
-                        if (event is UnifiedEvent.TurnCompleted) {
+                        if (shouldCompleteActiveTurn(active.turnId, event)) {
                             active.turnCompleted.complete(Unit)
                         }
                     },
@@ -227,6 +229,7 @@ internal class CodexAppServerProvider(
             supportsResume = true,
             supportsAttachments = true,
             supportsImageInputs = true,
+            supportsSubagents = true,
         )
     }
 
@@ -249,11 +252,26 @@ internal class CodexAppServerProvider(
         private val requestId: String,
         private val diagnosticLogger: (String) -> Unit,
     ) {
+        /**
+         * Caches collaboration tool-call metadata so late wait/status updates can reuse
+         * the last known child-thread mapping even when the current payload omits it.
+         */
+        private data class CollabToolCallSnapshot(
+            val tool: String?,
+            val prompt: String?,
+            val receiverThreadIds: List<String>,
+            val agentStatesByThreadId: Map<String, JsonObject>,
+        )
+
         private val narrativeBuffers = mutableMapOf<String, StringBuilder>()
         private val activityOutputBuffers = mutableMapOf<String, StringBuilder>()
         private val planBuffers = mutableMapOf<String, StringBuilder>()
         private val itemSnapshots = mutableMapOf<String, UnifiedItem>()
+        private val subagentSnapshotsByThreadId = linkedMapOf<String, UnifiedAgentSnapshot>()
+        private val collabToolCallSnapshotsById = mutableMapOf<String, CollabToolCallSnapshot>()
+        private val collabToolCallSnapshotsBySenderThreadId = mutableMapOf<String, CollabToolCallSnapshot>()
         private val contextCompactionItemIdsByTurnId = mutableMapOf<String, String>()
+        private var parentTurnFailureEmitted = false
         private var activeTurnId: String? = null
         private var activeThreadId: String? = null
 
@@ -322,6 +340,8 @@ internal class CodexAppServerProvider(
 
                 "thread/compacted" -> parseThreadCompacted(params)
 
+                "thread/status/changed" -> parseThreadStatusChanged(params)
+
                 "turn/completed" -> {
                     val turn = params.objectValue("turn")
                     val turnId = turn?.string("id").orEmpty()
@@ -340,7 +360,16 @@ internal class CodexAppServerProvider(
                             outputTokens = it.int("outputTokens", "output_tokens"),
                         )
                     }
-                    listOf(UnifiedEvent.TurnCompleted(turnId = turnId, outcome = outcome, usage = usage))
+                    val threadId = params.string("threadId")
+                    if (threadId != null && isTrackedSubagentThread(threadId) && activeTurnId != turnId) {
+                        parseChildTurnCompleted(
+                            threadId = threadId,
+                            outcome = outcome,
+                            rawStatus = status,
+                        )
+                    } else {
+                        listOf(UnifiedEvent.TurnCompleted(turnId = turnId, outcome = outcome, usage = usage))
+                    }
                 }
 
                 "item/started",
@@ -537,6 +566,17 @@ internal class CodexAppServerProvider(
                     text = CodexMcpToolContentFormatter.formatBody(item),
                 )
 
+                normalizedType == "collabagenttoolcall" -> {
+                    rememberCollabToolCallSnapshot(item)
+                    UnifiedItem(
+                        id = sourceId,
+                        kind = ItemKind.TOOL_CALL,
+                        status = status,
+                        name = collabToolCallDisplayName(collabToolCallSnapshot(item)?.tool),
+                        text = formatCollabAgentToolCallBody(item),
+                    )
+                }
+
                 normalizedType.contains("commandexecution") -> {
                     val previousOutput = activityOutputBuffers[sourceId]?.toString().orEmpty()
                     UnifiedItem(
@@ -606,7 +646,72 @@ internal class CodexAppServerProvider(
                 )
             }
             itemSnapshots[sourceId] = result
+            if (normalizedType == "collabagenttoolcall") {
+                return buildList {
+                    add(UnifiedEvent.ItemUpdated(result))
+                    buildSubagentUpdatedEvent(item)?.let(::add)
+                }
+            }
             return listOf(UnifiedEvent.ItemUpdated(result))
+        }
+
+        /**
+         * Maps Codex thread status notifications into the current subagent snapshot list.
+         */
+        private fun parseThreadStatusChanged(params: JsonObject): List<UnifiedEvent> {
+            val threadId = params.string("threadId") ?: return emptyList()
+            val existing = subagentSnapshotsByThreadId[threadId] ?: return emptyList()
+            val rawStatus = params.objectValue("status")?.string("type")
+                ?: params.string("status")
+                ?: return emptyList()
+            val updated = existing.copy(
+                status = normalizeSubagentStatus(rawStatus),
+                statusText = rawStatus.trim().ifBlank { existing.statusText },
+                updatedAt = System.currentTimeMillis(),
+            )
+            subagentSnapshotsByThreadId[threadId] = updated
+            val events = mutableListOf<UnifiedEvent>(
+                UnifiedEvent.SubagentsUpdated(
+                    threadId = activeThreadId,
+                    turnId = activeTurnId,
+                    agents = currentSubagentSnapshots(),
+                ),
+            )
+            maybeBuildParentTurnFailureCompletion(threadId = threadId, rawStatus = rawStatus)?.let(events::add)
+            return events
+        }
+
+        /**
+         * Converts a child-thread terminal turn into a subagent snapshot refresh instead of a
+         * top-level timeline completion event.
+         */
+        private fun parseChildTurnCompleted(
+            threadId: String,
+            outcome: TurnOutcome,
+            rawStatus: String?,
+        ): List<UnifiedEvent> {
+            val existing = subagentSnapshotsByThreadId[threadId] ?: return emptyList()
+            val effectiveStatus = rawStatus?.trim()?.takeIf { it.isNotBlank() } ?: when (outcome) {
+                TurnOutcome.SUCCESS -> "completed"
+                TurnOutcome.CANCELLED -> "interrupted"
+                TurnOutcome.FAILED -> "failed"
+                TurnOutcome.RUNNING -> "running"
+            }
+            val updated = existing.copy(
+                status = normalizeSubagentStatus(effectiveStatus),
+                statusText = effectiveStatus,
+                updatedAt = System.currentTimeMillis(),
+            )
+            subagentSnapshotsByThreadId[threadId] = updated
+            val events = mutableListOf<UnifiedEvent>(
+                UnifiedEvent.SubagentsUpdated(
+                    threadId = activeThreadId,
+                    turnId = activeTurnId,
+                    agents = currentSubagentSnapshots(),
+                ),
+            )
+            maybeBuildParentTurnFailureCompletion(threadId = threadId, rawStatus = effectiveStatus)?.let(events::add)
+            return events
         }
 
         private fun parseThreadCompacted(params: JsonObject): List<UnifiedEvent> {
@@ -736,6 +841,282 @@ internal class CodexAppServerProvider(
                 ?: item.objectValue("content")?.string("text")
                 ?: item.arrayValue("content")?.firstTextBlock()
                 ?: ""
+        }
+
+        /**
+         * Formats collaboration tool payloads into readable lines so wait/spawn tool
+         * nodes keep the child-thread failure details visible in the timeline.
+         */
+        private fun formatCollabAgentToolCallBody(item: JsonObject): String {
+            val snapshot = collabToolCallSnapshot(item)
+            val lines = mutableListOf<String>()
+            snapshot?.tool
+                ?.trim()
+                ?.takeIf { it.isNotBlank() }
+                ?.let { lines += "- Tool: `$it`" }
+            snapshot?.prompt
+                ?.trim()
+                ?.takeIf { it.isNotBlank() }
+                ?.let { lines += "- Prompt: $it" }
+            val receiverThreadIds = snapshot?.receiverThreadIds.orEmpty()
+            if (receiverThreadIds.isNotEmpty()) {
+                lines += "- Agent Threads: ${receiverThreadIds.joinToString(", ") { "`$it`" }}"
+            }
+            val agentStates = snapshot?.agentStatesByThreadId.orEmpty()
+            receiverThreadIds.forEach { threadId ->
+                val state = agentStates[threadId] ?: return@forEach
+                state.string("status")
+                    ?.trim()
+                    ?.takeIf { it.isNotBlank() }
+                    ?.let { lines += "- Agent Status: `$threadId` -> `$it`" }
+                state.string("message")
+                    ?.trim()
+                    ?.takeIf { it.isNotBlank() }
+                    ?.let { lines += "- Agent Message: `$threadId` -> $it" }
+            }
+            return lines.joinToString("\n")
+        }
+
+        /**
+         * Converts raw collaboration tool names into stable timeline-facing titles.
+         */
+        private fun collabToolCallDisplayName(rawTool: String?): String {
+            return when (rawTool?.trim()?.lowercase()) {
+                "spawnagent" -> "Dispatch Agent"
+                "wait", "wait_agent" -> "Wait Agent"
+                "sendinput", "send_input" -> "Message Agent"
+                "closeagent", "close_agent" -> "Close Agent"
+                "resumeagent", "resume_agent" -> "Resume Agent"
+                else -> rawTool
+                    ?.trim()
+                    ?.takeIf { it.isNotBlank() }
+                    ?.replace(Regex("([a-z])([A-Z])"), "$1 $2")
+                    ?.replace('_', ' ')
+                    ?.replaceFirstChar { it.uppercase() }
+                    ?: "Tool Call"
+            }
+        }
+
+        /**
+         * Builds a normalized subagent snapshot update from Codex collaboration payloads.
+         */
+        private fun buildSubagentUpdatedEvent(item: JsonObject): UnifiedEvent.SubagentsUpdated? {
+            val snapshot = collabToolCallSnapshot(item)
+            val receiverThreadIds = snapshot?.receiverThreadIds.orEmpty()
+            val agentStates = snapshot?.agentStatesByThreadId.orEmpty()
+            val prompt = snapshot?.prompt.orEmpty()
+            if (receiverThreadIds.isEmpty()) {
+                return null
+            }
+            receiverThreadIds.forEach { threadId ->
+                val state = agentStates[threadId]
+                val displayName = deriveSubagentDisplayName(prompt)
+                val mentionSlug = ensureUniqueMentionSlug(
+                    baseSlug = deriveSubagentMentionSlug(prompt),
+                    threadId = threadId,
+                )
+                val rawStatus = state?.string("status").orEmpty()
+                val summary = state?.string("message")
+                    ?.trim()
+                    ?.takeIf(String::isNotBlank)
+                    ?: prompt.trim().takeIf(String::isNotBlank)
+                subagentSnapshotsByThreadId[threadId] = UnifiedAgentSnapshot(
+                    threadId = threadId,
+                    displayName = displayNameForSlug(mentionSlug, displayName),
+                    mentionSlug = mentionSlug,
+                    status = normalizeSubagentStatus(rawStatus),
+                    statusText = rawStatus.ifBlank { "pending" },
+                    summary = summary,
+                    updatedAt = System.currentTimeMillis(),
+                )
+            }
+            return UnifiedEvent.SubagentsUpdated(
+                threadId = activeThreadId,
+                turnId = activeTurnId,
+                agents = currentSubagentSnapshots(),
+            )
+        }
+
+        /**
+         * Returns a stable, UI-ready snapshot order for the current session subagents.
+         */
+        private fun currentSubagentSnapshots(): List<UnifiedAgentSnapshot> {
+            return subagentSnapshotsByThreadId.values.sortedWith(
+                compareBy<UnifiedAgentSnapshot> { statusSortOrder(it.status) }
+                    .thenByDescending { it.updatedAt },
+            )
+        }
+
+        /**
+         * Normalizes raw Codex collaboration status strings into shared UI states.
+         */
+        private fun normalizeSubagentStatus(rawStatus: String?): UnifiedAgentStatus {
+            return when (rawStatus?.trim()?.lowercase()) {
+                "active", "running", "inprogress", "in_progress" -> UnifiedAgentStatus.ACTIVE
+                "idle" -> UnifiedAgentStatus.IDLE
+                "pending", "pendinginit", "pending_init", "queued" -> UnifiedAgentStatus.PENDING
+                "systemerror", "errored", "error", "failed", "interrupted", "declined" -> UnifiedAgentStatus.FAILED
+                "completed", "success", "succeeded", "done" -> UnifiedAgentStatus.COMPLETED
+                else -> UnifiedAgentStatus.UNKNOWN
+            }
+        }
+
+        /**
+         * Derives a compact mention slug from the original collaboration prompt.
+         */
+        private fun deriveSubagentMentionSlug(prompt: String): String {
+            val lower = prompt.lowercase()
+            val base = when {
+                "review" in lower -> "review-agent"
+                "search" in lower -> "search-agent"
+                "fix" in lower -> "fix-agent"
+                "plan" in lower -> "plan-agent"
+                "test" in lower -> "test-agent"
+                else -> "agent"
+            }
+            return base
+        }
+
+        /**
+         * Derives a human-readable display name from the collaboration prompt.
+         */
+        private fun deriveSubagentDisplayName(prompt: String): String {
+            return displayNameForSlug(deriveSubagentMentionSlug(prompt), null)
+        }
+
+        /**
+         * Ensures mention slugs stay unique inside one main session even when multiple agents share a role.
+         */
+        private fun ensureUniqueMentionSlug(baseSlug: String, threadId: String): String {
+            val existing = subagentSnapshotsByThreadId[threadId]?.mentionSlug
+            if (!existing.isNullOrBlank()) return existing
+            if (subagentSnapshotsByThreadId.values.none { it.mentionSlug == baseSlug }) {
+                return baseSlug
+            }
+            var suffix = 2
+            while (subagentSnapshotsByThreadId.values.any { it.mentionSlug == "$baseSlug-$suffix" }) {
+                suffix += 1
+            }
+            return "$baseSlug-$suffix"
+        }
+
+        /**
+         * Formats a display name from the mention slug while allowing an explicit preferred label.
+         */
+        private fun displayNameForSlug(slug: String, preferredName: String?): String {
+            if (!preferredName.isNullOrBlank()) {
+                return preferredName
+            }
+            return slug.split('-')
+                .filter { it.isNotBlank() }
+                .joinToString(" ") { token -> token.replaceFirstChar { it.uppercase() } }
+        }
+
+        /**
+         * Provides stable UI ordering for the collapsed tray and mention popup.
+         */
+        private fun statusSortOrder(status: UnifiedAgentStatus): Int {
+            return when (status) {
+                UnifiedAgentStatus.ACTIVE -> 0
+                UnifiedAgentStatus.IDLE -> 1
+                UnifiedAgentStatus.PENDING -> 2
+                UnifiedAgentStatus.FAILED -> 3
+                UnifiedAgentStatus.COMPLETED -> 4
+                UnifiedAgentStatus.UNKNOWN -> 5
+            }
+        }
+
+        /**
+         * Resolves the main thread that initiated a collaboration tool call.
+         */
+        private fun collabToolCallSenderThreadId(item: JsonObject): String? {
+            return item.string("senderThreadId")
+                ?.trim()
+                ?.takeIf { it.isNotBlank() }
+                ?: activeThreadId?.trim()?.takeIf { it.isNotBlank() }
+        }
+
+        /**
+         * Merges the latest collaboration payload with any cached call snapshot for the same item id.
+         */
+        private fun collabToolCallSnapshot(item: JsonObject): CollabToolCallSnapshot? {
+            val rawId = item.string("id")?.trim()?.takeIf { it.isNotBlank() }
+            val cached = rawId?.let(collabToolCallSnapshotsById::get)
+            val senderThreadId = collabToolCallSenderThreadId(item)
+            val senderCached = senderThreadId?.let(collabToolCallSnapshotsBySenderThreadId::get)
+            val receiverThreadIds = item.arrayValue("receiverThreadIds")
+                ?.mapNotNull { it.jsonPrimitive.contentOrNull?.trim()?.takeIf(String::isNotBlank) }
+                .orEmpty()
+                .ifEmpty { cached?.receiverThreadIds.orEmpty() }
+                .ifEmpty { senderCached?.receiverThreadIds.orEmpty() }
+            val currentStates = item.objectValue("agentsStates")
+                ?.entries
+                ?.mapNotNull { (threadId, value) ->
+                    val state = value as? JsonObject ?: return@mapNotNull null
+                    threadId.trim().takeIf(String::isNotBlank)?.let { it to state }
+                }
+                ?.toMap()
+                .orEmpty()
+            val mergedStates = linkedMapOf<String, JsonObject>()
+            senderCached?.agentStatesByThreadId?.forEach { (threadId, state) -> mergedStates[threadId] = state }
+            cached?.agentStatesByThreadId?.forEach { (threadId, state) -> mergedStates[threadId] = state }
+            currentStates.forEach { (threadId, state) -> mergedStates[threadId] = state }
+            return CollabToolCallSnapshot(
+                tool = item.string("tool") ?: cached?.tool ?: senderCached?.tool,
+                prompt = item.string("prompt") ?: cached?.prompt ?: senderCached?.prompt,
+                receiverThreadIds = receiverThreadIds,
+                agentStatesByThreadId = mergedStates,
+            )
+        }
+
+        /**
+         * Refreshes the collaboration cache whenever a spawn/wait item reports new child metadata.
+         */
+        private fun rememberCollabToolCallSnapshot(item: JsonObject) {
+            val rawId = item.string("id")?.trim()?.takeIf { it.isNotBlank() } ?: return
+            collabToolCallSnapshot(item)?.let { snapshot ->
+                collabToolCallSnapshotsById[rawId] = snapshot
+                collabToolCallSenderThreadId(item)?.let { senderThreadId ->
+                    collabToolCallSnapshotsBySenderThreadId[senderThreadId] = snapshot
+                }
+            }
+        }
+
+        /**
+         * Synthesizes a parent turn failure once a tracked child thread reaches a terminal failure state.
+         */
+        private fun maybeBuildParentTurnFailureCompletion(
+            threadId: String,
+            rawStatus: String,
+        ): UnifiedEvent.TurnCompleted? {
+            val normalizedTurnId = activeTurnId?.trim().orEmpty()
+            if (parentTurnFailureEmitted || normalizedTurnId.isBlank()) {
+                return null
+            }
+            if (!isTrackedSubagentThread(threadId) || !isTerminalFailedSubagentStatus(rawStatus)) {
+                return null
+            }
+            parentTurnFailureEmitted = true
+            return UnifiedEvent.TurnCompleted(
+                turnId = normalizedTurnId,
+                outcome = TurnOutcome.FAILED,
+                usage = null,
+            )
+        }
+
+        /**
+         * Returns true when the thread id belongs to a child collaboration thread tracked for this turn.
+         */
+        private fun isTrackedSubagentThread(threadId: String): Boolean {
+            return subagentSnapshotsByThreadId.containsKey(threadId) ||
+                collabToolCallSnapshotsById.values.any { snapshot -> threadId in snapshot.receiverThreadIds }
+        }
+
+        /**
+         * Limits parent turn auto-completion to child failures that cannot recover automatically.
+         */
+        private fun isTerminalFailedSubagentStatus(rawStatus: String): Boolean {
+            return normalizeSubagentStatus(rawStatus) == UnifiedAgentStatus.FAILED
         }
 
         private fun extractWebSearchText(item: JsonObject): String? {
@@ -972,4 +1353,18 @@ internal class CodexAppServerProvider(
     companion object {
         private val LOG = Logger.getInstance(CodexAppServerProvider::class.java)
     }
+}
+
+/**
+ * Accepts only the current request turn as the completion signal so nested child-agent
+ * completions cannot release the parent request lifecycle early.
+ */
+internal fun shouldCompleteActiveTurn(
+    activeTurnId: String?,
+    event: UnifiedEvent,
+): Boolean {
+    if (event !is UnifiedEvent.TurnCompleted) return false
+    val active = activeTurnId?.trim().orEmpty()
+    val completed = event.turnId.trim()
+    return active.isNotBlank() && completed.isNotBlank() && active == completed
 }

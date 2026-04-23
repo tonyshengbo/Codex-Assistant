@@ -249,3 +249,25 @@ internal fun TimelineErrorItem(
         onOpenMarkdownFilePath = onOpenMarkdownFilePath,
     )
 }
+
+@Composable
+internal fun TimelineEngineSwitchedItem(
+    node: TimelineNode.EngineSwitchedNode,
+    palette: DesignPalette,
+    expanded: Boolean,
+    onToggleExpanded: () -> Unit,
+    onOpenMarkdownFilePath: ((String) -> Unit)? = null,
+) {
+    TimelineMarkdownActivityBody(
+        title = node.title,
+        titleIconPath = node.iconPath,
+        headerBadge = node.targetEngineLabel,
+        body = node.body,
+        status = node.status,
+        expanded = expanded,
+        palette = palette,
+        onToggleExpanded = onToggleExpanded,
+        accentColor = palette.accent,
+        onOpenMarkdownFilePath = onOpenMarkdownFilePath,
+    )
+}
