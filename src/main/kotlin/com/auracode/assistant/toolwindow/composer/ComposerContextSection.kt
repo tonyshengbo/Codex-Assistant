@@ -25,7 +25,6 @@ import androidx.compose.ui.unit.dp
 import com.auracode.assistant.i18n.AuraCodeBundle
 import com.auracode.assistant.toolwindow.eventing.UiIntent
 import com.auracode.assistant.toolwindow.shared.DesignPalette
-import com.auracode.assistant.toolwindow.shared.FileTypeIcon
 import com.auracode.assistant.toolwindow.shared.HoverTooltip
 import com.auracode.assistant.toolwindow.shared.assistantUiTokens
 
@@ -148,7 +147,11 @@ private fun ContextEntryChip(
         modifier = Modifier.background(p.topStripBg, RoundedCornerShape(999.dp)).padding(horizontal = t.spacing.sm, vertical = t.spacing.xs),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        FileTypeIcon(fileName = entry.iconFileName(), tint = p.textSecondary)
+        ComposerFileTypeIcon(
+            fileName = entry.iconFileName(),
+            tint = p.textSecondary,
+            tokens = t,
+        )
         Spacer(Modifier.width(t.spacing.xs))
         Text(
             text = entry.displayName,

@@ -119,7 +119,10 @@ internal class CodexProcessAppServerSession(
         writer.flush()
     }
 
-    private fun handleLine(line: String) {
+    /**
+     * Dispatches one app-server line while preserving notification order from the wire.
+     */
+    private suspend fun handleLine(line: String) {
         val trimmed = line.trim()
         if (trimmed.isEmpty()) return
         diagnosticLogger("Codex app-server recv: ${trimmed.take(4000)}")
@@ -138,9 +141,7 @@ internal class CodexProcessAppServerSession(
             return
         }
         if (method != null) {
-            callbackScope.launch(label = "notification:$method") {
-                onNotification(method, obj.objectValue("params") ?: buildJsonObject {})
-            }
+            onNotification(method, obj.objectValue("params") ?: buildJsonObject {})
         }
     }
 }
