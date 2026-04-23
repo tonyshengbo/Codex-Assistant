@@ -2,7 +2,6 @@ package com.auracode.assistant.provider.codex
 
 import com.auracode.assistant.coroutine.AppCoroutineManager
 import com.auracode.assistant.coroutine.ManagedCoroutineScope
-import com.auracode.assistant.model.AgentApprovalMode
 import com.auracode.assistant.model.AgentCollaborationMode
 import com.auracode.assistant.model.AgentRequest
 import com.auracode.assistant.protocol.UnifiedApprovalRequest
@@ -13,7 +12,9 @@ import com.auracode.assistant.toolwindow.approval.ApprovalAction
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
@@ -108,6 +109,9 @@ internal class CodexAppServerConversationBridge(
             return
         }
         if (method !in APPROVAL_METHODS) {
+            if (looksLikeApprovalMethod(method)) {
+                diagnosticLogger("Codex app-server sent an unsupported approval-like request: $method")
+            }
             scope.launch(label = "autoApprove:$method") {
                 runCatching {
                     session.respond(
@@ -160,28 +164,36 @@ internal class CodexAppServerConversationBridge(
         params: JsonObject,
     ): UnifiedApprovalRequest {
         val itemId = scopedApprovalItemId(params.string("itemId") ?: params.string("item_id") ?: serverRequestId)
+        val legacyCallId = params.string("callId") ?: params.string("call_id")
+        val effectiveItemId = scopedApprovalItemId(
+            params.string("itemId") ?: params.string("item_id") ?: legacyCallId ?: serverRequestId,
+        )
         val turnId = params.string("turnId") ?: params.string("turn_id") ?: active.turnId
         return when (method) {
-            "item/commandExecution/requestApproval" -> UnifiedApprovalRequest(
+            "item/commandExecution/requestApproval",
+            "execCommandApproval",
+            -> UnifiedApprovalRequest(
                 requestId = serverRequestId,
                 turnId = turnId,
-                itemId = itemId,
+                itemId = effectiveItemId,
                 kind = UnifiedApprovalRequestKind.COMMAND,
                 title = "Run command",
                 body = listOfNotNull(
                     params.string("reason"),
-                    params.string("command"),
+                    extractCommandText(params),
                     params.string("cwd")?.let { "cwd: $it" },
                 ).joinToString("\n").ifBlank { "Command execution requires approval." },
-                command = params.string("command"),
+                command = extractCommandText(params),
                 cwd = params.string("cwd"),
                 allowForSession = true,
             )
 
-            "item/fileChange/requestApproval" -> UnifiedApprovalRequest(
+            "item/fileChange/requestApproval",
+            "applyPatchApproval",
+            -> UnifiedApprovalRequest(
                 requestId = serverRequestId,
                 turnId = turnId,
-                itemId = itemId,
+                itemId = effectiveItemId,
                 kind = UnifiedApprovalRequestKind.FILE_CHANGE,
                 title = "Apply file changes",
                 body = params.string("reason").orEmpty().ifBlank { "File changes require approval." },
@@ -212,6 +224,10 @@ internal class CodexAppServerConversationBridge(
                 "item/fileChange/requestApproval",
                 -> put("decision", commandOrFileDecision(decision))
 
+                "execCommandApproval",
+                "applyPatchApproval",
+                -> put("decision", legacyCommandOrFileDecision(decision))
+
                 "item/permissions/requestApproval" -> {
                     put(
                         "permissions",
@@ -239,6 +255,30 @@ internal class CodexAppServerConversationBridge(
             ApprovalAction.ALLOW -> "accept"
             ApprovalAction.REJECT -> "decline"
             ApprovalAction.ALLOW_FOR_SESSION -> "acceptForSession"
+        }
+    }
+
+    /**
+     * Maps Aura approval actions to the legacy ReviewDecision strings expected by older app-server flows.
+     */
+    private fun legacyCommandOrFileDecision(decision: ApprovalAction): String {
+        return when (decision) {
+            ApprovalAction.ALLOW -> "approved"
+            ApprovalAction.REJECT -> "denied"
+            ApprovalAction.ALLOW_FOR_SESSION -> "approved_for_session"
+        }
+    }
+
+    /**
+     * Extracts a readable command string from either the v2 text payload or the legacy v1 argument array.
+     */
+    private fun extractCommandText(params: JsonObject): String? {
+        return when (val command = params["command"]) {
+            is JsonPrimitive -> command.contentOrNull?.takeIf { it.isNotBlank() }
+            is JsonArray -> command.mapNotNull { (it as? JsonPrimitive)?.contentOrNull }
+                .takeIf { it.isNotEmpty() }
+                ?.joinToString(" ")
+            else -> null
         }
     }
 
@@ -271,6 +311,15 @@ internal class CodexAppServerConversationBridge(
             "item/commandExecution/requestApproval",
             "item/fileChange/requestApproval",
             "item/permissions/requestApproval",
+            "execCommandApproval",
+            "applyPatchApproval",
         )
+
+        /**
+         * Flags methods that look like approval requests so unsupported protocol changes do not fail silently.
+         */
+        fun looksLikeApprovalMethod(method: String): Boolean {
+            return method.contains("Approval", ignoreCase = true) || method.endsWith("/requestApproval")
+        }
     }
 }

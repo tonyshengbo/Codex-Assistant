@@ -1,5 +1,6 @@
 package com.auracode.assistant.toolwindow.composer
 
+import com.auracode.assistant.toolwindow.eventing.ComposerMode
 import com.auracode.assistant.toolwindow.eventing.UiIntent
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -82,6 +83,14 @@ class ComposerControlBarTest {
                 planModeAvailable = false,
                 disabledReason = "Plan mode is not available for Claude yet.",
             ),
+        )
+    }
+
+    @Test
+    fun `approval mode tooltip explains workspace write approvals`() {
+        assertEquals(
+            "Approval mode is enabled. Codex uses a workspace-write sandbox and asks when approval is required.",
+            resolveExecutionModeTooltip(ComposerMode.APPROVAL),
         )
     }
 }

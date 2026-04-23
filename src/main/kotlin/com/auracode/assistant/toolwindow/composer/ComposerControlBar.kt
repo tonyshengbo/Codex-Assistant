@@ -32,6 +32,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.auracode.assistant.i18n.AuraCodeBundle
+import com.auracode.assistant.toolwindow.eventing.ComposerMode
 import com.auracode.assistant.toolwindow.eventing.ComposerReasoning
 import com.auracode.assistant.toolwindow.eventing.UiIntent
 import com.auracode.assistant.toolwindow.eventing.localizedLabel
@@ -218,15 +219,11 @@ internal fun ComposerControlBar(
         )
         Spacer(Modifier.width(t.spacing.sm))
         HoverTooltip(
-            text = if (state.executionMode == com.auracode.assistant.toolwindow.eventing.ComposerMode.AUTO) {
-                AuraCodeBundle.message("composer.mode.auto.tooltip.enabled")
-            } else {
-                AuraCodeBundle.message("composer.mode.auto.tooltip.disabled")
-            },
+            text = resolveExecutionModeTooltip(state.executionMode),
         ) {
             ToggleChip(
                 label = AuraCodeBundle.message("composer.mode.auto"),
-                enabled = state.executionMode == com.auracode.assistant.toolwindow.eventing.ComposerMode.AUTO,
+                enabled = state.executionMode == ComposerMode.AUTO,
                 interactive = true,
                 p = p,
                 onClick = { onIntent(UiIntent.ToggleExecutionMode) },
@@ -264,6 +261,16 @@ internal fun ComposerControlBar(
                 onClick = { onIntent(trailingActionState.intent) },
             )
         }
+    }
+}
+
+/**
+ * Resolves the execution mode tooltip text so the UI stays aligned with the active approval behavior.
+ */
+internal fun resolveExecutionModeTooltip(executionMode: ComposerMode): String {
+    return when (executionMode) {
+        ComposerMode.AUTO -> AuraCodeBundle.message("composer.mode.auto.tooltip.enabled")
+        ComposerMode.APPROVAL -> AuraCodeBundle.message("composer.mode.auto.tooltip.disabled")
     }
 }
 

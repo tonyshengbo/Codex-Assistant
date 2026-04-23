@@ -1,6 +1,5 @@
 package com.auracode.assistant.provider.codex
 
-import com.auracode.assistant.model.AgentApprovalMode
 import com.auracode.assistant.model.AgentCollaborationMode
 import com.auracode.assistant.model.AgentRequest
 import com.auracode.assistant.settings.skills.RuntimeSkillRecord
@@ -21,14 +20,15 @@ internal class CodexAppServerClient(
     /** Starts or resumes the target thread and returns its thread id. */
     suspend fun ensureThread(request: AgentRequest): String {
         val existingThreadId = request.remoteConversationId?.trim().orEmpty()
+        val executionProfile = resolveCodexAppServerExecutionProfile(request.approvalMode)
         val result = if (existingThreadId.isBlank()) {
             session.request(
                 method = "thread/start",
                 params = buildJsonObject {
                     request.model?.takeIf { it.isNotBlank() }?.let { put("model", it) }
                     put("cwd", request.workingDirectory)
-                    put("approvalPolicy", approvalPolicy(request.approvalMode))
-                    put("sandbox", buildThreadSandboxMode())
+                    put("approvalPolicy", executionProfile.approvalPolicy)
+                    put("sandbox", buildThreadSandboxMode(executionProfile.sandboxMode))
                 },
             )
         } else {
@@ -38,6 +38,8 @@ internal class CodexAppServerClient(
                     put("threadId", existingThreadId)
                     put("cwd", request.workingDirectory)
                     request.model?.takeIf { it.isNotBlank() }?.let { put("model", it) }
+                    put("approvalPolicy", executionProfile.approvalPolicy)
+                    put("sandbox", buildThreadSandboxMode(executionProfile.sandboxMode))
                 },
             )
         }
@@ -50,6 +52,7 @@ internal class CodexAppServerClient(
 
     /** Starts one conversation turn and returns the server-issued turn id if present. */
     suspend fun startTurn(request: AgentRequest, threadId: String): String? {
+        val executionProfile = resolveCodexAppServerExecutionProfile(request.approvalMode)
         val result = session.request(
             method = "turn/start",
             params = buildJsonObject {
@@ -60,8 +63,8 @@ internal class CodexAppServerClient(
                 buildCollaborationModePayload(request.collaborationMode, request.model, request.reasoningEffort)
                     ?.let { put("collaborationMode", it) }
                 put("cwd", request.workingDirectory)
-                put("approvalPolicy", approvalPolicy(request.approvalMode))
-                put("sandboxPolicy", buildTurnSandboxPolicy(request.workingDirectory))
+                put("approvalPolicy", executionProfile.approvalPolicy)
+                put("sandboxPolicy", buildTurnSandboxPolicy(request.workingDirectory, executionProfile.sandboxMode))
             },
         )
         return result.objectValue("turn")?.string("id")
@@ -165,13 +168,6 @@ internal class CodexAppServerClient(
                     },
                 )
             }
-        }
-    }
-
-    private fun approvalPolicy(mode: AgentApprovalMode): String {
-        return when (mode) {
-            AgentApprovalMode.AUTO -> "never"
-            AgentApprovalMode.REQUIRE_CONFIRMATION -> "on-request"
         }
     }
 

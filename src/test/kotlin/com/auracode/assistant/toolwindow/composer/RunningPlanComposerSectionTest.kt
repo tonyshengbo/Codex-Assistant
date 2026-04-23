@@ -55,11 +55,13 @@ class RunningPlanComposerSectionTest {
     fun `progress badge chrome stays visually quiet and compact`() {
         val chrome = runningPlanProgressBadgeChrome()
 
-        assertEquals(4.dp, chrome.horizontalPadding)
+        assertEquals(5.dp, chrome.horizontalPadding)
         assertEquals(0.dp, chrome.verticalPadding)
+        assertEquals(34.dp, chrome.minWidth)
+        assertEquals(18.dp, chrome.minHeight)
         assertEquals(999.dp, chrome.cornerRadius)
-        assertEquals(0.04f, chrome.backgroundAlpha)
-        assertEquals(0.12f, chrome.borderAlpha)
+        assertEquals(0.16f, chrome.backgroundAlpha)
+        assertEquals(0.24f, chrome.borderAlpha)
     }
 
     @Test

@@ -44,6 +44,8 @@ import com.auracode.assistant.toolwindow.shared.assistantUiTokens
 internal data class RunningPlanProgressBadgeChrome(
     val horizontalPadding: androidx.compose.ui.unit.Dp,
     val verticalPadding: androidx.compose.ui.unit.Dp,
+    val minWidth: androidx.compose.ui.unit.Dp,
+    val minHeight: androidx.compose.ui.unit.Dp,
     val cornerRadius: androidx.compose.ui.unit.Dp,
     val backgroundAlpha: Float,
     val borderAlpha: Float,
@@ -89,15 +91,17 @@ internal fun runningPlanHeaderSummary(state: ComposerRunningPlanState): RunningP
 }
 
 /**
- * Keeps the progress badge visually secondary so it doesn't overpower the step text.
+ * Keeps the progress badge centered, compact, and slightly brighter than the surrounding chrome.
  */
 internal fun runningPlanProgressBadgeChrome(): RunningPlanProgressBadgeChrome {
     return RunningPlanProgressBadgeChrome(
-        horizontalPadding = 4.dp,
+        horizontalPadding = 5.dp,
         verticalPadding = 0.dp,
+        minWidth = 34.dp,
+        minHeight = 18.dp,
         cornerRadius = 999.dp,
-        backgroundAlpha = 0.04f,
-        borderAlpha = 0.12f,
+        backgroundAlpha = 0.16f,
+        borderAlpha = 0.24f,
     )
 }
 
@@ -251,13 +255,15 @@ private fun RowScope.RunningPlanProgressBadge(
     val chrome = runningPlanProgressBadgeChrome()
     Box(
         modifier = Modifier
+            .defaultMinSize(minWidth = chrome.minWidth, minHeight = chrome.minHeight)
             .background(p.topStripBg.copy(alpha = chrome.backgroundAlpha), RoundedCornerShape(chrome.cornerRadius))
             .border(1.dp, p.markdownDivider.copy(alpha = chrome.borderAlpha), RoundedCornerShape(chrome.cornerRadius))
             .padding(horizontal = chrome.horizontalPadding, vertical = chrome.verticalPadding),
+        contentAlignment = Alignment.Center,
     ) {
         Text(
             text = label,
-            color = p.textMuted,
+            color = p.textSecondary,
             fontSize = 10.sp,
             fontWeight = FontWeight.Medium,
             maxLines = 1,

@@ -1527,7 +1527,7 @@ class AreaStoresTest {
             }
             .toMap()
         assertEquals("Switch the composer into plan mode.", initialDescriptions["/plan"])
-        assertEquals("Switch execution mode to approval.", initialDescriptions["/auto"])
+        assertEquals("Switch execution mode to approval with a workspace-write sandbox.", initialDescriptions["/auto"])
         assertEquals("Start a new session.", initialDescriptions["/new"])
 
         store.onEvent(AppEvent.UiIntentPublished(UiIntent.TogglePlanMode))

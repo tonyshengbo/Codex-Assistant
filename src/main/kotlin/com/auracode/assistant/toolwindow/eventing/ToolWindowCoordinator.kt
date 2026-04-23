@@ -91,7 +91,7 @@ internal class ToolWindowCoordinator(
         private val LOG = Logger.getInstance(ToolWindowCoordinator::class.java)
         private const val MENTION_LIMIT: Int = 10
         private const val EXECUTE_APPROVED_PLAN_PROMPT: String =
-            "The user approved the latest plan. Execute it now. Unless blocked, do not re-plan."
+            "The user approved the latest plan. Execute it now."
     }
 
     private val scope: ManagedCoroutineScope = AppCoroutineManager.createScope(
