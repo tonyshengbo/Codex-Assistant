@@ -11,12 +11,17 @@ internal interface ClaudeStreamJsonSession {
         onStderrLine: suspend (String) -> Unit,
     ): Int
 
+    /** 向 Claude CLI 的 stdin 写入一行 JSON，用于发送 control_response。 */
+    suspend fun writeStdin(line: String)
+
     fun cancel()
 }
 
 internal class ProcessClaudeStreamJsonSession(
     private val process: Process,
 ) : ClaudeStreamJsonSession {
+    private val stdinWriter = process.outputStream.bufferedWriter(Charsets.UTF_8)
+
     override suspend fun collect(
         onStdoutLine: suspend (String) -> Unit,
         onStderrLine: suspend (String) -> Unit,
@@ -42,6 +47,14 @@ internal class ProcessClaudeStreamJsonSession(
         val exitCode = withContext(Dispatchers.IO) { process.waitFor() }
         stderrJob.join()
         exitCode
+    }
+
+    override suspend fun writeStdin(line: String) {
+        withContext(Dispatchers.IO) {
+            stdinWriter.write(line)
+            stdinWriter.newLine()
+            stdinWriter.flush()
+        }
     }
 
     override fun cancel() {

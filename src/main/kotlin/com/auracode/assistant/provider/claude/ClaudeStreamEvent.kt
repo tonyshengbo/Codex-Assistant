@@ -177,4 +177,12 @@ internal sealed interface ClaudeStreamEvent {
         val message: String,
         val sessionId: String? = null,
     ) : ClaudeStreamEvent
+
+    /** 表示 Claude CLI 发出的工具授权请求（control_request/can_use_tool）。 */
+    data class ControlRequest(
+        val requestId: String,
+        val toolName: String,
+        val toolInput: Map<String, String>,
+        val sessionId: String? = null,
+    ) : ClaudeStreamEvent
 }

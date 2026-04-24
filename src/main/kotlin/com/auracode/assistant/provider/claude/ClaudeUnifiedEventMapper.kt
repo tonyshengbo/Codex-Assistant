@@ -5,6 +5,8 @@ import com.auracode.assistant.protocol.ItemKind
 import com.auracode.assistant.protocol.ItemStatus
 import com.auracode.assistant.protocol.TurnOutcome
 import com.auracode.assistant.protocol.TurnUsage
+import com.auracode.assistant.protocol.UnifiedApprovalRequest
+import com.auracode.assistant.protocol.UnifiedApprovalRequestKind
 import com.auracode.assistant.protocol.UnifiedEvent
 import com.auracode.assistant.protocol.UnifiedItem
 
@@ -77,22 +79,39 @@ internal class ClaudeUnifiedEventMapper(
             }
 
             is ClaudeConversationEvent.AssistantTextUpdated -> {
-                latestAssistantText = event.text
+                val (thinkingText, mainText) = splitThinkingFromText(event.text)
+                latestAssistantText = mainText.ifBlank { event.text }
                 latestAssistantMessageId = event.messageId.trim().takeIf { it.isNotBlank() } ?: latestAssistantMessageId
                 buildList {
                     maybeEmitThreadStarted(this)
                     maybeEmitTurnStarted(this)
-                    add(
-                        UnifiedEvent.ItemUpdated(
-                            UnifiedItem(
-                                id = assistantItemId(event.messageId),
-                                kind = ItemKind.NARRATIVE,
-                                status = if (event.completed) ItemStatus.SUCCESS else ItemStatus.RUNNING,
-                                name = "message",
-                                text = event.text,
+                    if (thinkingText.isNotBlank()) {
+                        val thinkingComplete = event.completed || event.text.contains("</thinking>")
+                        add(
+                            UnifiedEvent.ItemUpdated(
+                                UnifiedItem(
+                                    id = "${request.requestId}:reasoning:${event.messageId}",
+                                    kind = ItemKind.NARRATIVE,
+                                    status = if (thinkingComplete) ItemStatus.SUCCESS else ItemStatus.RUNNING,
+                                    name = "reasoning",
+                                    text = thinkingText,
+                                ),
                             ),
-                        ),
-                    )
+                        )
+                    }
+                    if (mainText.isNotBlank()) {
+                        add(
+                            UnifiedEvent.ItemUpdated(
+                                UnifiedItem(
+                                    id = assistantItemId(event.messageId),
+                                    kind = ItemKind.NARRATIVE,
+                                    status = if (event.completed) ItemStatus.SUCCESS else ItemStatus.RUNNING,
+                                    name = "message",
+                                    text = mainText,
+                                ),
+                            ),
+                        )
+                    }
                 }
             }
 
@@ -134,7 +153,8 @@ internal class ClaudeUnifiedEventMapper(
                 buildList {
                     maybeEmitThreadStarted(this)
                     maybeEmitTurnStarted(this)
-                    val finalText = event.resultText?.trim().orEmpty().ifBlank { latestAssistantText }
+                    val rawFinalText = event.resultText?.trim().orEmpty().ifBlank { latestAssistantText }
+                    val (_, finalText) = splitThinkingFromText(rawFinalText)
                     if (!event.isError && finalText.isNotBlank()) {
                         latestAssistantText = finalText
                         add(
@@ -179,7 +199,46 @@ internal class ClaudeUnifiedEventMapper(
                     add(UnifiedEvent.TurnCompleted(turnId = turnId, outcome = TurnOutcome.FAILED))
                 }.also { completed = true }
             }
+
+            is ClaudeConversationEvent.PermissionRequested -> {
+                buildList {
+                    maybeEmitThreadStarted(this)
+                    maybeEmitTurnStarted(this)
+                    add(
+                        UnifiedEvent.ApprovalRequested(
+                            request = buildApprovalRequest(event),
+                        ),
+                    )
+                }
+            }
         }
+    }
+
+    /** 将 PermissionRequested 语义事件转换为统一授权请求模型。 */
+    private fun buildApprovalRequest(event: ClaudeConversationEvent.PermissionRequested): UnifiedApprovalRequest {
+        val toolName = event.toolName
+        val command = event.toolInput["command"]
+        val filePath = event.toolInput["file_path"] ?: event.toolInput["path"]
+        val kind = when {
+            command != null -> UnifiedApprovalRequestKind.COMMAND
+            filePath != null -> UnifiedApprovalRequestKind.FILE_CHANGE
+            else -> UnifiedApprovalRequestKind.COMMAND
+        }
+        val body = when (kind) {
+            UnifiedApprovalRequestKind.COMMAND -> command ?: toolName
+            UnifiedApprovalRequestKind.FILE_CHANGE -> filePath ?: toolName
+            UnifiedApprovalRequestKind.PERMISSIONS -> toolName
+        }
+        return UnifiedApprovalRequest(
+            requestId = event.requestId,
+            turnId = turnId,
+            itemId = "${request.requestId}:approval:${event.requestId}",
+            kind = kind,
+            title = toolName,
+            body = body,
+            command = command,
+            allowForSession = true,
+        )
     }
 
     /** 在 Claude 进程退出后补发必要的终止事件。 */
@@ -268,5 +327,27 @@ internal class ClaudeUnifiedEventMapper(
             cachedInputTokens = cachedInputTokens,
             outputTokens = outputTokens,
         )
+    }
+
+    /**
+     * 从 assistant 文本中分离 <thinking>...</thinking> 块。
+     * 返回 (thinkingContent, mainContent)。
+     * 流式过程中 </thinking> 可能尚未到达，此时 mainContent 为空。
+     */
+    private fun splitThinkingFromText(text: String): Pair<String, String> {
+        val startTag = "<thinking>"
+        val endTag = "</thinking>"
+        val startIdx = text.indexOf(startTag)
+        if (startIdx == -1) return Pair("", text)
+        val endIdx = text.indexOf(endTag)
+        return if (endIdx == -1) {
+            // 思考块尚未关闭，提取已有内容，主文本暂为空
+            val thinking = text.substring(startIdx + startTag.length)
+            Pair(thinking, "")
+        } else {
+            val thinking = text.substring(startIdx + startTag.length, endIdx)
+            val main = text.substring(endIdx + endTag.length).trim()
+            Pair(thinking, main)
+        }
     }
 }

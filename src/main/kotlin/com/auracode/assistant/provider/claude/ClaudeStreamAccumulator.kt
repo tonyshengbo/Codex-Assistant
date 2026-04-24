@@ -27,6 +27,13 @@ internal class ClaudeStreamAccumulator {
                 is ClaudeStreamEvent.UserToolResult -> handleUserToolResult(event, this)
                 is ClaudeStreamEvent.Result -> handleResult(event, this)
                 is ClaudeStreamEvent.Error -> add(ClaudeConversationEvent.Error(message = event.message))
+                is ClaudeStreamEvent.ControlRequest -> add(
+                    ClaudeConversationEvent.PermissionRequested(
+                        requestId = event.requestId,
+                        toolName = event.toolName,
+                        toolInput = event.toolInput,
+                    ),
+                )
             }
         }
     }
@@ -446,6 +453,7 @@ internal class ClaudeStreamAccumulator {
             is ClaudeStreamEvent.Result -> sessionId
             is ClaudeStreamEvent.SessionStarted -> sessionId
             is ClaudeStreamEvent.UserToolResult -> sessionId
+            is ClaudeStreamEvent.ControlRequest -> sessionId
         }
     }
 
@@ -455,6 +463,7 @@ internal class ClaudeStreamAccumulator {
             is ClaudeStreamEvent.MessageStart -> model
             is ClaudeStreamEvent.Result -> modelUsage.keys.firstOrNull()
             is ClaudeStreamEvent.SessionStarted -> model
+            is ClaudeStreamEvent.ControlRequest -> null
             else -> null
         }
     }

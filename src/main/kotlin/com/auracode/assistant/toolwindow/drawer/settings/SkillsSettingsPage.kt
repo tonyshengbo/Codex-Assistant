@@ -2,15 +2,17 @@ package com.auracode.assistant.toolwindow.drawer.settings
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.AlertDialog
@@ -32,6 +34,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.auracode.assistant.i18n.AuraCodeBundle
 import com.auracode.assistant.settings.skills.LocalSkillInstallPolicy
 import com.auracode.assistant.settings.skills.SkillRuntimeEntry
@@ -52,6 +55,7 @@ internal fun SkillsSettingsPage(
     var expandedMenuPath by remember { mutableStateOf<String?>(null) }
     val showInitialLoading = state.skillsLoading && !state.skillsHasLoadedSnapshot
     val showNeutralShell = !state.skillsHasLoadedSnapshot && !state.skillsLoading
+
     pendingUninstallSkill?.let { skill ->
         AlertDialog(
             onDismissRequest = { pendingUninstallSkill = null },
@@ -81,30 +85,25 @@ internal fun SkillsSettingsPage(
             },
         )
     }
+
     Column(
         modifier = Modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(t.spacing.md),
     ) {
-        SettingsGroupHeader(
-            p = p,
-            title = AuraCodeBundle.message("settings.skills.group.title"),
-            description = AuraCodeBundle.message("settings.skills.group.subtitle"),
-        )
+        SkillsPageHeader(p = p, state = state, onIntent = onIntent)
+
         if (!state.skillsRuntimeSupported) {
             Text(
-                text = "Runtime skills are not supported for the selected engine.",
+                text = AuraCodeBundle.message("settings.skills.runtime.unsupported"),
                 color = p.textMuted,
                 style = MaterialTheme.typography.body2,
             )
         } else if (showInitialLoading) {
-            repeat(4) {
-                SkillRowSkeleton(p = p)
-            }
+            repeat(4) { SkillRowSkeleton(p = p) }
         } else if (showNeutralShell) {
-            repeat(3) {
-                SkillNeutralShellRow(p = p)
-            }
+            repeat(3) { SkillNeutralShellRow(p = p) }
         }
+
         if (state.skillsHasLoadedSnapshot && state.skills.isEmpty()) {
             Text(
                 text = AuraCodeBundle.message("settings.skills.empty"),
@@ -140,6 +139,49 @@ internal fun SkillsSettingsPage(
                     },
                 )
             }
+        }
+    }
+}
+
+/** Header row with title, subtitle, and Refresh action button. */
+@Composable
+private fun SkillsPageHeader(
+    p: DesignPalette,
+    state: RightDrawerAreaState,
+    onIntent: (UiIntent) -> Unit,
+) {
+    val t = assistantUiTokens()
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.Top,
+        horizontalArrangement = Arrangement.SpaceBetween,
+    ) {
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(t.spacing.xs),
+        ) {
+            Text(
+                text = AuraCodeBundle.message("settings.skills.group.title"),
+                color = p.textPrimary,
+                fontWeight = FontWeight.SemiBold,
+                style = MaterialTheme.typography.body1,
+            )
+            Text(
+                text = AuraCodeBundle.message("settings.skills.group.subtitle"),
+                color = p.textMuted,
+                style = MaterialTheme.typography.caption,
+            )
+        }
+        IconButton(
+            onClick = { onIntent(UiIntent.RefreshSkills) },
+            enabled = !state.skillsLoading,
+        ) {
+            Icon(
+                painter = painterResource("/icons/swap-vert.svg"),
+                contentDescription = AuraCodeBundle.message("settings.skills.refresh"),
+                tint = if (!state.skillsLoading) p.textSecondary else p.textMuted,
+                modifier = Modifier.size(18.dp),
+            )
         }
     }
 }
@@ -182,12 +224,15 @@ private fun SkillRow(
                     fontWeight = FontWeight.SemiBold,
                     style = MaterialTheme.typography.body1,
                 )
+                if (skill.scopeLabel.isNotBlank()) {
+                    SkillScopeChip(label = skill.scopeLabel, p = p)
+                }
             }
             Text(
                 text = skill.description,
                 color = p.textSecondary,
                 style = MaterialTheme.typography.body2,
-                maxLines = 1,
+                maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )
         }
@@ -210,6 +255,24 @@ private fun SkillRow(
     }
 }
 
+/** Small chip showing the skill's scope/source label (e.g. "local", "superpowers"). */
+@Composable
+private fun SkillScopeChip(
+    label: String,
+    p: DesignPalette,
+) {
+    val t = assistantUiTokens()
+    Text(
+        text = label,
+        color = p.textMuted,
+        fontSize = 10.sp,
+        modifier = Modifier
+            .background(p.topStripBg.copy(alpha = 0.6f), RoundedCornerShape(999.dp))
+            .border(1.dp, p.markdownDivider.copy(alpha = 0.35f), RoundedCornerShape(999.dp))
+            .padding(horizontal = 6.dp, vertical = 2.dp),
+    )
+}
+
 @Composable
 private fun SkillRowActionsMenu(
     p: DesignPalette,
@@ -221,9 +284,7 @@ private fun SkillRowActionsMenu(
     onReveal: () -> Unit,
     onUninstall: () -> Unit,
 ) {
-    Box(
-        modifier = Modifier.wrapContentSize(Alignment.TopStart),
-    ) {
+    Box(modifier = Modifier.wrapContentSize(Alignment.TopStart)) {
         IconButton(
             onClick = { onExpandedChange(true) },
             enabled = enabled,
@@ -269,23 +330,14 @@ private fun SkillRowActionsMenu(
 }
 
 @Composable
-private fun SkillRowSkeleton(
-    p: DesignPalette,
-) {
+private fun SkillRowSkeleton(p: DesignPalette) {
     val t = assistantUiTokens()
     Column(
         modifier = Modifier
             .fillMaxWidth()
             .heightIn(min = 72.dp)
-            .background(
-                p.topBarBg.copy(alpha = 0.56f),
-                RoundedCornerShape(t.spacing.md),
-            )
-            .border(
-                1.dp,
-                p.markdownDivider.copy(alpha = 0.35f),
-                RoundedCornerShape(t.spacing.md),
-            )
+            .background(p.topBarBg.copy(alpha = 0.56f), RoundedCornerShape(t.spacing.md))
+            .border(1.dp, p.markdownDivider.copy(alpha = 0.35f), RoundedCornerShape(t.spacing.md))
             .padding(horizontal = t.spacing.md, vertical = t.spacing.sm),
         verticalArrangement = Arrangement.spacedBy(t.spacing.sm),
     ) {
@@ -305,22 +357,13 @@ private fun SkillRowSkeleton(
 }
 
 @Composable
-private fun SkillNeutralShellRow(
-    p: DesignPalette,
-) {
+private fun SkillNeutralShellRow(p: DesignPalette) {
     val t = assistantUiTokens()
     Spacer(
         modifier = Modifier
             .fillMaxWidth()
             .heightIn(min = 72.dp)
-            .background(
-                p.topBarBg.copy(alpha = 0.28f),
-                RoundedCornerShape(t.spacing.md),
-            )
-            .border(
-                1.dp,
-                p.markdownDivider.copy(alpha = 0.22f),
-                RoundedCornerShape(t.spacing.md),
-            ),
+            .background(p.topBarBg.copy(alpha = 0.28f), RoundedCornerShape(t.spacing.md))
+            .border(1.dp, p.markdownDivider.copy(alpha = 0.22f), RoundedCornerShape(t.spacing.md)),
     )
 }

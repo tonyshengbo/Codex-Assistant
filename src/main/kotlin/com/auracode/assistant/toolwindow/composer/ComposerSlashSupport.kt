@@ -4,11 +4,6 @@ import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.TextFieldValue
 import com.auracode.assistant.i18n.AuraCodeBundle
 import com.auracode.assistant.toolwindow.eventing.ComposerMode
-import java.nio.file.Files
-import java.nio.file.Path
-import java.util.Locale
-import kotlin.io.path.isRegularFile
-import kotlin.io.path.name
 
 internal data class SlashQueryMatch(
     val query: String,
@@ -139,67 +134,5 @@ internal fun replaceSlashQuery(
     )
 }
 
-internal fun discoverAvailableSkills(): List<SlashSkillDescriptor> {
-    val home = System.getProperty("user.home").orEmpty().trim()
-    if (home.isBlank()) return emptyList()
-    val roots = listOf(
-        Path.of(home, ".codex", "skills"),
-        Path.of(home, ".codex", "superpowers", "skills"),
-        Path.of(home, ".agents", "skills"),
-    )
-    val discovered = linkedMapOf<String, SlashSkillDescriptor>()
-    roots.forEach { root ->
-        if (!Files.isDirectory(root)) return@forEach
-        runCatching {
-            Files.walk(root).use { paths ->
-                paths
-                    .filter { it.isRegularFile() && it.name.equals("SKILL.md", ignoreCase = true) }
-                    .forEach { skillFile ->
-                        parseSkillDescriptor(skillFile)?.let { descriptor ->
-                            discovered.putIfAbsent(descriptor.name, descriptor)
-                        }
-                    }
-            }
-        }
-    }
-    return discovered.values.sortedWith(
-        compareBy<SlashSkillDescriptor>({ slashSkillSortPriority(it.name) }, { it.name.lowercase(Locale.ROOT) }),
-    )
-}
+internal fun discoverAvailableSkills(): List<SlashSkillDescriptor> = emptyList()
 
-private fun parseSkillDescriptor(skillFile: Path): SlashSkillDescriptor? {
-    val lines = runCatching { Files.readAllLines(skillFile) }.getOrNull() ?: return null
-    val frontMatter = extractFrontMatter(lines) ?: return null
-    val name = frontMatter["name"]?.trim()?.trim('"')?.takeIf(String::isNotBlank) ?: return null
-    val description = frontMatter["description"]?.trim()?.trim('"').orEmpty()
-    return SlashSkillDescriptor(
-        name = name,
-        description = description.ifBlank { name },
-    )
-}
-
-private fun extractFrontMatter(lines: List<String>): Map<String, String>? {
-    if (lines.firstOrNull()?.trim() != "---") return null
-    val fields = linkedMapOf<String, String>()
-    for (line in lines.drop(1)) {
-        val trimmed = line.trim()
-        if (trimmed == "---") return fields
-        val separatorIndex = trimmed.indexOf(':')
-        if (separatorIndex <= 0) continue
-        val key = trimmed.substring(0, separatorIndex).trim()
-        val value = trimmed.substring(separatorIndex + 1).trim()
-        fields[key] = value
-    }
-    return null
-}
-
-private fun slashSkillSortPriority(name: String): Int = when (name) {
-    "using-superpowers" -> 0
-    "brainstorming" -> 1
-    "systematic-debugging" -> 2
-    "test-driven-development" -> 3
-    "writing-plans" -> 4
-    "executing-plans" -> 5
-    "verification-before-completion" -> 6
-    else -> 100
-}

@@ -81,13 +81,14 @@ internal fun runningPlanToggleIconPath(expanded: Boolean): String {
 internal fun runningPlanHeaderSummary(state: ComposerRunningPlanState): RunningPlanHeaderSummary {
     val totalCount = state.steps.size
     val completedCount = state.steps.count { it.status == ComposerRunningPlanStepStatus.COMPLETED }
+    val inProgressCount = state.steps.count { it.status == ComposerRunningPlanStepStatus.IN_PROGRESS }
     val currentStep = state.steps.firstOrNull { it.status == ComposerRunningPlanStepStatus.IN_PROGRESS }
         ?: state.steps.firstOrNull { it.status == ComposerRunningPlanStepStatus.PENDING }
         ?: state.steps.lastOrNull()
     return RunningPlanHeaderSummary(
         title = "Running plan",
         currentStep = currentStep?.step.orEmpty(),
-        progressLabel = if (totalCount > 0) "$completedCount/$totalCount" else "",
+        progressLabel = if (totalCount > 0) "${completedCount + inProgressCount}/$totalCount" else "",
     )
 }
 
@@ -114,7 +115,7 @@ internal fun runningPlanStepRowSpec(): RunningPlanStepRowSpec {
         rowVerticalAlignment = Alignment.CenterVertically,
         dotTopPadding = 0.dp,
         inactiveDotSize = 6.dp,
-        activeDotSize = 7.dp,
+        activeDotSize = 8.dp,
     )
 }
 
@@ -213,8 +214,19 @@ internal fun RunningPlanComposerSection(
                 verticalArrangement = Arrangement.spacedBy(6.dp),
             ) {
                 state.steps.forEach { step ->
+                    val isActive = step.status == ComposerRunningPlanStepStatus.IN_PROGRESS
                     Row(
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .then(
+                                if (isActive) {
+                                    Modifier
+                                        .background(p.accent.copy(alpha = 0.08f), RoundedCornerShape(6.dp))
+                                        .padding(horizontal = 4.dp, vertical = 2.dp)
+                                } else {
+                                    Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
+                                },
+                            ),
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
                         verticalAlignment = stepRowSpec.rowVerticalAlignment,
                     ) {

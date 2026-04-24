@@ -63,4 +63,11 @@ internal sealed interface ClaudeConversationEvent {
     data class Error(
         val message: String,
     ) : ClaudeConversationEvent
+
+    /** 表示 Claude CLI 请求工具执行授权（来自 control_request/can_use_tool）。 */
+    data class PermissionRequested(
+        val requestId: String,
+        val toolName: String,
+        val toolInput: Map<String, String>,
+    ) : ClaudeConversationEvent
 }

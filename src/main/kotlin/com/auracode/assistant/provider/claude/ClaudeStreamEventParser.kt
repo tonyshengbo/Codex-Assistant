@@ -32,6 +32,7 @@ internal class ClaudeStreamEventParser(
                 message = payload.string("message").orEmpty().ifBlank { "Claude CLI returned an error." },
                 sessionId = payload.string("session_id", "sessionId"),
             )
+            "control_request" -> parseControlRequest(payload)
             else -> null
         }
     }
@@ -229,6 +230,24 @@ internal class ClaudeStreamEventParser(
 
             else -> null
         }
+    }
+
+    /** 解析 Claude CLI 的工具授权请求事件。 */
+    private fun parseControlRequest(payload: JsonObject): ClaudeStreamEvent.ControlRequest? {
+        val requestId = payload.string("request_id", "requestId") ?: return null
+        val request = payload.objectValue("request") ?: return null
+        if (request.string("subtype") != "can_use_tool") return null
+        val toolName = request.string("tool_name", "toolName") ?: return null
+        val inputObj = request.objectValue("input") ?: JsonObject(emptyMap())
+        val toolInput = inputObj.entries.associate { (k, v) ->
+            k to ((v as? JsonPrimitive)?.contentOrNull ?: v.toString())
+        }
+        return ClaudeStreamEvent.ControlRequest(
+            requestId = requestId,
+            toolName = toolName,
+            toolInput = toolInput,
+            sessionId = payload.string("session_id", "sessionId"),
+        )
     }
 
     /** 将 usage 对象转换为统一的 token usage 结构。 */

@@ -29,7 +29,10 @@ internal class DefaultClaudeCliLauncher(
             command = buildCommand(request, settings),
             workingDirectory = File(request.workingDirectory),
         )
-        closeProcessInput(process)
+        // 授权模式需要保持 stdin 开放，以便写回 control_response；其它模式立即关闭。
+        if (request.approvalMode != AgentApprovalMode.REQUIRE_CONFIRMATION) {
+            closeProcessInput(process)
+        }
         return ProcessClaudeStreamJsonSession(process)
     }
 
@@ -51,6 +54,11 @@ internal class DefaultClaudeCliLauncher(
             add("--include-partial-messages")
             add("--permission-mode")
             add(resolvePermissionMode(request))
+            if (needsPermissionPromptTool(request)) {
+                // 启用 stdio 控制通道，CLI 会通过 stdout 发出 control_request，通过 stdin 接收 control_response。
+                add("--permission-prompt-tool")
+                add("stdio")
+            }
             request.model?.trim()?.takeIf { it.isNotBlank() }?.let { model ->
                 add("--model")
                 add(model)
@@ -77,6 +85,12 @@ internal class DefaultClaudeCliLauncher(
             request.approvalMode == AgentApprovalMode.REQUIRE_CONFIRMATION -> "default"
             else -> "auto"
         }
+    }
+
+    /** 授权模式下是否需要启用 stdio 控制通道。 */
+    private fun needsPermissionPromptTool(request: AgentRequest): Boolean {
+        return request.approvalMode == AgentApprovalMode.REQUIRE_CONFIRMATION &&
+            request.collaborationMode != AgentCollaborationMode.PLAN
     }
 
     /** 将上下文文件与附件整理成 Claude CLI 可直接消费的纯文本 prompt。 */
