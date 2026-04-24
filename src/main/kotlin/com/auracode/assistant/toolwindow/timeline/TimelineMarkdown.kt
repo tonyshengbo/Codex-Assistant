@@ -35,12 +35,13 @@ internal fun TimelineMarkdown(
     val typographyScale = tokens.type.body.value / 14f
     fun scaledSp(value: Float) = (value * typographyScale).sp
     val bodyLineHeight = timelineMarkdownBodyLineHeightSp(tokens.type.body.value)
+    val selectionColors = rememberTimelineMarkdownSelectionColors(palette)
     val externalUriHandler = LocalUriHandler.current
     val uriHandler = rememberTimelineMarkdownUriHandler(
         externalUriHandler = externalUriHandler,
         onOpenFilePath = onOpenFilePath,
     )
-    TimelineSelectableText {
+    TimelineSelectableText(selectionColors = selectionColors) {
         CompositionLocalProvider(LocalUriHandler provides uriHandler) {
             Markdown(
                 content = text,

@@ -268,10 +268,7 @@ internal fun ComposerControlBar(
  * Resolves the execution mode tooltip text so the UI stays aligned with the active approval behavior.
  */
 internal fun resolveExecutionModeTooltip(executionMode: ComposerMode): String {
-    return when (executionMode) {
-        ComposerMode.AUTO -> AuraCodeBundle.message("composer.mode.auto.tooltip.enabled")
-        ComposerMode.APPROVAL -> AuraCodeBundle.message("composer.mode.auto.tooltip.disabled")
-    }
+    return AuraCodeBundle.message("composer.mode.auto.tooltip")
 }
 
 internal fun resolvePlanModeTooltip(

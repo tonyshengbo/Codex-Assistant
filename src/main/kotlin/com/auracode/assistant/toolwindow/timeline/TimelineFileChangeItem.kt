@@ -60,6 +60,7 @@ private fun TimelineInlineDiff(
     status: ItemStatus,
 ) {
     val t = assistantUiTokens()
+    val selectionColors = rememberTimelineMarkdownSelectionColors(palette)
     Box(
         modifier = Modifier
             .fillMaxWidth()
@@ -68,7 +69,7 @@ private fun TimelineInlineDiff(
             .padding(vertical = 6.dp),
     ) {
         if (status == ItemStatus.FAILED) {
-            TimelineSelectableText {
+            TimelineSelectableText(selectionColors = selectionColors) {
                 Text(
                     text = diff.ifBlank { "No diff preview available." },
                     color = palette.textSecondary,
@@ -79,7 +80,7 @@ private fun TimelineInlineDiff(
             return@Box
         }
 
-        TimelineSelectableText {
+        TimelineSelectableText(selectionColors = selectionColors) {
             Column(
                 modifier = Modifier.fillMaxWidth(),
                 verticalArrangement = Arrangement.spacedBy(0.dp),

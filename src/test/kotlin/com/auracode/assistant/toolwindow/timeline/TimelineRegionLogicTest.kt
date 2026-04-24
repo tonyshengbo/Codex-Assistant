@@ -4,6 +4,9 @@ import com.auracode.assistant.i18n.AuraCodeBundle
 import com.auracode.assistant.model.MessageRole
 import com.auracode.assistant.protocol.ItemStatus
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.graphics.Color
+import com.auracode.assistant.toolwindow.shared.EffectiveTheme
+import com.auracode.assistant.toolwindow.shared.assistantPalette
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -286,6 +289,23 @@ class TimelineRegionLogicTest {
         present.single().onClick()
         assertTrue(copied)
         assertTrue(absent.isEmpty())
+    }
+
+    @Test
+    fun `markdown selection colors deepen for both light and dark message surfaces`() {
+        val lightPalette = assistantPalette(EffectiveTheme.LIGHT)
+        val darkPalette = assistantPalette(EffectiveTheme.DARK)
+
+        assertEquals(Color(0xFF7E9CCB).copy(alpha = 0.38f), timelineMarkdownSelectionBackground(lightPalette))
+        assertEquals(lightPalette.accent, timelineMarkdownSelectionHandle(lightPalette))
+        assertEquals(Color(0xFF6E87AE).copy(alpha = 0.58f), timelineMarkdownSelectionBackground(darkPalette))
+        assertEquals(Color(0xFF86B3FF), timelineMarkdownSelectionHandle(darkPalette))
+    }
+
+    @Test
+    fun `command panel selection colors stay dense on the dark shell surface`() {
+        assertEquals(Color(0xFF6F86AE).copy(alpha = 0.64f), timelineCommandSelectionBackground())
+        assertEquals(Color(0xFF8FBCFF), timelineCommandSelectionHandle())
     }
 
     @Test

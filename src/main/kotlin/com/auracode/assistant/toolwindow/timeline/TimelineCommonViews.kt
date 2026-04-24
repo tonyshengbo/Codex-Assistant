@@ -165,7 +165,9 @@ internal fun TimelineExpandableCard(
                         )
                     } else if (!collapsedSummary.isNullOrBlank()) {
                         Spacer(Modifier.height(t.spacing.xs))
-                        TimelineSelectableText {
+                        TimelineSelectableText(
+                            selectionColors = rememberTimelineMarkdownSelectionColors(palette),
+                        ) {
                             Text(
                                 text = collapsedSummary,
                                 color = palette.textSecondary.copy(alpha = 0.92f),

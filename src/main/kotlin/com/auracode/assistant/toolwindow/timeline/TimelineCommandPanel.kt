@@ -95,6 +95,7 @@ internal fun TimelineCommandExecutionPanel(
     val panel = timelineCommandPanelContent(commandText = commandText, outputText = outputText)
     val t = assistantUiTokens()
     val scrollState = rememberScrollState()
+    val selectionColors = rememberTimelineCommandSelectionColors()
     var autoFollowEnabled by remember { mutableStateOf(true) }
 
     LaunchedEffect(scrollState.isScrollInProgress, scrollState.value, scrollState.maxValue) {
@@ -137,7 +138,7 @@ internal fun TimelineCommandExecutionPanel(
                 .heightIn(max = timelineExpandedBodyMaxHeight())
                 .verticalScroll(scrollState),
         ) {
-            TimelineSelectableText {
+            TimelineSelectableText(selectionColors = selectionColors) {
                 Column(
                     modifier = Modifier.fillMaxWidth(),
                     verticalArrangement = Arrangement.spacedBy(t.spacing.sm),

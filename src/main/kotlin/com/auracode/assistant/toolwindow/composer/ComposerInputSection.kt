@@ -50,6 +50,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.PopupProperties
 import com.auracode.assistant.i18n.AuraCodeBundle
 import com.auracode.assistant.toolwindow.eventing.UiIntent
+import com.auracode.assistant.toolwindow.shared.assistantBodyTextStyle
 import com.auracode.assistant.toolwindow.shared.DesignPalette
 import com.auracode.assistant.toolwindow.shared.FileTypeIcon
 import com.auracode.assistant.toolwindow.shared.ToolWindowUiText
@@ -208,6 +209,10 @@ internal fun ComposerInputSection(
                             onIntent(UiIntent.PasteImageFromClipboard)
                             return@onPreviewKeyEvent false
                         }
+                        if (!composing && (it.key == Key.Enter || it.key == Key.NumPadEnter) && it.isShiftPressed) {
+                            onIntent(UiIntent.UpdateDocument(insertLineBreak(state.document)))
+                            return@onPreviewKeyEvent true
+                        }
                         if (!composing && it.key == Key.Enter && !it.isShiftPressed) {
                             onIntent(UiIntent.SendPrompt)
                             true
@@ -217,7 +222,7 @@ internal fun ComposerInputSection(
                     },
                 value = state.document,
                 onValueChange = { onIntent(UiIntent.UpdateDocument(it)) },
-                textStyle = TextStyle(color = p.textPrimary, fontSize = t.type.body, lineHeight = 19.sp),
+                textStyle = assistantBodyTextStyle(t).copy(color = p.textPrimary),
                 label = {
                     Text(
                         text = ToolWindowUiText.COMPOSER_HINT,

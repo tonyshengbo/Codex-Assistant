@@ -38,6 +38,7 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.res.painterResource
 import com.auracode.assistant.toolwindow.shared.DesignPalette
+import com.auracode.assistant.toolwindow.shared.assistantBodyTextStyle
 import com.auracode.assistant.toolwindow.shared.assistantUiTokens
 
 internal const val INLINE_INPUT_MAX_LINES: Int = 4
@@ -170,7 +171,7 @@ internal fun InlineComposerInputChoice(
                 minLines = 1,
                 maxLines = INLINE_INPUT_MAX_LINES,
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-                textStyle = TextStyle(color = p.textPrimary),
+                textStyle = assistantBodyTextStyle(t).copy(color = p.textPrimary),
                 cursorBrush = SolidColor(p.accent),
                 visualTransformation = if (isSecret) PasswordVisualTransformation() else VisualTransformation.None,
                 decorationBox = { innerTextField ->

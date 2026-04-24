@@ -42,6 +42,7 @@ import com.auracode.assistant.i18n.AuraCodeBundle
 import com.auracode.assistant.provider.codex.CodexEnvironmentStatus
 import com.auracode.assistant.toolwindow.shared.DesignPalette
 import com.auracode.assistant.toolwindow.shared.HoverTooltip
+import com.auracode.assistant.toolwindow.shared.assistantBodyTextStyle
 import com.auracode.assistant.toolwindow.shared.assistantUiTokens
 
 @Composable
@@ -282,6 +283,7 @@ internal fun SettingsTextInput(
         value = value,
         onValueChange = onValueChange,
         modifier = modifier.fillMaxWidth(),
+        textStyle = assistantBodyTextStyle(t).copy(color = p.textPrimary),
         singleLine = singleLine,
         minLines = minLines,
         maxLines = maxLines,

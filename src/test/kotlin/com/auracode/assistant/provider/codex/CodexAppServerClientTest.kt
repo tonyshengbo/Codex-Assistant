@@ -76,7 +76,7 @@ class CodexAppServerClientTest {
     }
 
     @Test
-    fun `approval mode turn start uses workspace write sandbox policy`() = runBlocking {
+    fun `approval mode turn start keeps workspace write network restricted`() = runBlocking {
         val session = RecordingCodexAppServerSession().apply {
             response(
                 "turn/start",
@@ -108,7 +108,7 @@ class CodexAppServerClientTest {
         assertEquals("turn/start", request.method)
         assertEquals("on-request", request.params.getValue("approvalPolicy").jsonPrimitive.content)
         assertEquals("workspaceWrite", sandboxPolicy.getValue("type").jsonPrimitive.content)
-        assertEquals(true, sandboxPolicy.getValue("networkAccess").jsonPrimitive.content.toBoolean())
+        assertEquals(false, sandboxPolicy.getValue("networkAccess").jsonPrimitive.content.toBoolean())
         assertEquals(
             listOf("/tmp/project"),
             sandboxPolicy.getValue("writableRoots").jsonArray.map { it.jsonPrimitive.content },

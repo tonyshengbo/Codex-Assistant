@@ -209,6 +209,25 @@ internal fun normalizePromptBody(text: String): String {
         .trim()
 }
 
+/**
+ * Inserts a line break at the current selection while preserving the expected cursor position.
+ */
+internal fun insertLineBreak(document: TextFieldValue): TextFieldValue {
+    if (document.composition != null) return document
+    val selectionStart = document.selection.min.coerceIn(0, document.text.length)
+    val selectionEnd = document.selection.max.coerceIn(0, document.text.length)
+    val nextText = buildString {
+        append(document.text.substring(0, selectionStart))
+        append('\n')
+        append(document.text.substring(selectionEnd))
+    }
+    return document.copy(
+        text = nextText,
+        selection = TextRange(selectionStart + 1),
+        composition = null,
+    )
+}
+
 internal fun removeMentionById(
     document: TextFieldValue,
     mentions: List<MentionEntry>,

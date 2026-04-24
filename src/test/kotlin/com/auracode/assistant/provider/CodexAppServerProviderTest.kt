@@ -78,14 +78,14 @@ class CodexAppServerProviderTest {
     }
 
     @Test
-    fun `workspace write turn sandbox policy keeps writable roots payload`() {
+    fun `workspace write turn sandbox policy keeps network restricted and writable roots payload`() {
         val payload = buildTurnSandboxPolicy(
             workingDirectory = "/tmp/project",
             mode = CodexAppServerSandboxMode.WORKSPACE_WRITE,
         )
 
         assertEquals("workspaceWrite", payload.getValue("type").jsonPrimitive.content)
-        assertEquals(true, payload.getValue("networkAccess").jsonPrimitive.content.toBoolean())
+        assertEquals(false, payload.getValue("networkAccess").jsonPrimitive.content.toBoolean())
         assertEquals(listOf("/tmp/project"), payload.getValue("writableRoots").jsonArray.map { it.jsonPrimitive.content })
     }
 

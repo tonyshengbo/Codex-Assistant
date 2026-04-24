@@ -70,7 +70,7 @@ internal fun buildTurnSandboxPolicy(
     return when (mode) {
         CodexAppServerSandboxMode.WORKSPACE_WRITE -> buildJsonObject {
             put("type", "workspaceWrite")
-            put("networkAccess", true)
+            put("networkAccess", false)
             put("writableRoots", buildJsonArray {
                 add(JsonPrimitive(workingDirectory))
             })

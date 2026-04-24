@@ -137,6 +137,16 @@ internal fun assistantTypography(tokens: AssistantUiTokens = assistantUiTokens()
     )
 }
 
+/**
+ * Returns the scalable body text style used by editable text controls.
+ */
+internal fun assistantBodyTextStyle(tokens: AssistantUiTokens = assistantUiTokens()): TextStyle {
+    return TextStyle(
+        fontSize = tokens.type.body,
+        lineHeight = (tokens.type.body.value * 1.5f).sp,
+    )
+}
+
 internal fun assistantMonospaceStyle(tokens: AssistantUiTokens = assistantUiTokens()): TextStyle {
     return TextStyle(
         fontFamily = FontFamily.Monospace,
