@@ -2,6 +2,8 @@ package com.auracode.assistant.toolwindow.eventing
 
 import com.auracode.assistant.i18n.AuraCodeBundle
 import com.auracode.assistant.notification.AuraNotificationGroup
+import com.auracode.assistant.provider.claude.ClaudeCliVersionCheckStatus
+import com.auracode.assistant.provider.claude.ClaudeCliVersionSnapshot
 import com.auracode.assistant.provider.codex.CodexCliVersionCheckStatus
 import com.auracode.assistant.provider.codex.CodexCliVersionSnapshot
 import com.auracode.assistant.settings.SavedAgentDefinition
@@ -13,6 +15,7 @@ import com.auracode.assistant.settings.mcp.McpTestResult
 import com.auracode.assistant.settings.mcp.McpValidationErrors
 import com.auracode.assistant.settings.mcp.validate
 import com.auracode.assistant.settings.skills.SkillSelector
+import com.auracode.assistant.toolwindow.drawer.RuntimeSettingsTab
 import com.auracode.assistant.toolwindow.drawer.SettingsSection
 import com.auracode.assistant.toolwindow.shared.UiText
 import com.intellij.notification.NotificationAction
@@ -85,6 +88,7 @@ internal class SettingsAndEnvironmentHandler(
             context.settingsService.notifyAppearanceChanged()
         }
         context.publishSettingsSnapshot()
+        refreshRuntimeChecksForCurrentState()
     }
 
     fun detectCodexEnvironment() {
@@ -103,7 +107,6 @@ internal class SettingsAndEnvironmentHandler(
                         updateDraftPaths = true,
                     ),
                 )
-                context.eventHub.publish(AppEvent.StatusTextUpdated(UiText.raw(result.message)))
             }.onFailure { error ->
                 context.eventHub.publish(AppEvent.CodexEnvironmentCheckRunning(false))
                 context.eventHub.publish(
@@ -139,7 +142,7 @@ internal class SettingsAndEnvironmentHandler(
     }
 
     /** Refreshes the Codex CLI version snapshot and publishes the latest UI state. */
-    fun refreshCodexCliVersion(force: Boolean = false) {
+    fun refreshCodexCliVersion(force: Boolean = false, announceResult: Boolean = true) {
         val checking = context.codexCliVersionService.snapshot().copy(
             checkStatus = CodexCliVersionCheckStatus.CHECKING,
             message = "Checking Codex CLI version...",
@@ -151,7 +154,9 @@ internal class SettingsAndEnvironmentHandler(
             }.onSuccess { snapshot ->
                 context.eventHub.publish(AppEvent.CodexCliVersionSnapshotUpdated(snapshot))
                 context.publishSettingsSnapshot()
-                context.eventHub.publish(AppEvent.StatusTextUpdated(UiText.raw(snapshot.message)))
+                if (announceResult) {
+                    context.eventHub.publish(AppEvent.StatusTextUpdated(UiText.raw(snapshot.message)))
+                }
                 notifyCodexCliUpdateIfNeeded(snapshot)
             }.onFailure { error ->
                 val failed = CodexCliVersionSnapshot(
@@ -206,6 +211,68 @@ internal class SettingsAndEnvironmentHandler(
         context.eventHub.publish(AppEvent.CodexCliVersionSnapshotUpdated(snapshot))
         context.publishSettingsSnapshot()
         context.eventHub.publish(AppEvent.StatusTextUpdated(UiText.raw("Ignored Codex CLI version '$version'.")))
+    }
+
+    /** Refreshes the Claude CLI version snapshot and publishes the latest UI state. */
+    fun refreshClaudeCliVersion(force: Boolean = false, announceResult: Boolean = true) {
+        val checking = context.claudeCliVersionService.snapshot().copy(
+            checkStatus = ClaudeCliVersionCheckStatus.CHECKING,
+            message = "Checking Claude CLI version...",
+        )
+        context.eventHub.publish(AppEvent.ClaudeCliVersionSnapshotUpdated(checking))
+        context.coroutineLauncher.launch("refreshClaudeCliVersion(force=$force)") {
+            runCatching {
+                context.claudeCliVersionService.refresh(force = force)
+            }.onSuccess { snapshot ->
+                context.eventHub.publish(AppEvent.ClaudeCliVersionSnapshotUpdated(snapshot))
+                context.publishSettingsSnapshot()
+                if (announceResult) {
+                    context.eventHub.publish(AppEvent.StatusTextUpdated(UiText.raw(snapshot.message)))
+                }
+            }.onFailure { error ->
+                val failed = ClaudeCliVersionSnapshot(
+                    checkStatus = ClaudeCliVersionCheckStatus.REMOTE_CHECK_FAILED,
+                    currentVersion = context.claudeCliVersionService.snapshot().currentVersion,
+                    latestVersion = context.claudeCliVersionService.snapshot().latestVersion,
+                    ignoredVersion = context.claudeCliVersionService.snapshot().ignoredVersion,
+                    upgradeSource = context.claudeCliVersionService.snapshot().upgradeSource,
+                    displayCommand = context.claudeCliVersionService.snapshot().displayCommand,
+                    isUpgradeSupported = context.claudeCliVersionService.snapshot().isUpgradeSupported,
+                    lastCheckedAt = context.claudeCliVersionService.snapshot().lastCheckedAt,
+                    message = error.message ?: "Failed to check Claude CLI version.",
+                )
+                context.eventHub.publish(AppEvent.ClaudeCliVersionSnapshotUpdated(failed))
+                context.eventHub.publish(AppEvent.StatusTextUpdated(UiText.raw(failed.message)))
+            }
+        }
+    }
+
+    /** Executes the best-effort Claude CLI upgrade flow and republishes the version snapshot. */
+    fun upgradeClaudeCli() {
+        context.eventHub.publish(
+            AppEvent.ClaudeCliVersionSnapshotUpdated(
+                context.claudeCliVersionService.snapshot().copy(
+                    checkStatus = ClaudeCliVersionCheckStatus.UPGRADE_IN_PROGRESS,
+                    message = "Upgrading Claude CLI...",
+                ),
+            ),
+        )
+        context.coroutineLauncher.launch("upgradeClaudeCli") {
+            runCatching {
+                context.claudeCliVersionService.upgrade()
+            }.onSuccess { snapshot ->
+                context.eventHub.publish(AppEvent.ClaudeCliVersionSnapshotUpdated(snapshot))
+                context.publishSettingsSnapshot()
+                context.eventHub.publish(AppEvent.StatusTextUpdated(UiText.raw(snapshot.message)))
+            }.onFailure { error ->
+                val failed = context.claudeCliVersionService.snapshot().copy(
+                    checkStatus = ClaudeCliVersionCheckStatus.UPGRADE_FAILED,
+                    message = error.message ?: "Failed to upgrade Claude CLI.",
+                )
+                context.eventHub.publish(AppEvent.ClaudeCliVersionSnapshotUpdated(failed))
+                context.eventHub.publish(AppEvent.StatusTextUpdated(UiText.raw(failed.message)))
+            }
+        }
     }
 
     fun saveAgentDraft() {
@@ -339,6 +406,29 @@ internal class SettingsAndEnvironmentHandler(
                     notifyCodexCliUpdateIfNeeded(snapshot)
                 } else {
                     context.eventHub.publish(AppEvent.CodexCliVersionSnapshotUpdated(context.codexCliVersionService.snapshot()))
+                }
+            }
+        }
+    }
+
+    /** Preloads the latest Claude CLI version snapshot for the runtime settings page. */
+    fun warmClaudeCliVersionState() {
+        context.coroutineLauncher.launch("warmClaudeCliVersionState") {
+            runCatching {
+                if (context.claudeCliVersionService.shouldRefresh(force = false)) {
+                    context.eventHub.publish(
+                        AppEvent.ClaudeCliVersionSnapshotUpdated(
+                            context.claudeCliVersionService.snapshot().copy(
+                                checkStatus = ClaudeCliVersionCheckStatus.CHECKING,
+                                message = "Checking Claude CLI version...",
+                            ),
+                        ),
+                    )
+                    val snapshot = context.claudeCliVersionService.refresh(force = false)
+                    context.eventHub.publish(AppEvent.ClaudeCliVersionSnapshotUpdated(snapshot))
+                    context.publishSettingsSnapshot()
+                } else {
+                    context.eventHub.publish(AppEvent.ClaudeCliVersionSnapshotUpdated(context.claudeCliVersionService.snapshot()))
                 }
             }
         }
@@ -700,14 +790,12 @@ internal class SettingsAndEnvironmentHandler(
         when (context.rightDrawerStore.state.value.settingsSection) {
             SettingsSection.MCP -> loadMcpServers()
             SettingsSection.SKILLS -> loadSkills()
-            SettingsSection.GENERAL -> {
-                detectCodexEnvironment()
-                refreshCodexCliVersion(force = false)
-            }
+            SettingsSection.BASIC -> Unit
+            SettingsSection.RUNTIME -> refreshRuntimeChecksForCurrentState()
             SettingsSection.AGENTS,
             SettingsSection.TOKEN_USAGE,
             -> Unit
-            SettingsSection.ABOUT -> refreshCodexCliVersion(force = false)
+            SettingsSection.ABOUT -> refreshCodexCliVersion(force = false, announceResult = false)
         }
     }
 
@@ -715,16 +803,30 @@ internal class SettingsAndEnvironmentHandler(
         when (section) {
             SettingsSection.MCP -> loadMcpServers()
             SettingsSection.SKILLS -> loadSkills()
-            SettingsSection.GENERAL -> {
+            SettingsSection.BASIC -> Unit
+            SettingsSection.RUNTIME -> {
                 if (context.rightDrawerStore.state.value.kind == com.auracode.assistant.toolwindow.drawer.RightDrawerKind.SETTINGS) {
-                    detectCodexEnvironment()
-                    refreshCodexCliVersion(force = false)
+                    refreshRuntimeChecksForCurrentState()
                 }
             }
             SettingsSection.AGENTS,
             SettingsSection.TOKEN_USAGE,
             -> Unit
-            SettingsSection.ABOUT -> refreshCodexCliVersion(force = false)
+            SettingsSection.ABOUT -> refreshCodexCliVersion(force = false, announceResult = false)
+        }
+    }
+
+    /** Refreshes runtime validation and the active version card for the current Runtime tab. */
+    fun onRuntimeSettingsTabSelected(tab: RuntimeSettingsTab) {
+        when (tab) {
+            RuntimeSettingsTab.CODEX -> {
+                detectCodexEnvironment()
+                refreshCodexCliVersion(force = false, announceResult = false)
+            }
+            RuntimeSettingsTab.CLAUDE -> {
+                refreshClaudeRuntimeCheck()
+                refreshClaudeCliVersion(force = false, announceResult = false)
+            }
         }
     }
 
@@ -746,7 +848,8 @@ internal class SettingsAndEnvironmentHandler(
                 NotificationAction.createSimpleExpiring(
                     AuraCodeBundle.message("notification.codexCliVersion.openSettings"),
                 ) {
-                    context.eventHub.publishUiIntent(UiIntent.SelectSettingsSection(SettingsSection.GENERAL))
+                    context.eventHub.publishUiIntent(UiIntent.SelectSettingsSection(SettingsSection.RUNTIME))
+                    context.eventHub.publishUiIntent(UiIntent.SelectRuntimeSettingsTab(RuntimeSettingsTab.CODEX))
                 },
             )
             .addAction(
@@ -758,6 +861,33 @@ internal class SettingsAndEnvironmentHandler(
             )
             .notify(null)
         context.codexCliVersionService.markNotified(snapshot.latestVersion)
+    }
+
+    /** Refreshes runtime validation and version data based on the currently active Runtime tab. */
+    private fun refreshRuntimeChecksForCurrentState() {
+        when (context.rightDrawerStore.state.value.runtimeSettingsTab) {
+            RuntimeSettingsTab.CODEX -> {
+                detectCodexEnvironment()
+                refreshCodexCliVersion(force = false, announceResult = false)
+            }
+            RuntimeSettingsTab.CLAUDE -> {
+                refreshClaudeRuntimeCheck()
+                refreshClaudeCliVersion(force = false, announceResult = false)
+            }
+        }
+    }
+
+    /** Resolves the Claude executable and shared Node path for lightweight inline validation. */
+    private fun refreshClaudeRuntimeCheck() {
+        val drawerState = context.rightDrawerStore.state.value
+        context.coroutineLauncher.launch("refreshClaudeRuntimeCheck") {
+            val result = context.runtimeExecutableCheckService.check(
+                commandName = "claude",
+                configuredCliPath = drawerState.claudeCliPath,
+                configuredNodePath = drawerState.nodePath,
+            )
+            context.eventHub.publish(AppEvent.ClaudeRuntimeExecutableCheckUpdated(result))
+        }
     }
 
     private fun runMcpServerTest(name: String) {

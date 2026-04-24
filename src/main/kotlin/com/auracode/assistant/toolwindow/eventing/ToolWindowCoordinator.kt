@@ -5,6 +5,7 @@ import com.auracode.assistant.coroutine.ManagedCoroutineScope
 import com.auracode.assistant.context.MentionFileWhitelist
 import com.auracode.assistant.i18n.AuraCodeBundle
 import com.auracode.assistant.notification.ChatCompletionNotificationService
+import com.auracode.assistant.provider.claude.ClaudeCliVersionService
 import com.auracode.assistant.provider.codex.CodexCliVersionService
 import com.auracode.assistant.provider.codex.CodexEnvironmentDetector
 import com.auracode.assistant.protocol.UnifiedEvent
@@ -13,6 +14,7 @@ import com.auracode.assistant.settings.AgentSettingsService
 import com.auracode.assistant.settings.skills.LocalSkillInstallPolicy
 import com.auracode.assistant.settings.skills.SkillsRuntimeService
 import com.auracode.assistant.settings.mcp.McpManagementAdapterRegistry
+import com.auracode.assistant.provider.runtime.RuntimeExecutableCheckService
 import com.auracode.assistant.toolwindow.approval.ApprovalAreaStore
 import com.auracode.assistant.toolwindow.composer.ComposerAreaStore
 import com.auracode.assistant.toolwindow.drawer.RightDrawerAreaStore
@@ -55,6 +57,8 @@ internal class ToolWindowCoordinator(
     ),
     private val codexEnvironmentDetector: CodexEnvironmentDetector = CodexEnvironmentDetector(),
     private val codexCliVersionService: CodexCliVersionService = CodexCliVersionService(settingsService, codexEnvironmentDetector),
+    private val claudeCliVersionService: ClaudeCliVersionService = ClaudeCliVersionService(settingsService),
+    private val runtimeExecutableCheckService: RuntimeExecutableCheckService = RuntimeExecutableCheckService(),
     private val pickAttachments: () -> List<String> = { emptyList() },
     private val pickExportPath: (String) -> String? = { null },
     private val searchProjectFiles: (String, Int) -> List<String> = { _, _ -> emptyList() },
@@ -141,6 +145,8 @@ internal class ToolWindowCoordinator(
         skillsRuntimeService = skillsRuntimeService,
         codexEnvironmentDetector = codexEnvironmentDetector,
         codexCliVersionService = codexCliVersionService,
+        claudeCliVersionService = claudeCliVersionService,
+        runtimeExecutableCheckService = runtimeExecutableCheckService,
         pickAttachments = pickAttachments,
         pickExportPath = pickExportPath,
         searchProjectFiles = searchProjectFiles,
@@ -218,6 +224,7 @@ internal class ToolWindowCoordinator(
         historyHandler.restoreCurrentSessionHistory()
         settingsHandler.warmSkillsRuntimeCache()
         settingsHandler.warmCodexCliVersionState()
+        settingsHandler.warmClaudeCliVersionState()
     }
 
     private fun handleUiIntent(intent: UiIntent) {
@@ -260,6 +267,10 @@ internal class ToolWindowCoordinator(
             is UiIntent.OpenTimelineFilePath -> openTimelineFilePath(intent.path)
             UiIntent.LoadOlderMessages -> historyHandler.loadOlderMessages()
             is UiIntent.SelectSettingsSection -> settingsHandler.onSettingsSectionSelected(intent.section)
+            is UiIntent.SelectRuntimeSettingsTab -> settingsHandler.onRuntimeSettingsTabSelected(intent.tab)
+            UiIntent.DiscardRuntimeSettingsChanges -> {
+                settingsHandler.onRuntimeSettingsTabSelected(rightDrawerStore.state.value.runtimeSettingsTab)
+            }
             UiIntent.OpenAttachmentPicker -> {
                 val selected = pickAttachments()
                 if (selected.isNotEmpty()) {
@@ -345,6 +356,8 @@ internal class ToolWindowCoordinator(
             UiIntent.TestCodexEnvironment -> settingsHandler.testCodexEnvironment()
             UiIntent.CheckCodexCliVersion -> settingsHandler.refreshCodexCliVersion(force = true)
             UiIntent.UpgradeCodexCli -> settingsHandler.upgradeCodexCli()
+            UiIntent.CheckClaudeCliVersion -> settingsHandler.refreshClaudeCliVersion(force = true)
+            UiIntent.UpgradeClaudeCli -> settingsHandler.upgradeClaudeCli()
             is UiIntent.IgnoreCodexCliVersion -> settingsHandler.ignoreCodexCliVersion(intent.version)
             UiIntent.SaveSettings -> settingsHandler.saveSettings()
             else -> Unit
@@ -398,6 +411,7 @@ internal class ToolWindowCoordinator(
                 selectedModel = settingsService.selectedComposerModel(selectedEngineId),
                 selectedReasoning = settingsService.selectedComposerReasoning(),
                 codexCliVersionSnapshot = codexCliVersionService.snapshot(),
+                claudeCliVersionSnapshot = claudeCliVersionService.snapshot(),
             ),
         )
     }

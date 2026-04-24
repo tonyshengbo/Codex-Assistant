@@ -56,6 +56,11 @@ class AgentSettingsService : PersistentStateComponent<AgentSettingsService.State
         var codexCliLastKnownCurrentVersion: String = "",
         var codexCliLastKnownLatestVersion: String = "",
         var codexCliLastNotifiedVersion: String = "",
+        var claudeCliIgnoredVersion: String = "",
+        var claudeCliLastCheckAt: Long = 0L,
+        var claudeCliLastKnownCurrentVersion: String = "",
+        var claudeCliLastKnownLatestVersion: String = "",
+        var claudeCliLastNotifiedVersion: String = "",
         var savedAgents: MutableList<SavedAgentDefinition> = mutableListOf(),
         // Persist selected composer agents independently so selections survive resets and restarts.
         var selectedAgentIds: LinkedHashSet<String> = linkedSetOf(),
@@ -184,6 +189,46 @@ class AgentSettingsService : PersistentStateComponent<AgentSettingsService.State
 
     fun setCodexCliLastNotifiedVersion(version: String) {
         state.codexCliLastNotifiedVersion = version.trim()
+    }
+
+    /** Returns the ignored Claude CLI version marker persisted for notifications and UI state. */
+    fun claudeCliIgnoredVersion(): String = state.claudeCliIgnoredVersion.trim()
+
+    /** Persists the ignored Claude CLI version marker. */
+    fun setClaudeCliIgnoredVersion(version: String) {
+        state.claudeCliIgnoredVersion = version.trim()
+    }
+
+    /** Returns the last timestamp when Claude version metadata was refreshed. */
+    fun claudeCliLastCheckAt(): Long = state.claudeCliLastCheckAt
+
+    /** Persists the last timestamp when Claude version metadata was refreshed. */
+    fun setClaudeCliLastCheckAt(value: Long) {
+        state.claudeCliLastCheckAt = value.coerceAtLeast(0L)
+    }
+
+    /** Returns the most recently cached installed Claude CLI version. */
+    fun claudeCliLastKnownCurrentVersion(): String = state.claudeCliLastKnownCurrentVersion.trim()
+
+    /** Persists the most recently cached installed Claude CLI version. */
+    fun setClaudeCliLastKnownCurrentVersion(version: String) {
+        state.claudeCliLastKnownCurrentVersion = version.trim()
+    }
+
+    /** Returns the most recently cached latest Claude CLI version. */
+    fun claudeCliLastKnownLatestVersion(): String = state.claudeCliLastKnownLatestVersion.trim()
+
+    /** Persists the most recently cached latest Claude CLI version. */
+    fun setClaudeCliLastKnownLatestVersion(version: String) {
+        state.claudeCliLastKnownLatestVersion = version.trim()
+    }
+
+    /** Returns the last Claude CLI version that already triggered a notification. */
+    fun claudeCliLastNotifiedVersion(): String = state.claudeCliLastNotifiedVersion.trim()
+
+    /** Persists the last Claude CLI version that already triggered a notification. */
+    fun setClaudeCliLastNotifiedVersion(version: String) {
+        state.claudeCliLastNotifiedVersion = version.trim()
     }
 
     fun nodeExecutablePath(): String = state.nodeExecutablePath.trim()

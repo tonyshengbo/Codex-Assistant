@@ -23,8 +23,9 @@ import com.auracode.assistant.toolwindow.eventing.UiIntent
 import com.auracode.assistant.toolwindow.shared.DesignPalette
 import com.auracode.assistant.toolwindow.shared.assistantUiTokens
 
+/** Renders plugin-wide preferences without mixing engine-specific runtime controls. */
 @Composable
-internal fun GeneralSettingsPage(
+internal fun BasicSettingsPage(
     p: DesignPalette,
     state: RightDrawerAreaState,
     onIntent: (UiIntent) -> Unit,
@@ -34,11 +35,6 @@ internal fun GeneralSettingsPage(
         modifier = Modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(t.spacing.lg),
     ) {
-        SettingsGroupHeader(
-            p = p,
-            title = AuraCodeBundle.message("settings.group.shared"),
-            description = AuraCodeBundle.message("settings.group.shared.subtitle"),
-        )
         SettingsField(
             p = p,
             title = AuraCodeBundle.message("settings.theme.label"),
@@ -75,19 +71,6 @@ internal fun GeneralSettingsPage(
                 modifier = Modifier.width(220.dp),
             )
         }
-        SettingsGroupHeader(
-            p = p,
-            title = AuraCodeBundle.message("settings.group.codex"),
-            description = AuraCodeBundle.message("settings.group.codex.subtitle"),
-        )
-        GeneralEnvironmentSettingsSection(p = p, state = state, onIntent = onIntent)
-        CodexCliVersionSettingsSection(p = p, state = state, onIntent = onIntent)
-        SettingsGroupHeader(
-            p = p,
-            title = AuraCodeBundle.message("settings.group.claude"),
-            description = AuraCodeBundle.message("settings.group.claude.subtitle"),
-        )
-        ClaudeSettingsSection(p = p, state = state, onIntent = onIntent)
         SettingsField(
             p = p,
             title = AuraCodeBundle.message("settings.autoContext.label"),
@@ -115,34 +98,7 @@ internal fun GeneralSettingsPage(
     }
 }
 
-@Composable
-private fun ClaudeSettingsSection(
-    p: DesignPalette,
-    state: RightDrawerAreaState,
-    onIntent: (UiIntent) -> Unit,
-) {
-    val claudePathInputState = rememberSettingsTextInputState(state.claudeCliPath)
-    Column(
-        modifier = Modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(assistantUiTokens().spacing.md),
-    ) {
-        SettingsField(
-            p = p,
-            title = AuraCodeBundle.message("settings.claudePath.label"),
-            description = AuraCodeBundle.message("settings.claudePath.hint"),
-        ) {
-            SettingsTextInput(
-                p = p,
-                value = claudePathInputState.value,
-                onValueChange = {
-                    claudePathInputState.value = it
-                    onIntent(UiIntent.EditSettingsClaudeCliPath(it.text))
-                },
-            )
-        }
-    }
-}
-
+/** Renders the UI scale selector used by the Basic settings page. */
 @Composable
 private fun UiScaleModeDropdown(
     p: DesignPalette,
@@ -176,6 +132,7 @@ private fun UiScaleModeDropdown(
     }
 }
 
+/** Renders the language selector used by the Basic settings page. */
 @Composable
 private fun LanguageModeDropdown(
     p: DesignPalette,
@@ -209,6 +166,7 @@ private fun LanguageModeDropdown(
     }
 }
 
+/** Renders the appearance selector used by the Basic settings page. */
 @Composable
 private fun ThemeModeDropdown(
     p: DesignPalette,
@@ -236,6 +194,7 @@ private fun ThemeModeDropdown(
     }
 }
 
+/** Resolves the localized label for the selected language mode. */
 private fun languageModeLabel(mode: UiLanguageMode): String = when (mode) {
     UiLanguageMode.FOLLOW_IDE -> AuraCodeBundle.message("settings.language.followIde")
     UiLanguageMode.ZH -> AuraCodeBundle.message("settings.language.zh")
@@ -244,12 +203,14 @@ private fun languageModeLabel(mode: UiLanguageMode): String = when (mode) {
     UiLanguageMode.KO -> AuraCodeBundle.message("settings.language.ko")
 }
 
+/** Resolves the localized label for the selected theme mode. */
 private fun themeModeLabel(mode: UiThemeMode): String = when (mode) {
     UiThemeMode.FOLLOW_IDE -> AuraCodeBundle.message("settings.theme.followIde")
     UiThemeMode.LIGHT -> AuraCodeBundle.message("settings.theme.light")
     UiThemeMode.DARK -> AuraCodeBundle.message("settings.theme.dark")
 }
 
+/** Resolves the localized label for the selected UI scale. */
 private fun uiScaleModeLabel(mode: UiScaleMode): String = when (mode) {
     UiScaleMode.P80 -> AuraCodeBundle.message("settings.fontScale.80")
     UiScaleMode.P90 -> AuraCodeBundle.message("settings.fontScale.90")

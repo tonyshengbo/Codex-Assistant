@@ -292,6 +292,38 @@ class TimelineRegionLogicTest {
     }
 
     @Test
+    fun `timeline copy menu label uses project bundle wording`() {
+        assertEquals(AuraCodeBundle.message("timeline.copy"), timelineCopyMenuLabel())
+    }
+
+    @Test
+    fun `timeline context menu appearance follows shared palette chrome`() {
+        val lightPalette = assistantPalette(EffectiveTheme.LIGHT)
+        val darkPalette = assistantPalette(EffectiveTheme.DARK)
+
+        assertEquals(
+            TimelineContextMenuAppearance(
+                backgroundColor = lightPalette.topBarBg.copy(alpha = 0.96f),
+                borderColor = lightPalette.markdownDivider.copy(alpha = 0.52f),
+                itemHoverColor = lightPalette.accent.copy(alpha = 0.14f),
+                textColor = lightPalette.textPrimary,
+                hoveredTextColor = lightPalette.accent,
+            ),
+            timelineContextMenuAppearance(lightPalette),
+        )
+        assertEquals(
+            TimelineContextMenuAppearance(
+                backgroundColor = darkPalette.topBarBg.copy(alpha = 0.96f),
+                borderColor = darkPalette.markdownDivider.copy(alpha = 0.52f),
+                itemHoverColor = darkPalette.accent.copy(alpha = 0.14f),
+                textColor = darkPalette.textPrimary,
+                hoveredTextColor = darkPalette.accent,
+            ),
+            timelineContextMenuAppearance(darkPalette),
+        )
+    }
+
+    @Test
     fun `markdown selection colors deepen for both light and dark message surfaces`() {
         val lightPalette = assistantPalette(EffectiveTheme.LIGHT)
         val darkPalette = assistantPalette(EffectiveTheme.DARK)

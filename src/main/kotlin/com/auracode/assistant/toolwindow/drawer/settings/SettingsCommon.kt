@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -196,6 +197,63 @@ internal fun SettingsActionButton(
         contentAlignment = Alignment.Center,
     ) {
         Text(text = text, color = textColor, style = MaterialTheme.typography.body2, fontWeight = FontWeight.Medium)
+    }
+}
+
+@Composable
+internal fun SettingsInlineMessage(
+    p: DesignPalette,
+    text: String,
+    isError: Boolean = false,
+) {
+    val color = if (isError) Color(0xFFE28A8A) else p.textMuted
+    Text(
+        text = text,
+        color = color,
+        style = MaterialTheme.typography.caption,
+    )
+}
+
+@Composable
+internal fun SettingsSegmentTabs(
+    p: DesignPalette,
+    options: List<String>,
+    selectedIndex: Int,
+    onSelect: (Int) -> Unit,
+) {
+    val t = assistantUiTokens()
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(p.topBarBg.copy(alpha = 0.64f), RoundedCornerShape(t.spacing.lg))
+            .border(1.dp, p.markdownDivider.copy(alpha = 0.48f), RoundedCornerShape(t.spacing.lg))
+            .padding(4.dp),
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        options.forEachIndexed { index, label ->
+            val selected = index == selectedIndex
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .clip(RoundedCornerShape(t.spacing.md))
+                    .background(if (selected) p.accent.copy(alpha = 0.16f) else Color.Transparent)
+                    .border(
+                        width = 1.dp,
+                        color = if (selected) p.accent.copy(alpha = 0.35f) else Color.Transparent,
+                        shape = RoundedCornerShape(t.spacing.md),
+                    )
+                    .clickable(onClick = { onSelect(index) })
+                    .padding(horizontal = t.spacing.md, vertical = t.spacing.sm),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    text = label,
+                    color = if (selected) p.accent else p.textSecondary,
+                    style = MaterialTheme.typography.body2,
+                    fontWeight = FontWeight.Medium,
+                )
+            }
+        }
     }
 }
 

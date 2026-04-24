@@ -1,7 +1,8 @@
 package com.auracode.assistant.toolwindow.drawer
 
 internal enum class SettingsSection {
-    GENERAL,
+    BASIC,
+    RUNTIME,
     AGENTS,
     SKILLS,
     MCP,
@@ -17,9 +18,13 @@ internal data class SettingsSectionPresentation(
 )
 
 internal fun SettingsSection.presentation(): SettingsSectionPresentation = when (this) {
-    SettingsSection.GENERAL -> SettingsSectionPresentation(
-        titleKey = "settings.section.general",
-        subtitleKey = "settings.section.general.subtitle",
+    SettingsSection.BASIC -> SettingsSectionPresentation(
+        titleKey = "settings.section.basic",
+        subtitleKey = "settings.section.basic.subtitle",
+    )
+    SettingsSection.RUNTIME -> SettingsSectionPresentation(
+        titleKey = "settings.section.runtime",
+        subtitleKey = "settings.section.runtime.subtitle",
     )
     SettingsSection.AGENTS -> SettingsSectionPresentation(
         titleKey = "settings.section.agents",

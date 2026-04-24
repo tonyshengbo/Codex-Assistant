@@ -56,10 +56,16 @@ internal fun SettingsOverlay(
         ) {
             SettingsRailItem(
                 p = p,
-                selected = state.settingsSection == SettingsSection.GENERAL,
+                selected = state.settingsSection == SettingsSection.BASIC,
                 iconPath = "/icons/settings.svg",
-                description = AuraCodeBundle.message("settings.section.general"),
-            ) { onIntent(UiIntent.SelectSettingsSection(SettingsSection.GENERAL)) }
+                description = AuraCodeBundle.message("settings.section.basic"),
+            ) { onIntent(UiIntent.SelectSettingsSection(SettingsSection.BASIC)) }
+            SettingsRailItem(
+                p = p,
+                selected = state.settingsSection == SettingsSection.RUNTIME,
+                iconPath = "/icons/runtime-terminal.svg",
+                description = AuraCodeBundle.message("settings.section.runtime"),
+            ) { onIntent(UiIntent.SelectSettingsSection(SettingsSection.RUNTIME)) }
             SettingsRailItem(
                 p = p,
                 selected = state.settingsSection == SettingsSection.AGENTS,
@@ -126,13 +132,23 @@ internal fun SettingsOverlay(
                 )
                 Spacer(Modifier.height(t.spacing.lg))
                 when (state.settingsSection) {
-                    SettingsSection.GENERAL -> {
+                    SettingsSection.BASIC -> {
                         Column(
                             modifier = Modifier
                                 .fillMaxSize()
                                 .verticalScroll(rememberScrollState()),
                         ) {
-                            GeneralSettingsPage(p = p, state = state, onIntent = onIntent)
+                            BasicSettingsPage(p = p, state = state, onIntent = onIntent)
+                        }
+                    }
+
+                    SettingsSection.RUNTIME -> {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .verticalScroll(rememberScrollState()),
+                        ) {
+                            RuntimeSettingsPage(p = p, state = state, onIntent = onIntent)
                         }
                     }
 

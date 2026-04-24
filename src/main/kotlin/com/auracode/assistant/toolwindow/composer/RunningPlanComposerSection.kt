@@ -24,6 +24,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.Icon
+import androidx.compose.material.MaterialTheme
 import androidx.compose.material.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -96,7 +97,7 @@ internal fun runningPlanHeaderSummary(state: ComposerRunningPlanState): RunningP
 internal fun runningPlanProgressBadgeChrome(): RunningPlanProgressBadgeChrome {
     return RunningPlanProgressBadgeChrome(
         horizontalPadding = 5.dp,
-        verticalPadding = 0.dp,
+        verticalPadding = 1.dp,
         minWidth = 34.dp,
         minHeight = 18.dp,
         cornerRadius = 999.dp,
@@ -264,8 +265,10 @@ private fun RowScope.RunningPlanProgressBadge(
         Text(
             text = label,
             color = p.textSecondary,
-            fontSize = 10.sp,
-            fontWeight = FontWeight.Medium,
+            style = MaterialTheme.typography.overline.copy(
+                fontSize = 10.sp,
+                fontWeight = FontWeight.Medium,
+            ),
             maxLines = 1,
         )
     }

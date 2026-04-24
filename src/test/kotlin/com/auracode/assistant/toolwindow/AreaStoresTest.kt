@@ -23,6 +23,8 @@ import com.auracode.assistant.provider.codex.CodexEnvironmentStatus
 import com.auracode.assistant.provider.codex.CodexCliUpgradeSource
 import com.auracode.assistant.provider.codex.CodexCliVersionCheckStatus
 import com.auracode.assistant.provider.codex.CodexCliVersionSnapshot
+import com.auracode.assistant.provider.claude.ClaudeCliVersionCheckStatus
+import com.auracode.assistant.provider.claude.ClaudeCliVersionSnapshot
 import com.auracode.assistant.conversation.ConversationCapabilities
 import com.auracode.assistant.toolwindow.composer.ComposerAreaStore
 import com.auracode.assistant.toolwindow.composer.ContextEntry
@@ -32,6 +34,7 @@ import com.auracode.assistant.toolwindow.drawer.RightDrawerAreaStore
 import com.auracode.assistant.toolwindow.drawer.AgentSettingsPage
 import com.auracode.assistant.toolwindow.drawer.McpSettingsPage
 import com.auracode.assistant.toolwindow.drawer.RightDrawerKind
+import com.auracode.assistant.toolwindow.drawer.RuntimeSettingsTab
 import com.auracode.assistant.toolwindow.drawer.SettingsSection
 import com.auracode.assistant.toolwindow.eventing.AppEvent
 import com.auracode.assistant.toolwindow.eventing.ComposerMode
@@ -366,17 +369,28 @@ class AreaStoresTest {
     }
 
     @Test
-    fun `settings drawer defaults to general section and switches sections explicitly`() {
+    fun `settings drawer defaults to basic section and switches sections explicitly`() {
         val store = RightDrawerAreaStore()
 
         store.onEvent(AppEvent.UiIntentPublished(UiIntent.ToggleSettings))
         assertEquals(RightDrawerKind.SETTINGS, store.state.value.kind)
-        assertEquals(SettingsSection.GENERAL, store.state.value.settingsSection)
+        assertEquals(SettingsSection.BASIC, store.state.value.settingsSection)
 
         store.onEvent(AppEvent.UiIntentPublished(UiIntent.SelectSettingsSection(SettingsSection.MCP)))
 
         assertEquals(RightDrawerKind.SETTINGS, store.state.value.kind)
         assertEquals(SettingsSection.MCP, store.state.value.settingsSection)
+    }
+
+    @Test
+    fun `runtime tab selection is preserved inside runtime settings`() {
+        val store = RightDrawerAreaStore()
+
+        store.onEvent(AppEvent.UiIntentPublished(UiIntent.SelectSettingsSection(SettingsSection.RUNTIME)))
+        store.onEvent(AppEvent.UiIntentPublished(UiIntent.SelectRuntimeSettingsTab(RuntimeSettingsTab.CLAUDE)))
+
+        assertEquals(SettingsSection.RUNTIME, store.state.value.settingsSection)
+        assertEquals(RuntimeSettingsTab.CLAUDE, store.state.value.runtimeSettingsTab)
     }
 
     @Test
@@ -493,7 +507,7 @@ class AreaStoresTest {
         assertEquals("", store.state.value.agentDraftName)
         assertTrue(store.state.value.isAgentEditorDialogVisible)
 
-        store.onEvent(AppEvent.UiIntentPublished(UiIntent.SelectSettingsSection(SettingsSection.GENERAL)))
+        store.onEvent(AppEvent.UiIntentPublished(UiIntent.SelectSettingsSection(SettingsSection.BASIC)))
         assertEquals(AgentSettingsPage.LIST, store.state.value.agentSettingsPage)
         assertFalse(store.state.value.isAgentEditorDialogVisible)
     }
@@ -617,6 +631,34 @@ class AreaStoresTest {
         )
 
         assertEquals(snapshot, store.state.value.codexCliVersionSnapshot)
+    }
+
+    @Test
+    fun `settings snapshot carries claude cli version state`() {
+        val store = RightDrawerAreaStore()
+        val snapshot = ClaudeCliVersionSnapshot(
+            checkStatus = ClaudeCliVersionCheckStatus.UPDATE_AVAILABLE,
+            currentVersion = "2.1.74",
+            latestVersion = "2.1.119",
+            displayCommand = "npm install -g @anthropic-ai/claude-code@latest",
+            lastCheckedAt = 456L,
+        )
+
+        store.onEvent(
+            AppEvent.SettingsSnapshotUpdated(
+                codexCliPath = "codex",
+                claudeCliPath = "claude",
+                nodePath = "",
+                languageMode = com.auracode.assistant.settings.UiLanguageMode.FOLLOW_IDE,
+                themeMode = UiThemeMode.DARK,
+                autoContextEnabled = true,
+                savedAgents = emptyList(),
+                customModelIds = emptyList(),
+                claudeCliVersionSnapshot = snapshot,
+            ),
+        )
+
+        assertEquals(snapshot, store.state.value.claudeCliVersionSnapshot)
     }
 
     @Test

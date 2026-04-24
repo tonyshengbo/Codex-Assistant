@@ -10,8 +10,8 @@ import kotlin.test.assertTrue
 
 class CodexCliVersionPanelModelTest {
     @Test
-    fun `up to date state keeps only the check action and hides low priority metadata`() {
-        val model = buildCodexCliVersionPanelModel(
+    fun `up to date state keeps only the check action and hides manual upgrade metadata`() {
+        val model = buildCodexRuntimeCliVersionPanelModel(
             CodexCliVersionSnapshot(
                 checkStatus = CodexCliVersionCheckStatus.UP_TO_DATE,
                 currentVersion = "0.118.0",
@@ -28,14 +28,11 @@ class CodexCliVersionPanelModelTest {
         assertTrue(model.showPrimaryAction)
         assertFalse(model.showManualUpgradeHint)
         assertFalse(model.showVersionCommand)
-        assertFalse(model.showStatusBadge)
-        assertTrue(model.showAutoCheckToggle)
-        assertTrue(model.autoCheckEnabled)
     }
 
     @Test
     fun `unsupported update available state keeps manual upgrade guidance without auto upgrade action`() {
-        val model = buildCodexCliVersionPanelModel(
+        val model = buildCodexRuntimeCliVersionPanelModel(
             CodexCliVersionSnapshot(
                 checkStatus = CodexCliVersionCheckStatus.UPDATE_AVAILABLE,
                 currentVersion = "0.118.0",
@@ -58,7 +55,7 @@ class CodexCliVersionPanelModelTest {
 
     @Test
     fun `supported update available state shows upgrade action and hides manual hint`() {
-        val model = buildCodexCliVersionPanelModel(
+        val model = buildCodexRuntimeCliVersionPanelModel(
             CodexCliVersionSnapshot(
                 checkStatus = CodexCliVersionCheckStatus.UPDATE_AVAILABLE,
                 currentVersion = "0.118.0",
@@ -73,12 +70,11 @@ class CodexCliVersionPanelModelTest {
         assertEquals("Update available", model.statusText)
         assertTrue(model.showPrimaryAction)
         assertFalse(model.showManualUpgradeHint)
-        assertFalse(model.showStatusBadge)
     }
 
     @Test
     fun `checking state moves feedback onto the primary button`() {
-        val model = buildCodexCliVersionPanelModel(
+        val model = buildCodexRuntimeCliVersionPanelModel(
             CodexCliVersionSnapshot(
                 checkStatus = CodexCliVersionCheckStatus.CHECKING,
                 currentVersion = "0.118.0",
@@ -89,13 +85,12 @@ class CodexCliVersionPanelModelTest {
         assertEquals("Checking...", model.primaryActionLabel)
         assertEquals("Checking", model.statusText)
         assertTrue(model.isBusy)
-        assertFalse(model.showStatusBadge)
     }
 
     @Test
     fun `ignored update state surfaces ignored status text`() {
-        val model = buildCodexCliVersionPanelModel(
-            snapshot = CodexCliVersionSnapshot(
+        val model = buildCodexRuntimeCliVersionPanelModel(
+            CodexCliVersionSnapshot(
                 checkStatus = CodexCliVersionCheckStatus.UPDATE_AVAILABLE,
                 currentVersion = "0.118.0",
                 latestVersion = "0.120.0",
@@ -104,10 +99,8 @@ class CodexCliVersionPanelModelTest {
                 displayCommand = "npm install -g @openai/codex@latest",
                 isUpgradeSupported = false,
             ),
-            autoCheckEnabled = false,
         )
 
         assertEquals("Update available (ignored: 0.120.0)", model.statusText)
-        assertFalse(model.autoCheckEnabled)
     }
 }

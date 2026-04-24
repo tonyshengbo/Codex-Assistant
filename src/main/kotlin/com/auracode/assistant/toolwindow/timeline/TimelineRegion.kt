@@ -313,7 +313,7 @@ internal fun TimelineRegion(
     )
 
     Box(modifier = modifier.background(p.appBg)) {
-        TimelineTextInteractionHost {
+        TimelineTextInteractionHost(palette = p) {
             LazyColumn(
                 state = listState,
                 modifier = Modifier.fillMaxWidth(),

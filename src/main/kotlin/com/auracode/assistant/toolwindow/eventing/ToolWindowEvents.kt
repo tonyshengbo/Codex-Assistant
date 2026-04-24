@@ -19,8 +19,10 @@ import com.auracode.assistant.settings.mcp.McpServerDraft
 import com.auracode.assistant.settings.mcp.McpServerSummary
 import com.auracode.assistant.settings.mcp.McpTestResult
 import com.auracode.assistant.settings.mcp.McpValidationErrors
+import com.auracode.assistant.provider.claude.ClaudeCliVersionSnapshot
 import com.auracode.assistant.provider.codex.CodexEnvironmentCheckResult
 import com.auracode.assistant.provider.codex.CodexCliVersionSnapshot
+import com.auracode.assistant.provider.runtime.RuntimeExecutableCheckResult
 import com.auracode.assistant.toolwindow.approval.ApprovalAction
 import com.auracode.assistant.toolwindow.composer.ComposerRunningPlanState
 import com.auracode.assistant.toolwindow.composer.MentionSuggestion
@@ -32,6 +34,7 @@ import com.auracode.assistant.toolwindow.composer.FocusedContextSnapshot
 import com.auracode.assistant.i18n.AuraCodeBundle
 import com.auracode.assistant.toolwindow.plan.PlanCompletionPromptUiModel
 import com.auracode.assistant.toolwindow.toolinput.ToolUserInputPromptUiModel
+import com.auracode.assistant.toolwindow.drawer.RuntimeSettingsTab
 import com.auracode.assistant.toolwindow.drawer.SettingsSection
 import com.auracode.assistant.toolwindow.shared.UiText
 import com.auracode.assistant.toolwindow.timeline.TimelineFileChange
@@ -135,6 +138,7 @@ internal sealed interface UiIntent {
     data object RequestPlanRevision : UiIntent
     data object DismissPlanCompletionPrompt : UiIntent
     data class SelectSettingsSection(val section: SettingsSection) : UiIntent
+    data class SelectRuntimeSettingsTab(val tab: RuntimeSettingsTab) : UiIntent
     data class EditSettingsCodexCliPath(val value: String) : UiIntent
     data class EditSettingsClaudeCliPath(val value: String) : UiIntent
     data class EditSettingsNodePath(val value: String) : UiIntent
@@ -149,6 +153,8 @@ internal sealed interface UiIntent {
     data object CheckCodexCliVersion : UiIntent
     data object UpgradeCodexCli : UiIntent
     data class IgnoreCodexCliVersion(val version: String) : UiIntent
+    data object CheckClaudeCliVersion : UiIntent
+    data object UpgradeClaudeCli : UiIntent
     data object CreateNewAgentDraft : UiIntent
     data object ShowAgentSettingsList : UiIntent
     data class SelectSavedAgentForEdit(val id: String) : UiIntent
@@ -175,6 +181,7 @@ internal sealed interface UiIntent {
     data class TestMcpServer(val name: String? = null) : UiIntent
     data class LoginMcpServer(val name: String) : UiIntent
     data class LogoutMcpServer(val name: String) : UiIntent
+    data object DiscardRuntimeSettingsChanges : UiIntent
     data object SaveSettings : UiIntent
 }
 
@@ -247,6 +254,7 @@ internal sealed interface AppEvent {
         val selectedModel: String = com.auracode.assistant.provider.codex.CodexModelCatalog.defaultModel,
         val selectedReasoning: String = ComposerReasoning.MEDIUM.effort,
         val codexCliVersionSnapshot: CodexCliVersionSnapshot = CodexCliVersionSnapshot(),
+        val claudeCliVersionSnapshot: ClaudeCliVersionSnapshot = ClaudeCliVersionSnapshot(),
     ) : AppEvent
     data class CodexEnvironmentCheckRunning(
         val running: Boolean,
@@ -257,6 +265,12 @@ internal sealed interface AppEvent {
     ) : AppEvent
     data class CodexCliVersionSnapshotUpdated(
         val snapshot: CodexCliVersionSnapshot,
+    ) : AppEvent
+    data class ClaudeCliVersionSnapshotUpdated(
+        val snapshot: ClaudeCliVersionSnapshot,
+    ) : AppEvent
+    data class ClaudeRuntimeExecutableCheckUpdated(
+        val result: RuntimeExecutableCheckResult,
     ) : AppEvent
     data class ConversationCapabilitiesUpdated(
         val capabilities: ConversationCapabilities,

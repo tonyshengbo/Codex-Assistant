@@ -13,8 +13,10 @@ import com.auracode.assistant.settings.mcp.McpServerSummary
 import com.auracode.assistant.settings.mcp.McpRuntimeStatus
 import com.auracode.assistant.settings.mcp.McpTestResult
 import com.auracode.assistant.settings.mcp.McpValidationErrors
+import com.auracode.assistant.provider.claude.ClaudeCliVersionSnapshot
 import com.auracode.assistant.provider.codex.CodexEnvironmentCheckResult
 import com.auracode.assistant.provider.codex.CodexCliVersionSnapshot
+import com.auracode.assistant.provider.runtime.RuntimeExecutableCheckResult
 import com.auracode.assistant.toolwindow.eventing.AppEvent
 import com.auracode.assistant.toolwindow.eventing.UiIntent
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -56,9 +58,12 @@ internal data class RightDrawerAreaState(
     val backgroundCompletionNotificationsEnabled: Boolean = true,
     val codexCliAutoUpdateCheckEnabled: Boolean = true,
     val codexCliVersionSnapshot: CodexCliVersionSnapshot = CodexCliVersionSnapshot(),
+    val claudeCliVersionSnapshot: ClaudeCliVersionSnapshot = ClaudeCliVersionSnapshot(),
     val environmentCheckRunning: Boolean = false,
     val environmentCheckResult: CodexEnvironmentCheckResult? = null,
-    val settingsSection: SettingsSection = SettingsSection.GENERAL,
+    val claudeRuntimeCheckResult: RuntimeExecutableCheckResult? = null,
+    val settingsSection: SettingsSection = SettingsSection.BASIC,
+    val runtimeSettingsTab: RuntimeSettingsTab = RuntimeSettingsTab.CODEX,
     val savedAgents: List<SavedAgentDefinition> = emptyList(),
     val agentSettingsPage: AgentSettingsPage = AgentSettingsPage.LIST,
     val editingAgentId: String? = null,
@@ -145,6 +150,10 @@ internal class RightDrawerAreaStore {
                         )
                     }
 
+                    is UiIntent.SelectRuntimeSettingsTab -> {
+                        _state.value = _state.value.copy(runtimeSettingsTab = event.intent.tab)
+                    }
+
                     UiIntent.CloseRightDrawer -> {
                         _state.value = _state.value.copy(kind = RightDrawerKind.NONE)
                     }
@@ -152,18 +161,37 @@ internal class RightDrawerAreaStore {
                     is UiIntent.EditSettingsCodexCliPath -> {
                         _state.value = _state.value.copy(
                             environmentDraft = _state.value.environmentDraft.withEditedCodexPath(event.intent.value),
+                            environmentCheckResult = null,
                         )
                     }
 
                     is UiIntent.EditSettingsClaudeCliPath -> {
                         _state.value = _state.value.copy(
                             claudeCliPath = event.intent.value,
+                            claudeRuntimeCheckResult = null,
                         )
                     }
 
                     is UiIntent.EditSettingsNodePath -> {
                         _state.value = _state.value.copy(
                             environmentDraft = _state.value.environmentDraft.withEditedNodePath(event.intent.value),
+                            environmentCheckResult = null,
+                            claudeRuntimeCheckResult = null,
+                        )
+                    }
+
+                    UiIntent.DiscardRuntimeSettingsChanges -> {
+                        val current = _state.value
+                        _state.value = current.copy(
+                            environmentDraft = EnvironmentDraftState(
+                                codexCliPath = current.environmentDraft.savedCodexCliPath,
+                                nodePath = current.environmentDraft.savedNodePath,
+                                savedCodexCliPath = current.environmentDraft.savedCodexCliPath,
+                                savedNodePath = current.environmentDraft.savedNodePath,
+                            ),
+                            claudeCliPath = current.savedClaudeCliPath,
+                            environmentCheckResult = null,
+                            claudeRuntimeCheckResult = null,
                         )
                     }
 
@@ -326,6 +354,7 @@ internal class RightDrawerAreaStore {
                     backgroundCompletionNotificationsEnabled = event.backgroundCompletionNotificationsEnabled,
                     codexCliAutoUpdateCheckEnabled = event.codexCliAutoUpdateCheckEnabled,
                     codexCliVersionSnapshot = event.codexCliVersionSnapshot,
+                    claudeCliVersionSnapshot = event.claudeCliVersionSnapshot,
                     savedAgents = event.savedAgents,
                     editingAgentId = selected?.id ?: _state.value.editingAgentId?.takeIf { id ->
                         event.savedAgents.any { it.id == id }
@@ -359,6 +388,14 @@ internal class RightDrawerAreaStore {
 
             is AppEvent.CodexCliVersionSnapshotUpdated -> {
                 _state.value = _state.value.copy(codexCliVersionSnapshot = event.snapshot)
+            }
+
+            is AppEvent.ClaudeCliVersionSnapshotUpdated -> {
+                _state.value = _state.value.copy(claudeCliVersionSnapshot = event.snapshot)
+            }
+
+            is AppEvent.ClaudeRuntimeExecutableCheckUpdated -> {
+                _state.value = _state.value.copy(claudeRuntimeCheckResult = event.result)
             }
 
             is AppEvent.McpServersLoaded -> {

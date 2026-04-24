@@ -2,6 +2,7 @@ package com.auracode.assistant.toolwindow.timeline
 
 import androidx.compose.foundation.ContextMenuArea
 import androidx.compose.foundation.ContextMenuItem
+import androidx.compose.foundation.LocalContextMenuRepresentation
 import androidx.compose.foundation.ContextMenuState
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.text.LocalTextContextMenu
@@ -12,18 +13,20 @@ import androidx.compose.foundation.text.selection.TextSelectionColors
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.remember
-import androidx.compose.ui.platform.LocalLocalization
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
+import com.auracode.assistant.i18n.AuraCodeBundle
 import com.auracode.assistant.toolwindow.shared.DesignPalette
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 internal fun TimelineTextInteractionHost(
+    palette: DesignPalette,
     content: @Composable () -> Unit,
 ) {
     CompositionLocalProvider(
         LocalTextContextMenu provides rememberTimelineCopyOnlyTextContextMenu(),
+        LocalContextMenuRepresentation provides rememberTimelineContextMenuRepresentation(palette),
     ) {
         content()
     }
@@ -106,7 +109,7 @@ internal fun timelineCommandSelectionHandle(): Color {
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun rememberTimelineCopyOnlyTextContextMenu(): TextContextMenu {
-    val copyLabel = LocalLocalization.current.copy
+    val copyLabel = timelineCopyMenuLabel()
     return remember(copyLabel) {
         object : TextContextMenu {
             @Composable
@@ -128,6 +131,13 @@ private fun rememberTimelineCopyOnlyTextContextMenu(): TextContextMenu {
             }
         }
     }
+}
+
+/**
+ * Returns the localized copy label shown by timeline text context menus.
+ */
+internal fun timelineCopyMenuLabel(): String {
+    return AuraCodeBundle.message("timeline.copy")
 }
 
 @OptIn(ExperimentalFoundationApi::class)
