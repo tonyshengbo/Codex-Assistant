@@ -2,6 +2,7 @@ package com.auracode.assistant.provider.claude
 
 import com.auracode.assistant.provider.codex.CodexExecutableResolver
 import com.auracode.assistant.provider.codex.buildLaunchEnvironmentOverrides
+import com.auracode.assistant.provider.runtime.RuntimeUpgradeCommandResolver
 import com.auracode.assistant.settings.AgentSettingsService
 import java.io.BufferedReader
 import java.net.HttpURLConnection
@@ -21,6 +22,7 @@ internal class ClaudeCliVersionService(
     private val settingsService: AgentSettingsService,
     private val sourceDetector: ClaudeCliUpgradeSourceDetector = ClaudeCliUpgradeSourceDetector(),
     private val executableResolver: CodexExecutableResolver = CodexExecutableResolver(),
+    private val upgradeCommandResolver: RuntimeUpgradeCommandResolver = RuntimeUpgradeCommandResolver(),
     private val shellEnvironmentLoader: () -> Map<String, String> = { System.getenv() },
     private val commandRunner: (List<String>, Map<String, String>) -> ClaudeCliCommandResult = ::runClaudeCliCommand,
     private val latestVersionFetcher: () -> String = ::fetchLatestClaudeCliVersionFromNpm,
@@ -144,7 +146,11 @@ internal class ClaudeCliVersionService(
             checkStatus = ClaudeCliVersionCheckStatus.UPGRADE_IN_PROGRESS,
             message = "Upgrading Claude CLI...",
         )
-        val result = commandRunner(action.command, resolution.environmentOverrides)
+        val resolvedCommand = upgradeCommandResolver.resolve(
+            command = action.command,
+            shellEnvironment = resolution.environmentOverrides,
+        )
+        val result = commandRunner(resolvedCommand, resolution.environmentOverrides)
         if (result.exitCode != 0) {
             val failed = cachedSnapshot.copy(
                 checkStatus = ClaudeCliVersionCheckStatus.UPGRADE_FAILED,

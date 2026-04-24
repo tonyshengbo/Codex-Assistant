@@ -1,6 +1,7 @@
 package com.auracode.assistant.provider.codex
 
 import com.auracode.assistant.settings.AgentSettingsService
+import com.auracode.assistant.provider.runtime.RuntimeUpgradeCommandResolver
 import java.io.BufferedReader
 import java.net.HttpURLConnection
 import java.net.URL
@@ -19,6 +20,7 @@ internal class CodexCliVersionService(
     private val settingsService: AgentSettingsService,
     private val environmentDetector: CodexEnvironmentDetector = CodexEnvironmentDetector(),
     private val sourceDetector: CodexCliUpgradeSourceDetector = CodexCliUpgradeSourceDetector(),
+    private val upgradeCommandResolver: RuntimeUpgradeCommandResolver = RuntimeUpgradeCommandResolver(),
     private val commandRunner: (List<String>, Map<String, String>) -> CodexCliCommandResult = ::runCodexCliCommand,
     private val latestVersionFetcher: () -> String = ::fetchLatestCodexCliVersionFromNpm,
     private val clock: () -> Long = System::currentTimeMillis,
@@ -164,7 +166,11 @@ internal class CodexCliVersionService(
             checkStatus = CodexCliVersionCheckStatus.UPGRADE_IN_PROGRESS,
             message = "Upgrading Codex CLI...",
         )
-        val result = commandRunner(action.command, resolution.environmentOverrides)
+        val resolvedCommand = upgradeCommandResolver.resolve(
+            command = action.command,
+            shellEnvironment = resolution.environmentOverrides,
+        )
+        val result = commandRunner(resolvedCommand, resolution.environmentOverrides)
         if (result.exitCode != 0) {
             val failed = cachedSnapshot.copy(
                 checkStatus = CodexCliVersionCheckStatus.UPGRADE_FAILED,

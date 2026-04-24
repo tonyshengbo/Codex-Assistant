@@ -58,12 +58,12 @@ class CodexCliVersionServiceTest {
             environmentDetector = testEnvironmentDetector(codexPath),
             sourceDetector = npmSourceDetector(),
             commandRunner = { command, _ ->
-                when {
-                    command.lastOrNull() == "--version" -> CodexCliCommandResult(0, installedVersion, "")
-                    command.firstOrNull() == "npm" -> {
-                        installedVersion = "codex-cli 0.120.0"
-                        CodexCliCommandResult(0, "", "")
-                    }
+                    when {
+                        command.lastOrNull() == "--version" -> CodexCliCommandResult(0, installedVersion, "")
+                        isNpmCommand(command.firstOrNull()) -> {
+                            installedVersion = "codex-cli 0.120.0"
+                            CodexCliCommandResult(0, "", "")
+                        }
                     else -> CodexCliCommandResult(1, "", "unexpected command")
                 }
             },
@@ -95,6 +95,16 @@ class CodexCliVersionServiceTest {
             shellEnvironmentCandidatesLoader = { emptyList() },
             commonSearchPaths = emptyList(),
         )
+    }
+
+    /** Matches npm whether the upgrade service kept the bare command or resolved an absolute executable path. */
+    private fun isNpmCommand(command: String?): Boolean {
+        val normalized = command?.lowercase().orEmpty()
+        return normalized == "npm" ||
+            normalized.endsWith("/npm") ||
+            normalized.endsWith("\\npm") ||
+            normalized.endsWith("/npm.cmd") ||
+            normalized.endsWith("\\npm.cmd")
     }
 
     private fun npmSourceDetector(): CodexCliUpgradeSourceDetector {
