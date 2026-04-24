@@ -74,10 +74,12 @@ internal class ClaudeLocalHistoryReader(
 
                 when (type) {
                     "user" -> {
+                        // isMeta 行是 CLI 内部消息，跳过用户消息提取，但仍处理工具结果
+                        val isMeta = payload["isMeta"]?.jsonPrimitive?.booleanOrNull == true
                         appendUserEvents(
                             sessionId = sessionId,
                             uuid = uuid,
-                            payload = payload,
+                            payload = if (isMeta) JsonObject(emptyMap()) else payload,
                             rawLine = trimmed,
                             toolStates = toolStates,
                             pendingTurnId = pendingTurnId,
@@ -165,7 +167,8 @@ internal class ClaudeLocalHistoryReader(
     ): String? {
         val snapshot = parser.parse(rawLine) as? ClaudeStreamEvent.AssistantSnapshot
         if (snapshot == null) {
-            val text = extractPlainMessageText(payload) ?: return pendingTurnId
+            val rawText = extractPlainMessageText(payload) ?: return pendingTurnId
+            val text = stripThinkingTags(rawText).takeIf { it.isNotBlank() } ?: return pendingTurnId
             events += UnifiedEvent.ItemUpdated(
                 item = UnifiedItem(
                     id = payload.messageIdOrUuid(uuid),
@@ -210,10 +213,10 @@ internal class ClaudeLocalHistoryReader(
             )
         }
 
-        val text = snapshot.content
+        val rawText = snapshot.content
             .filterIsInstance<ClaudeMessageContent.Text>()
             .joinToString(separator = "") { it.text }
-            .takeIf { it.isNotBlank() }
+        val text = stripThinkingTags(rawText).takeIf { it.isNotBlank() }
         if (text != null) {
             events += UnifiedEvent.ItemUpdated(
                 item = UnifiedItem(
@@ -238,26 +241,49 @@ internal class ClaudeLocalHistoryReader(
     }
 
     /**
-     * 从 message.content 数组中提取所有 type=text 的块并拼接为字符串。
+     * 从 message.content 中提取纯文本内容。
+     * 支持数组格式（[{"type":"text","text":"..."}]）和字符串格式（"..."）。
      * 忽略 tool_use、tool_result 等非文本块。
      */
     private fun extractPlainMessageText(payload: JsonObject): String? {
-        val content = runCatching {
-            payload["message"]?.jsonObject?.get("content")?.jsonArray
-        }.getOrNull() ?: return null
+        val messageObj = payload["message"]?.jsonObject ?: return null
+        val contentElement = messageObj["content"] ?: return null
 
-        val text = content.mapNotNull { element ->
-            runCatching {
-                val obj = element.jsonObject
-                if (obj["type"]?.jsonPrimitive?.contentOrNull == "text") {
-                    obj["text"]?.jsonPrimitive?.contentOrNull
-                } else {
-                    null
-                }
-            }.getOrNull()
-        }.joinToString("\n")
+        val text = when {
+            contentElement is kotlinx.serialization.json.JsonPrimitive -> {
+                // 字符串格式：过滤掉 CLI 内部系统消息（以 < 开头的 XML 标签）
+                val raw = contentElement.contentOrNull?.trim().orEmpty()
+                if (raw.startsWith("<")) return null
+                raw
+            }
+            else -> {
+                val array = runCatching { contentElement.jsonArray }.getOrNull() ?: return null
+                array.mapNotNull { element ->
+                    runCatching {
+                        val obj = element.jsonObject
+                        if (obj["type"]?.jsonPrimitive?.contentOrNull == "text") {
+                            obj["text"]?.jsonPrimitive?.contentOrNull
+                        } else {
+                            null
+                        }
+                    }.getOrNull()
+                }.joinToString("\n")
+            }
+        }
 
         return text.trim().takeIf { it.isNotBlank() }
+    }
+
+    /**
+     * 从文本中分离 <thinking>...</thinking> 块，返回主文本部分。
+     */
+    private fun stripThinkingTags(text: String): String {
+        val startTag = "<thinking>"
+        val endTag = "</thinking>"
+        val startIdx = text.indexOf(startTag)
+        if (startIdx == -1) return text
+        val endIdx = text.indexOf(endTag)
+        return if (endIdx == -1) "" else text.substring(endIdx + endTag.length).trim()
     }
 
     /** 读取 assistant message.id；缺失时回退到当前行 uuid。 */

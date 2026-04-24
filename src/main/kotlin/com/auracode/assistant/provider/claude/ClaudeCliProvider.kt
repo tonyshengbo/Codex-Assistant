@@ -191,20 +191,12 @@ internal class ClaudeCliProvider(
             diagnosticLogger("Claude CLI ignored $channel line: requestId=${request.requestId}")
             return
         }
-        diagnosticLogger(
-            "Claude CLI parsed event: requestId=${request.requestId} " +
-                "channel=$channel event=${rawEvent.toLogSummary()}",
-        )
         val semanticEvents = accumulator.accumulate(rawEvent)
         if (semanticEvents.isEmpty()) {
             diagnosticLogger("Claude CLI emitted no semantic events: requestId=${request.requestId} channel=$channel")
             return
         }
         semanticEvents.forEach { semanticEvent ->
-            diagnosticLogger(
-                "Claude CLI semantic event: requestId=${request.requestId} " +
-                    "channel=$channel event=${semanticEvent.toLogSummary()}",
-            )
             mapper.map(semanticEvent).forEach { unified ->
                 emitUnifiedEvent(request, unified, emitUnified)
             }
@@ -217,9 +209,9 @@ internal class ClaudeCliProvider(
         event: UnifiedEvent,
         emitUnified: suspend (UnifiedEvent) -> Unit,
     ) {
-        diagnosticLogger(
-            "Claude CLI emit unified event: requestId=${request.requestId} event=${event.toLogSummary()}",
-        )
+//        diagnosticLogger(
+//            "Claude CLI emit unified event: requestId=${request.requestId} event=${event.toLogSummary()}",
+//        )
         emitUnified(event)
     }
 

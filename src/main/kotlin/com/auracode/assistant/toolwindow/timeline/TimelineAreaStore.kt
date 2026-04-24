@@ -161,6 +161,7 @@ private fun TimelineNode.hasAutoExpandableContent(): Boolean {
         is TimelineNode.ToolCallNode -> body.isNotBlank()
         is TimelineNode.CommandNode -> body.isNotBlank()
         is TimelineNode.FileChangeNode -> changes.isNotEmpty()
+        is TimelineNode.ReasoningNode -> body.isNotBlank()
         else -> false
     }
 }
