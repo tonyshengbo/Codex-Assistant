@@ -1,7 +1,7 @@
-package com.auracode.assistant.toolwindow.composer
+package com.auracode.assistant.toolwindow.submission
 
-import com.auracode.assistant.toolwindow.timeline.TimelineFileChangeKind
-import com.auracode.assistant.toolwindow.timeline.TimelineParsedTurnDiff
+import com.auracode.assistant.toolwindow.conversation.TimelineFileChangeKind
+import com.auracode.assistant.toolwindow.conversation.TimelineParsedTurnDiff
 import kotlin.test.Test
 import kotlin.test.assertEquals
 

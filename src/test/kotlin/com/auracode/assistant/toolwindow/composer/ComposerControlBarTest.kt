@@ -1,4 +1,4 @@
-package com.auracode.assistant.toolwindow.composer
+package com.auracode.assistant.toolwindow.submission
 
 import com.auracode.assistant.toolwindow.eventing.ComposerMode
 import com.auracode.assistant.toolwindow.eventing.UiIntent

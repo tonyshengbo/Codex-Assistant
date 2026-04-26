@@ -122,7 +122,7 @@ internal class SkillsRuntimeService(
     fun enabledSlashSkills(
         engineId: String,
         cwd: String,
-    ): List<com.auracode.assistant.toolwindow.composer.SlashSkillDescriptor> {
+    ): List<com.auracode.assistant.toolwindow.submission.SlashSkillDescriptor> {
         return cache[SkillsRuntimeCacheKey(engineId = engineId, cwd = cwd)]
             ?.skills
             .orEmpty()

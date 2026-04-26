@@ -1,6 +1,6 @@
 package com.auracode.assistant.settings.skills
 
-import com.auracode.assistant.toolwindow.composer.SlashSkillDescriptor
+import com.auracode.assistant.toolwindow.submission.SlashSkillDescriptor
 
 /** Represents one runtime-visible skill returned by the active runtime adapter. */
 internal data class SkillRuntimeEntry(

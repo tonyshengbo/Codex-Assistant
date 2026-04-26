@@ -7,7 +7,7 @@ import com.auracode.assistant.conversation.ConversationSummaryPage
 import com.auracode.assistant.model.AgentRequest
 import com.auracode.assistant.protocol.UnifiedEvent
 import com.auracode.assistant.protocol.UnifiedToolUserInputAnswerDraft
-import com.auracode.assistant.toolwindow.approval.ApprovalAction
+import com.auracode.assistant.toolwindow.execution.ApprovalAction
 import kotlinx.coroutines.flow.Flow
 
 interface AgentProvider {

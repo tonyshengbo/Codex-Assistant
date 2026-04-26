@@ -1,4 +1,4 @@
-package com.auracode.assistant.toolwindow.approval
+package com.auracode.assistant.toolwindow.execution
 
 import com.auracode.assistant.protocol.UnifiedApprovalRequest
 import com.auracode.assistant.protocol.UnifiedApprovalRequestKind

@@ -2,7 +2,9 @@ package com.auracode.assistant.provider.codex
 
 import com.auracode.assistant.model.AgentCollaborationMode
 import com.auracode.assistant.model.AgentRequest
+import com.auracode.assistant.protocol.FileChangeMetrics
 import com.auracode.assistant.protocol.UnifiedEvent
+import com.auracode.assistant.protocol.UnifiedFileChange
 import com.auracode.assistant.protocol.UnifiedToolUserInputAnswerDraft
 import com.auracode.assistant.protocol.UnifiedToolUserInputOption
 import com.auracode.assistant.protocol.UnifiedToolUserInputPrompt
@@ -182,6 +184,36 @@ internal fun extractFileChangeKind(change: JsonObject): String {
         is JsonPrimitive -> rawKind.contentOrNull.orEmpty()
         else -> ""
     }.ifBlank { "update" }
+}
+
+/**
+ * Parses structured file-change approval payloads into shared unified change models.
+ */
+internal fun buildApprovalFileChanges(
+    params: JsonObject,
+    sourceId: String,
+): List<UnifiedFileChange> {
+    val fileChanges = params.objectValue("fileChanges") ?: params.objectValue("file_changes") ?: return emptyList()
+    return fileChanges.entries.mapIndexedNotNull { index, (path, changeElement) ->
+        path.takeIf { it.isNotBlank() } ?: return@mapIndexedNotNull null
+        val change = changeElement as? JsonObject ?: JsonObject(emptyMap())
+        val oldContent = change.string("oldContent") ?: change.string("old_content")
+        val newContent = change.string("newContent") ?: change.string("new_content") ?: change.string("content")
+        val computedMetrics = FileChangeMetrics.fromContents(
+            oldContent = oldContent,
+            newContent = newContent,
+        )
+        UnifiedFileChange(
+            sourceScopedId = "$sourceId:$index",
+            path = path,
+            kind = extractFileChangeKind(change),
+            addedLines = change.intOrNull("addedLines", "added_lines") ?: computedMetrics?.addedLines,
+            deletedLines = change.intOrNull("deletedLines", "deleted_lines") ?: computedMetrics?.deletedLines,
+            unifiedDiff = change.string("diff"),
+            oldContent = oldContent,
+            newContent = newContent,
+        )
+    }
 }
 
 internal fun buildServerRequestResponse(

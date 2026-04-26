@@ -1,8 +1,8 @@
 package com.auracode.assistant.toolwindow
 
-import com.auracode.assistant.toolwindow.session.ToolWindowHeaderActionCache
-import com.auracode.assistant.toolwindow.session.ToolWindowHeaderTab
-import com.auracode.assistant.toolwindow.session.ToolWindowHeaderTabsLayout
+import com.auracode.assistant.toolwindow.sessions.ToolWindowHeaderActionCache
+import com.auracode.assistant.toolwindow.sessions.ToolWindowHeaderTab
+import com.auracode.assistant.toolwindow.sessions.ToolWindowHeaderTabsLayout
 import kotlin.test.Test
 import kotlin.test.assertFalse
 import kotlin.test.assertSame

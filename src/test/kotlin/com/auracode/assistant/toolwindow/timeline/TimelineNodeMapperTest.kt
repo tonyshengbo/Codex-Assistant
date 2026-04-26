@@ -1,4 +1,4 @@
-package com.auracode.assistant.toolwindow.timeline
+package com.auracode.assistant.toolwindow.conversation
 
 import com.auracode.assistant.protocol.ItemKind
 import com.auracode.assistant.protocol.ItemStatus

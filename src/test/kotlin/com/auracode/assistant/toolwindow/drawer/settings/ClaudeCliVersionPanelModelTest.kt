@@ -1,4 +1,4 @@
-package com.auracode.assistant.toolwindow.drawer.settings
+package com.auracode.assistant.toolwindow.settings
 
 import com.auracode.assistant.provider.claude.ClaudeCliUpgradeSource
 import com.auracode.assistant.provider.claude.ClaudeCliVersionCheckStatus

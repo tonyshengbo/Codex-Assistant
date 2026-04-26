@@ -1,4 +1,4 @@
-package com.auracode.assistant.toolwindow.bootstrap
+package com.auracode.assistant.toolwindow.shell
 
 import java.nio.file.Files
 import java.nio.file.Path
@@ -20,7 +20,7 @@ class SkikoLibraryPathBootstrapTest {
             fallbackClass = InitializeSkikoLibraryPathEarly::class.java,
             classResource = URL(
                 "jar:file:/E:/Aura/build/distributions/Aura-Code-1.0.0.zip!/" +
-                    "com/auracode/assistant/toolwindow/bootstrap/InitializeSkikoLibraryPathEarly.class",
+                    "com/auracode/assistant/toolwindow/shell/InitializeSkikoLibraryPathEarly.class",
             ),
         )
 
@@ -32,7 +32,7 @@ class SkikoLibraryPathBootstrapTest {
     fun `falls back to classes root from file resource url`() {
         val location = SkikoLibraryPathBootstrap.fallbackCodeSourceLocation(
             fallbackClass = InitializeSkikoLibraryPathEarly::class.java,
-            classResource = URL("file:/E:/Aura/build/classes/kotlin/main/com/auracode/assistant/toolwindow/bootstrap/InitializeSkikoLibraryPathEarly.class"),
+            classResource = URL("file:/E:/Aura/build/classes/kotlin/main/com/auracode/assistant/toolwindow/shell/InitializeSkikoLibraryPathEarly.class"),
         )
 
         assertNotNull(location)

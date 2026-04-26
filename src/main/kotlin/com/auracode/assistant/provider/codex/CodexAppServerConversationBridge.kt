@@ -8,7 +8,7 @@ import com.auracode.assistant.protocol.UnifiedApprovalRequest
 import com.auracode.assistant.protocol.UnifiedApprovalRequestKind
 import com.auracode.assistant.protocol.UnifiedEvent
 import com.auracode.assistant.protocol.UnifiedToolUserInputSubmission
-import com.auracode.assistant.toolwindow.approval.ApprovalAction
+import com.auracode.assistant.toolwindow.execution.ApprovalAction
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.serialization.json.JsonElement
@@ -130,17 +130,19 @@ internal class CodexAppServerConversationBridge(
         }
 
         val approvalRequest = buildApprovalRequest(serverRequestId = serverRequestId, method = method, params = params)
-        active.pendingApprovals[serverRequestId] = CompletableDeferred()
+        val pendingDecision = CompletableDeferred<ApprovalAction>()
+        active.pendingApprovals[serverRequestId] = pendingDecision
         scope.launch(label = "approval:$method") {
             runCatching {
                 emitUnified(UnifiedEvent.ApprovalRequested(approvalRequest))
-                val decision = active.pendingApprovals[serverRequestId]?.await() ?: ApprovalAction.REJECT
-                active.pendingApprovals.remove(serverRequestId)
+                val decision = pendingDecision.await()
+                active.pendingApprovals.remove(serverRequestId, pendingDecision)
                 session.respond(
                     serverRequestId = id,
                     result = approvalResponse(method = method, params = params, decision = decision),
                 )
             }.onFailure { error ->
+                active.pendingApprovals.remove(serverRequestId, pendingDecision)
                 diagnosticLogger(
                     "Codex app-server approval coroutine failed: method=$method params=${params.toString().take(500)} message=${error.message}\n${error.stackTraceToString()}",
                 )
@@ -190,15 +192,25 @@ internal class CodexAppServerConversationBridge(
 
             "item/fileChange/requestApproval",
             "applyPatchApproval",
-            -> UnifiedApprovalRequest(
-                requestId = serverRequestId,
-                turnId = turnId,
-                itemId = effectiveItemId,
-                kind = UnifiedApprovalRequestKind.FILE_CHANGE,
-                title = "Apply file changes",
-                body = params.string("reason").orEmpty().ifBlank { "File changes require approval." },
-                allowForSession = true,
-            )
+            -> {
+                val fileChanges = buildApprovalFileChanges(
+                    params = params,
+                    sourceId = effectiveItemId,
+                )
+                UnifiedApprovalRequest(
+                    requestId = serverRequestId,
+                    turnId = turnId,
+                    itemId = effectiveItemId,
+                    kind = UnifiedApprovalRequestKind.FILE_CHANGE,
+                    title = "Apply file changes",
+                    body = listOfNotNull(
+                        params.string("reason")?.takeIf { it.isNotBlank() },
+                        fileChanges.takeIf { it.isNotEmpty() }?.joinToString("\n") { "${it.kind} ${it.path}" },
+                    ).joinToString("\n").ifBlank { "File changes require approval." },
+                    fileChanges = fileChanges,
+                    allowForSession = true,
+                )
+            }
 
             else -> UnifiedApprovalRequest(
                 requestId = serverRequestId,

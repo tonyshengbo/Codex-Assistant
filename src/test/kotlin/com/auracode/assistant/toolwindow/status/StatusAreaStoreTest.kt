@@ -1,4 +1,4 @@
-package com.auracode.assistant.toolwindow.status
+package com.auracode.assistant.toolwindow.execution
 
 import com.auracode.assistant.protocol.UnifiedEvent
 import com.auracode.assistant.protocol.UnifiedToolUserInputPrompt
@@ -81,8 +81,8 @@ class StatusAreaStoreTest {
         assertEquals(null, store.state.value.turnStatus)
     }
 
-    private fun prompt(): com.auracode.assistant.toolwindow.toolinput.ToolUserInputPromptUiModel {
-        return com.auracode.assistant.toolwindow.toolinput.ToolUserInputPromptUiModel(
+    private fun prompt(): com.auracode.assistant.toolwindow.execution.ToolUserInputPromptUiModel {
+        return com.auracode.assistant.toolwindow.execution.ToolUserInputPromptUiModel(
             requestId = "request-1",
             threadId = "thread-1",
             turnId = "turn-1",

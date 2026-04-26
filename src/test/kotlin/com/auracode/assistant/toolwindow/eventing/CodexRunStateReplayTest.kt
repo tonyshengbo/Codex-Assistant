@@ -2,10 +2,10 @@ package com.auracode.assistant.toolwindow.eventing
 
 import com.auracode.assistant.protocol.ItemStatus
 import com.auracode.assistant.provider.codex.CodexAppServerProvider
-import com.auracode.assistant.toolwindow.status.StatusAreaStore
-import com.auracode.assistant.toolwindow.timeline.TimelineAreaStore
-import com.auracode.assistant.toolwindow.timeline.TimelineNode
-import com.auracode.assistant.toolwindow.timeline.TimelineNodeMapper
+import com.auracode.assistant.toolwindow.execution.StatusAreaStore
+import com.auracode.assistant.toolwindow.conversation.TimelineAreaStore
+import com.auracode.assistant.toolwindow.conversation.TimelineNode
+import com.auracode.assistant.toolwindow.conversation.TimelineNodeMapper
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
 import kotlin.test.Test

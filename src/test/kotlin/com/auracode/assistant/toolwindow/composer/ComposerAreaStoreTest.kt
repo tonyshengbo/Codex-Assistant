@@ -1,4 +1,4 @@
-package com.auracode.assistant.toolwindow.composer
+package com.auracode.assistant.toolwindow.submission
 
 import com.auracode.assistant.protocol.ItemStatus
 import com.auracode.assistant.protocol.UnifiedApprovalRequestKind
@@ -16,14 +16,14 @@ import com.auracode.assistant.settings.SavedAgentDefinition
 import com.auracode.assistant.toolwindow.eventing.AppEvent
 import com.auracode.assistant.toolwindow.eventing.ComposerMode
 import com.auracode.assistant.toolwindow.eventing.UiIntent
-import com.auracode.assistant.toolwindow.approval.PendingApprovalRequestUiModel
-import com.auracode.assistant.toolwindow.plan.PlanCompletionPromptUiModel
-import com.auracode.assistant.toolwindow.timeline.TimelineFileChange
-import com.auracode.assistant.toolwindow.timeline.TimelineFileChangeKind
-import com.auracode.assistant.toolwindow.timeline.TimelineMutation
-import com.auracode.assistant.toolwindow.toolinput.ToolUserInputOptionUiModel
-import com.auracode.assistant.toolwindow.toolinput.ToolUserInputPromptUiModel
-import com.auracode.assistant.toolwindow.toolinput.ToolUserInputQuestionUiModel
+import com.auracode.assistant.toolwindow.execution.PendingApprovalRequestUiModel
+import com.auracode.assistant.toolwindow.execution.PlanCompletionPromptUiModel
+import com.auracode.assistant.toolwindow.conversation.TimelineFileChange
+import com.auracode.assistant.toolwindow.conversation.TimelineFileChangeKind
+import com.auracode.assistant.toolwindow.conversation.TimelineMutation
+import com.auracode.assistant.toolwindow.execution.ToolUserInputOptionUiModel
+import com.auracode.assistant.toolwindow.execution.ToolUserInputPromptUiModel
+import com.auracode.assistant.toolwindow.execution.ToolUserInputQuestionUiModel
 import java.nio.file.Files
 import kotlin.io.path.createTempDirectory
 import kotlin.test.Test

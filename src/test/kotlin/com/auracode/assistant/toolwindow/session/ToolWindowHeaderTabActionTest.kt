@@ -1,4 +1,4 @@
-package com.auracode.assistant.toolwindow.session
+package com.auracode.assistant.toolwindow.sessions
 
 import java.awt.event.MouseEvent
 import javax.swing.JLabel

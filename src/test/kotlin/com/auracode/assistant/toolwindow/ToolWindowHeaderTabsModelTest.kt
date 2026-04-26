@@ -1,7 +1,7 @@
 package com.auracode.assistant.toolwindow
 
 import com.auracode.assistant.service.AgentChatService
-import com.auracode.assistant.toolwindow.session.ToolWindowHeaderTabsModel
+import com.auracode.assistant.toolwindow.sessions.ToolWindowHeaderTabsModel
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse

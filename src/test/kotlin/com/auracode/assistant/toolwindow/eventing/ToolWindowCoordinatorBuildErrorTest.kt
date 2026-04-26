@@ -15,15 +15,16 @@ import com.auracode.assistant.provider.EngineDescriptor
 import com.auracode.assistant.provider.ProviderRegistry
 import com.auracode.assistant.service.AgentChatService
 import com.auracode.assistant.settings.AgentSettingsService
-import com.auracode.assistant.toolwindow.composer.ComposerAreaStore
-import com.auracode.assistant.toolwindow.drawer.RightDrawerAreaStore
-import com.auracode.assistant.toolwindow.header.HeaderAreaStore
-import com.auracode.assistant.toolwindow.status.StatusAreaStore
-import com.auracode.assistant.toolwindow.timeline.TimelineAreaStore
+import com.auracode.assistant.toolwindow.submission.ComposerAreaStore
+import com.auracode.assistant.toolwindow.shell.RightDrawerAreaStore
+import com.auracode.assistant.toolwindow.sessions.HeaderAreaStore
+import com.auracode.assistant.toolwindow.execution.StatusAreaStore
+import com.auracode.assistant.toolwindow.conversation.TimelineAreaStore
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
 import java.nio.file.Files
+import java.util.concurrent.CopyOnWriteArrayList
 import kotlin.io.path.createTempDirectory
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -177,7 +178,7 @@ class ToolWindowCoordinatorBuildErrorTest {
     }
 
     private class RecordingProvider : AgentProvider {
-        val requests = mutableListOf<AgentRequest>()
+        val requests = CopyOnWriteArrayList<AgentRequest>()
         private var sink: (UnifiedEvent) -> Unit = {}
         private var nextThreadIndex: Int = 1
 

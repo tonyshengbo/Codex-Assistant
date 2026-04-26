@@ -1,6 +1,6 @@
-package com.auracode.assistant.toolwindow.composer
+package com.auracode.assistant.toolwindow.submission
 
-import com.auracode.assistant.toolwindow.toolinput.ToolUserInputPromptUiModel
+import com.auracode.assistant.toolwindow.execution.ToolUserInputPromptUiModel
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -11,7 +11,7 @@ class ComposerRegionTest {
         val cases = listOf(
             ComposerAreaState(
                 sessionSubagents = listOf(sampleSubagent()),
-                approvalPrompt = com.auracode.assistant.toolwindow.approval.PendingApprovalRequestUiModel(
+                approvalPrompt = com.auracode.assistant.toolwindow.execution.PendingApprovalRequestUiModel(
                     requestId = "approval-1",
                     turnId = "turn-1",
                     itemId = "item-1",

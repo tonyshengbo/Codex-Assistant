@@ -1,4 +1,4 @@
-package com.auracode.assistant.toolwindow.drawer.settings
+package com.auracode.assistant.toolwindow.settings
 
 import com.auracode.assistant.provider.codex.CodexCliUpgradeSource
 import com.auracode.assistant.provider.codex.CodexCliVersionCheckStatus

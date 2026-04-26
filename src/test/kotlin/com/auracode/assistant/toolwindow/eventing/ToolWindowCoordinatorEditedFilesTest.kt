@@ -1,6 +1,6 @@
 package com.auracode.assistant.toolwindow.eventing
 
-import com.auracode.assistant.toolwindow.timeline.TimelineFileChangePreview
+import com.auracode.assistant.toolwindow.conversation.TimelineFileChangePreview
 import java.nio.file.Files
 import kotlin.io.path.createTempDirectory
 import kotlin.test.Test

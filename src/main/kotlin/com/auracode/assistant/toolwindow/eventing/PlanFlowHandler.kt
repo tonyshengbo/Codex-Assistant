@@ -6,15 +6,16 @@ import com.auracode.assistant.model.AgentCollaborationMode
 import com.auracode.assistant.model.MessageRole
 import com.auracode.assistant.protocol.TurnOutcome
 import com.auracode.assistant.protocol.UnifiedEvent
-import com.auracode.assistant.toolwindow.approval.ApprovalAction
-import com.auracode.assistant.toolwindow.approval.toUiModel
-import com.auracode.assistant.toolwindow.composer.ComposerRunningPlanState
-import com.auracode.assistant.toolwindow.composer.ComposerRunningPlanStep
-import com.auracode.assistant.toolwindow.composer.ComposerRunningPlanStepStatus
-import com.auracode.assistant.toolwindow.plan.PlanCompletionPromptUiModel
-import com.auracode.assistant.toolwindow.timeline.TimelineMutation
-import com.auracode.assistant.toolwindow.toolinput.toSubmissionAnswers
-import com.auracode.assistant.toolwindow.toolinput.toUiModel
+import com.auracode.assistant.session.kernel.SessionActivityStatus
+import com.auracode.assistant.session.kernel.SessionApprovalDecision
+import com.auracode.assistant.session.kernel.SessionDomainEvent
+import com.auracode.assistant.toolwindow.execution.ApprovalAction
+import com.auracode.assistant.toolwindow.submission.ComposerRunningPlanState
+import com.auracode.assistant.toolwindow.submission.ComposerRunningPlanStep
+import com.auracode.assistant.toolwindow.submission.ComposerRunningPlanStepStatus
+import com.auracode.assistant.toolwindow.execution.PlanCompletionPromptUiModel
+import com.auracode.assistant.toolwindow.conversation.TimelineMutation
+import com.auracode.assistant.toolwindow.execution.toSubmissionAnswers
 
 internal class PlanFlowHandler(
     private val context: ToolWindowCoordinatorContext,
@@ -22,45 +23,6 @@ internal class PlanFlowHandler(
 ) {
     fun handleUnifiedEvent(sessionId: String, event: UnifiedEvent) {
         when (event) {
-            is UnifiedEvent.ApprovalRequested -> {
-                context.eventDispatcher.dispatchSessionEvent(sessionId, AppEvent.ApprovalRequested(event.request.toUiModel()))
-            }
-
-            is UnifiedEvent.ToolUserInputRequested -> {
-                val prompt = event.prompt.toUiModel()
-                context.eventDispatcher.dispatchSessionEvent(sessionId, AppEvent.ToolUserInputRequested(prompt))
-                context.eventDispatcher.dispatchSessionEvent(
-                    sessionId,
-                    AppEvent.TimelineMutationApplied(
-                        mutation = TimelineMutation.UpsertUserInput(
-                            sourceId = ToolWindowCoordinatorIds.toolUserInputSourceId(prompt),
-                            title = AuraCodeBundle.message("timeline.userInput.title"),
-                            body = AuraCodeBundle.message("timeline.userInput.waiting"),
-                            status = com.auracode.assistant.protocol.ItemStatus.RUNNING,
-                            turnId = prompt.turnId,
-                        ),
-                    ),
-                )
-            }
-
-            is UnifiedEvent.ToolUserInputResolved -> {
-                context.eventDispatcher.findToolUserInputPrompt(sessionId, event.requestId)?.let { prompt ->
-                    context.eventDispatcher.dispatchSessionEvent(
-                        sessionId,
-                        AppEvent.TimelineMutationApplied(
-                            mutation = TimelineMutation.UpsertUserInput(
-                                sourceId = ToolWindowCoordinatorIds.toolUserInputSourceId(prompt),
-                                title = AuraCodeBundle.message("timeline.userInput.title"),
-                                body = AuraCodeBundle.message("timeline.userInput.cancelled"),
-                                status = com.auracode.assistant.protocol.ItemStatus.FAILED,
-                                turnId = prompt.turnId,
-                            ),
-                        ),
-                    )
-                }
-                context.eventDispatcher.dispatchSessionEvent(sessionId, AppEvent.ToolUserInputResolved(event.requestId))
-            }
-
             is UnifiedEvent.ThreadStarted -> {
                 context.activePlanRunContexts[sessionId]?.apply {
                     threadId = event.threadId
@@ -79,7 +41,7 @@ internal class PlanFlowHandler(
             }
 
             is UnifiedEvent.TurnDiffUpdated -> {
-                context.eventDispatcher.dispatchSessionEvent(
+                context.dispatchSessionEvent(
                     sessionId,
                     AppEvent.TurnDiffUpdated(
                         threadId = event.threadId,
@@ -95,22 +57,6 @@ internal class PlanFlowHandler(
                     threadId = event.threadId ?: threadId
                     remoteTurnId = event.turnId.takeIf { it.isNotBlank() } ?: remoteTurnId
                 }
-                context.eventDispatcher.dispatchSessionEvent(
-                    sessionId,
-                    AppEvent.RunningPlanUpdated(
-                        plan = ComposerRunningPlanState(
-                            threadId = event.threadId ?: context.activePlanRunContexts[sessionId]?.threadId,
-                            turnId = event.turnId,
-                            explanation = event.explanation,
-                            steps = event.steps.map { step ->
-                                ComposerRunningPlanStep(
-                                    step = step.step,
-                                    status = step.status.toComposerRunningPlanStepStatus(),
-                                )
-                            },
-                        ),
-                    ),
-                )
             }
 
             is UnifiedEvent.ItemUpdated -> {
@@ -124,8 +70,8 @@ internal class PlanFlowHandler(
             }
 
             is UnifiedEvent.TurnCompleted -> {
-                context.eventDispatcher.dispatchSessionEvent(sessionId, AppEvent.ClearApprovals)
-                context.eventDispatcher.dispatchSessionEvent(sessionId, AppEvent.ClearToolUserInputs)
+                context.dispatchSessionEvent(sessionId, AppEvent.ClearApprovals)
+                context.dispatchSessionEvent(sessionId, AppEvent.ClearToolUserInputs)
                 notifyBackgroundCompletionIfNeeded(sessionId, event)
                 if (!handlePlanTurnCompleted(sessionId, event)) {
                     clearRunningPlanIfNeeded(sessionId, event)
@@ -135,9 +81,6 @@ internal class PlanFlowHandler(
             else -> Unit
         }
         when (event) {
-            is UnifiedEvent.ApprovalRequested,
-            is UnifiedEvent.ToolUserInputRequested,
-            is UnifiedEvent.ToolUserInputResolved,
             is UnifiedEvent.TurnCompleted,
             -> context.publishSessionSnapshot()
             else -> Unit
@@ -148,8 +91,8 @@ internal class PlanFlowHandler(
         val prompt = context.composerStore.state.value.planCompletion ?: return
         val sessionId = context.activeSessionId()
         context.activePlanRunContexts.remove(sessionId)
-        context.eventDispatcher.dispatchSessionEvent(sessionId, AppEvent.RunningPlanUpdated(plan = null))
-        context.eventDispatcher.dispatchSessionEvent(sessionId, AppEvent.PlanCompletionPromptUpdated(prompt = null))
+        context.dispatchSessionEvent(sessionId, AppEvent.RunningPlanUpdated(plan = null))
+        context.dispatchSessionEvent(sessionId, AppEvent.PlanCompletionPromptUpdated(prompt = null))
         context.eventHub.publishUiIntent(UiIntent.SelectMode(prompt.preferredExecutionMode))
         if (context.composerStore.state.value.planEnabled) {
             context.eventHub.publishUiIntent(UiIntent.TogglePlanMode)
@@ -201,20 +144,16 @@ internal class PlanFlowHandler(
         val action = explicitAction ?: context.approvalStore.state.value.selectedAction
         if (!context.chatService.submitApprovalDecision(current.requestId, action)) return
         context.publishSessionSnapshot()
-        context.eventHub.publish(AppEvent.ApprovalResolved(requestId = current.requestId))
-        context.eventHub.publish(
-            AppEvent.TimelineMutationApplied(
-                mutation = TimelineMutation.UpsertApproval(
-                    sourceId = current.itemId,
-                    title = current.title,
-                    body = buildResolvedApprovalBody(current.body, action),
-                    status = when (action) {
-                        ApprovalAction.REJECT -> com.auracode.assistant.protocol.ItemStatus.FAILED
-                        ApprovalAction.ALLOW,
-                        ApprovalAction.ALLOW_FOR_SESSION,
-                        -> com.auracode.assistant.protocol.ItemStatus.SUCCESS
+        context.applySessionDomainEvents(
+            context.activeSessionId(),
+            listOf(
+                SessionDomainEvent.ApprovalResolved(
+                    requestId = current.requestId,
+                    decision = when (action) {
+                        ApprovalAction.ALLOW -> SessionApprovalDecision.ALLOW
+                        ApprovalAction.REJECT -> SessionApprovalDecision.REJECT
+                        ApprovalAction.ALLOW_FOR_SESSION -> SessionApprovalDecision.ALLOW_FOR_SESSION
                     },
-                    turnId = current.turnId,
                 ),
             ),
         )
@@ -231,18 +170,16 @@ internal class PlanFlowHandler(
         }
         if (!context.chatService.submitToolUserInput(prompt.requestId, answers)) return
         context.publishSessionSnapshot()
-        context.eventHub.publish(AppEvent.ToolUserInputResolved(requestId = prompt.requestId))
-        context.eventHub.publish(
-            AppEvent.TimelineMutationApplied(
-                mutation = TimelineMutation.UpsertUserInput(
-                    sourceId = ToolWindowCoordinatorIds.toolUserInputSourceId(prompt),
-                    title = AuraCodeBundle.message("timeline.userInput.title"),
-                    body = buildResolvedToolUserInputBody(prompt, answers, cancelled),
+        context.applySessionDomainEvents(
+            context.activeSessionId(),
+            listOf(
+                SessionDomainEvent.ToolUserInputResolved(
+                    requestId = prompt.requestId,
                     status = when {
-                        cancelled || answers.isEmpty() -> com.auracode.assistant.protocol.ItemStatus.FAILED
-                        else -> com.auracode.assistant.protocol.ItemStatus.SUCCESS
+                        cancelled || answers.isEmpty() -> SessionActivityStatus.FAILED
+                        else -> SessionActivityStatus.SUCCESS
                     },
-                    turnId = prompt.turnId,
+                    responseSummary = buildResolvedToolUserInputBody(prompt, answers, cancelled),
                 ),
             ),
         )
@@ -251,27 +188,16 @@ internal class PlanFlowHandler(
         }
     }
 
-    fun publishUnifiedEvent(sessionId: String, event: UnifiedEvent, onTurnCompleted: (String) -> Unit) {
-        context.eventDispatcher.dispatchSessionEvent(sessionId, AppEvent.UnifiedEventPublished(event))
-        com.auracode.assistant.toolwindow.timeline.TimelineNodeMapper.fromUnifiedEvent(event)?.let { mutation ->
-            context.eventDispatcher.dispatchSessionEvent(sessionId, AppEvent.TimelineMutationApplied(mutation = mutation))
-        }
-        handleUnifiedEvent(sessionId, event)
-        if (event is UnifiedEvent.TurnCompleted) {
-            onTurnCompleted(sessionId)
-        }
-    }
-
     /** 处理 plan mode turn 结束逻辑；处理成功时返回 true。 */
     private fun handlePlanTurnCompleted(sessionId: String, event: UnifiedEvent.TurnCompleted): Boolean {
         val current = context.activePlanRunContexts[sessionId] ?: return false
         if (current.remoteTurnId != null && current.remoteTurnId != event.turnId) return false
         context.activePlanRunContexts.remove(sessionId)
-        context.eventDispatcher.dispatchSessionEvent(sessionId, AppEvent.RunningPlanUpdated(plan = null))
+        context.dispatchSessionEvent(sessionId, AppEvent.RunningPlanUpdated(plan = null))
         if (event.outcome != TurnOutcome.SUCCESS) return true
         val body = current.latestPlanBody?.trim().orEmpty()
         if (body.isBlank()) return true
-        context.eventDispatcher.dispatchSessionEvent(
+        context.dispatchSessionEvent(
             sessionId,
             AppEvent.PlanCompletionPromptUpdated(
                 prompt = PlanCompletionPromptUiModel(
@@ -289,7 +215,7 @@ internal class PlanFlowHandler(
     private fun clearRunningPlanIfNeeded(sessionId: String, event: UnifiedEvent.TurnCompleted) {
         val runningPlan = context.composerStore.state.value.runningPlan ?: return
         if (event.turnId.isNotBlank() && runningPlan.turnId != event.turnId) return
-        context.eventDispatcher.dispatchSessionEvent(sessionId, AppEvent.RunningPlanUpdated(plan = null))
+        context.dispatchSessionEvent(sessionId, AppEvent.RunningPlanUpdated(plan = null))
     }
 
     private fun notifyBackgroundCompletionIfNeeded(sessionId: String, event: UnifiedEvent.TurnCompleted) {
@@ -314,7 +240,7 @@ internal class PlanFlowHandler(
     }
 
     private fun buildResolvedToolUserInputBody(
-        prompt: com.auracode.assistant.toolwindow.toolinput.ToolUserInputPromptUiModel,
+        prompt: com.auracode.assistant.toolwindow.execution.ToolUserInputPromptUiModel,
         answers: Map<String, com.auracode.assistant.protocol.UnifiedToolUserInputAnswerDraft>,
         cancelled: Boolean,
     ): String {
@@ -360,16 +286,13 @@ internal class PlanFlowHandler(
             turnId = localTurnId,
             attachments = emptyList(),
         )?.let { message ->
-            context.eventHub.publish(
-                AppEvent.TimelineMutationApplied(
-                    mutation = com.auracode.assistant.toolwindow.timeline.TimelineNodeMapper.localUserMessageMutation(
-                        sourceId = message.sourceId,
-                        text = message.prompt,
-                        timestamp = message.timestamp,
-                        turnId = message.turnId,
-                        attachments = message.attachments,
-                    ),
-                ),
+            context.publishLocalUserMessage(
+                sessionId,
+                message.sourceId,
+                message.prompt,
+                message.timestamp,
+                message.turnId,
+                message.attachments,
             )
         }
         context.publishSessionSnapshot()

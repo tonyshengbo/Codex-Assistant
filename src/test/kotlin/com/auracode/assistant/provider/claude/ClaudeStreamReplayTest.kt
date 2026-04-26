@@ -4,6 +4,7 @@ import com.auracode.assistant.model.AgentRequest
 import com.auracode.assistant.protocol.ItemKind
 import com.auracode.assistant.protocol.TurnOutcome
 import com.auracode.assistant.protocol.UnifiedEvent
+import com.auracode.assistant.provider.diagnostics.ProviderDiagnosticFixture
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
@@ -11,10 +12,10 @@ import kotlin.test.assertNotEquals
 import kotlin.test.assertTrue
 
 /**
- * 使用真实日志形态的 JSONL 夹具回放 Claude 流协议，防止过程事件再次丢失。
+ * Replays Claude stream fixtures to prevent parser and mapper regressions.
  */
 class ClaudeStreamReplayTest {
-    /** 验证日志夹具能稳定回放出工具、reasoning、正文与最终 usage。 */
+    /** Verifies that the diagnostic fixture still replays tool, reasoning, narrative, and usage events. */
     @Test
     fun `replays recorded claude stream fixture into unified events`() {
         val parser = ClaudeStreamEventParser()
@@ -64,7 +65,7 @@ class ClaudeStreamReplayTest {
     }
 
     @Test
-    /** 验证回放链路也会保留 tool 前后的 assistant message 边界，不会把两段文本压成一个 unified item。 */
+    /** Verifies that replay keeps assistant text around tools split into separate unified items. */
     fun `replay keeps assistant messages before and after tool in separate unified items`() {
         val parser = ClaudeStreamEventParser()
         val accumulator = ClaudeStreamAccumulator()
@@ -114,14 +115,14 @@ class ClaudeStreamReplayTest {
         assertTrue(secondMessageIndex > toolIndex)
     }
 
-    /** 读取测试资源里的 Claude stream JSONL。 */
+    /** Loads the shared Claude diagnostic fixture through the classpath fixture loader. */
     private fun fixtureLines(): List<String> {
-        return requireNotNull(javaClass.getResource("/claude/claude-stream-replay.jsonl")) {
-            "Missing Claude replay fixture."
-        }.readText().lineSequence().filter { it.isNotBlank() }.toList()
+        return ProviderDiagnosticFixture
+            .load("/provider/claude/claude-diagnostic-stream.jsonl")
+            .lines
     }
 
-    /** 返回一组带有 assistant -> tool -> assistant 边界的最小回放行。 */
+    /** Returns a minimal replay sample with an assistant -> tool -> assistant boundary. */
     private fun replayLines(): List<String> {
         return listOf(
             """{"type":"system","subtype":"init","session_id":"session-123","model":"claude-sonnet-4-6"}""",

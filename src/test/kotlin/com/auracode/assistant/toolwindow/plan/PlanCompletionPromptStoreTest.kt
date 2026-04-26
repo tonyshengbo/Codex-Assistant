@@ -1,4 +1,4 @@
-package com.auracode.assistant.toolwindow.plan
+package com.auracode.assistant.toolwindow.execution
 
 import com.auracode.assistant.toolwindow.eventing.AppEvent
 import com.auracode.assistant.toolwindow.eventing.ComposerMode

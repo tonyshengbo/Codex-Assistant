@@ -1,4 +1,4 @@
-package com.auracode.assistant.toolwindow.composer
+package com.auracode.assistant.toolwindow.submission
 
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.TextFieldValue

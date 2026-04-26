@@ -15,8 +15,8 @@ import com.auracode.assistant.settings.mcp.McpTestResult
 import com.auracode.assistant.settings.mcp.McpValidationErrors
 import com.auracode.assistant.settings.mcp.validate
 import com.auracode.assistant.settings.skills.SkillSelector
-import com.auracode.assistant.toolwindow.drawer.RuntimeSettingsTab
-import com.auracode.assistant.toolwindow.drawer.SettingsSection
+import com.auracode.assistant.toolwindow.settings.RuntimeSettingsTab
+import com.auracode.assistant.toolwindow.settings.SettingsSection
 import com.auracode.assistant.toolwindow.shared.UiText
 import com.intellij.notification.NotificationAction
 import com.intellij.notification.NotificationType
@@ -805,7 +805,7 @@ internal class SettingsAndEnvironmentHandler(
             SettingsSection.SKILLS -> loadSkills()
             SettingsSection.BASIC -> Unit
             SettingsSection.RUNTIME -> {
-                if (context.rightDrawerStore.state.value.kind == com.auracode.assistant.toolwindow.drawer.RightDrawerKind.SETTINGS) {
+                if (context.rightDrawerStore.state.value.kind == com.auracode.assistant.toolwindow.shell.RightDrawerKind.SETTINGS) {
                     refreshRuntimeChecksForCurrentState()
                 }
             }

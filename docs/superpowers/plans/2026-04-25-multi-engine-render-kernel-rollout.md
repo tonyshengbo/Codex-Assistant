@@ -111,7 +111,7 @@
 - Create: `src/test/resources/provider/claude/claude-diagnostic-*.jsonl`
 - Create: `src/test/resources/provider/codex/codex-diagnostic-*.jsonl`
 
-- [ ] **Step 1: 先写读取失败的测试**
+- [x] **Step 1: 先写读取失败的测试**
 
 在新测试里先断言诊断夹具文件存在，并能按行读取出 `raw` 样本。
 
@@ -120,7 +120,7 @@ val fixture = ProviderDiagnosticFixture.load("/provider/claude/claude-diagnostic
 assertTrue(fixture.lines.isNotEmpty())
 ```
 
-- [ ] **Step 2: 运行目标测试确认当前资源和读取器都不存在**
+- [x] **Step 2: 运行目标测试确认当前资源和读取器都不存在**
 
 Run:
 
@@ -133,7 +133,7 @@ Expected:
 
 - 测试因缺少 fixture loader / resource 而失败
 
-- [ ] **Step 3: 实现最小 fixture loader**
+- [x] **Step 3: 实现最小 fixture loader**
 
 仅支持：
 
@@ -142,7 +142,7 @@ Expected:
 - 保留原始行顺序
 - 为不同 provider 返回最小 typed wrapper
 
-- [ ] **Step 4: 从用户提供日志中提取最小稳定片段并保存到测试资源**
+- [x] **Step 4: 从用户提供日志中提取最小稳定片段并保存到测试资源**
 
 抽样规则：
 
@@ -151,7 +151,7 @@ Expected:
 - 同一行为优先保留一份成功流和一份异常流
 - 夹具中保留真实协议字段，不保留无关噪声
 
-- [ ] **Step 5: 重新运行目标测试确认资源可被稳定加载**
+- [x] **Step 5: 重新运行目标测试确认资源可被稳定加载**
 
 Run:
 
@@ -172,13 +172,15 @@ git commit -m "test: add provider diagnostic replay fixtures"
 
 ### Task 2: 用真实日志回放冻结当前 provider 行为
 
+> Status note: 当前切片已完成 Claude/Codex 诊断回放基线与断言，补齐 Codex v2 approval / file-change / tool-user-input / serverRequest-resolved bridge 冻结测试，并在全量 provider 验证时恢复了 Claude lifecycle diagnostics 日志输出；提交步骤仍待执行。
+
 **Files:**
 - Create: `src/test/kotlin/com/auracode/assistant/provider/claude/ClaudeDiagnosticReplayTest.kt`
 - Create: `src/test/kotlin/com/auracode/assistant/provider/codex/CodexDiagnosticReplayTest.kt`
 - Modify: `src/test/kotlin/com/auracode/assistant/provider/claude/ClaudeStreamReplayTest.kt`
 - Modify: `src/test/kotlin/com/auracode/assistant/provider/codex/CodexAppServerConversationBridgeTest.kt`
 
-- [ ] **Step 1: 先写失败的回放断言**
+- [x] **Step 1: 先写失败的回放断言**
 
 覆盖：
 
@@ -191,7 +193,7 @@ assertTrue(events.any { it is UnifiedEvent.ApprovalRequested })
 assertTrue(events.any { it is UnifiedEvent.ItemUpdated && it.item.kind == ItemKind.COMMAND_EXEC })
 ```
 
-- [ ] **Step 2: 运行目标测试并确认当前缺少日志回放入口**
+- [x] **Step 2: 运行目标测试并确认当前缺少日志回放入口**
 
 Run:
 
@@ -200,7 +202,7 @@ Run:
 ./gradlew test --tests "com.auracode.assistant.provider.codex.CodexDiagnosticReplayTest"
 ```
 
-- [ ] **Step 3: 最小实现日志回放辅助函数**
+- [x] **Step 3: 最小实现日志回放辅助函数**
 
 不要先改生产逻辑；优先复用现有：
 
@@ -210,7 +212,7 @@ Run:
 - `CodexAppServerProvider.AppServerNotificationParser`
 - `CodexAppServerConversationBridge`
 
-- [ ] **Step 4: 补足断言直到回放链稳定通过**
+- [x] **Step 4: 补足断言直到回放链稳定通过**
 
 至少覆盖：
 
@@ -220,7 +222,7 @@ Run:
 - Codex file change / command output
 - Codex tool user input
 
-- [ ] **Step 5: 重新运行所有 provider 相关目标测试**
+- [x] **Step 5: 重新运行所有 provider 相关目标测试**
 
 Run:
 
@@ -243,6 +245,8 @@ git commit -m "test: freeze provider behavior with diagnostic replays"
 
 ### Task 3: 建立最小可运行的 session domain 契约
 
+> Status note: 已建立最小 `SessionState` / `SessionDomainEvent` / `SessionReducer` 契约，状态按 runtime / conversation / execution / history 等功能域组织，尚未执行提交步骤。
+
 **Files:**
 - Create: `src/main/kotlin/com/auracode/assistant/session/kernel/SessionCommand.kt`
 - Create: `src/main/kotlin/com/auracode/assistant/session/kernel/SessionDomainEvent.kt`
@@ -250,7 +254,7 @@ git commit -m "test: freeze provider behavior with diagnostic replays"
 - Create: `src/main/kotlin/com/auracode/assistant/session/kernel/SessionReducer.kt`
 - Test: `src/test/kotlin/com/auracode/assistant/session/kernel/SessionReducerTest.kt`
 
-- [ ] **Step 1: 先写 reducer 失败测试**
+- [x] **Step 1: 先写 reducer 失败测试**
 
 覆盖：
 
@@ -263,7 +267,7 @@ git commit -m "test: freeze provider behavior with diagnostic replays"
 - `ToolUserInputRequested`
 - `TurnCompleted`
 
-- [ ] **Step 2: 运行 reducer 测试确认 session 契约不存在**
+- [x] **Step 2: 运行 reducer 测试确认 session 契约不存在**
 
 Run:
 
@@ -271,7 +275,7 @@ Run:
 ./gradlew test --tests "com.auracode.assistant.session.kernel.SessionReducerTest"
 ```
 
-- [ ] **Step 3: 只实现最小 state/reducer 通过测试**
+- [x] **Step 3: 只实现最小 state/reducer 通过测试**
 
 约束：
 
@@ -279,7 +283,7 @@ Run:
 - 不引入任何 Compose 或 toolwindow 依赖
 - 所有文案字段只保存结构化 metadata 或 key
 
-- [ ] **Step 4: 重新运行 reducer 测试**
+- [x] **Step 4: 重新运行 reducer 测试**
 
 Run:
 
@@ -298,13 +302,15 @@ git commit -m "feat: add session kernel domain contracts"
 
 ### Task 4: 建立 kernel 驱动的 history/live 一致性回放
 
+> Status note: 已建立最小 `SessionKernel` / `SessionKernelManager` / `SessionRuntimeRegistry`，并验证 live apply、initial replay、older-history prepend 三条路径会收敛到同一份 `SessionState`；提交步骤仍待执行。
+
 **Files:**
 - Create: `src/main/kotlin/com/auracode/assistant/session/kernel/SessionKernel.kt`
 - Create: `src/main/kotlin/com/auracode/assistant/session/kernel/SessionKernelManager.kt`
 - Create: `src/main/kotlin/com/auracode/assistant/session/kernel/SessionRuntimeRegistry.kt`
 - Test: `src/test/kotlin/com/auracode/assistant/session/kernel/SessionKernelHistoryReplayTest.kt`
 
-- [ ] **Step 1: 先写 live/replay 收敛失败测试**
+- [x] **Step 1: 先写 live/replay 收敛失败测试**
 
 断言同一组 domain events：
 
@@ -314,7 +320,7 @@ git commit -m "feat: add session kernel domain contracts"
 
 最终得到一致 `SessionState`。
 
-- [ ] **Step 2: 运行 kernel 测试确认当前无实现**
+- [x] **Step 2: 运行 kernel 测试确认当前无实现**
 
 Run:
 
@@ -322,9 +328,9 @@ Run:
 ./gradlew test --tests "com.auracode.assistant.session.kernel.SessionKernelHistoryReplayTest"
 ```
 
-- [ ] **Step 3: 实现最小 kernel / manager / runtime registry**
+- [x] **Step 3: 实现最小 kernel / manager / runtime registry**
 
-- [ ] **Step 4: 重新运行 kernel 测试**
+- [x] **Step 4: 重新运行 kernel 测试**
 
 Run:
 
@@ -347,6 +353,8 @@ git commit -m "feat: add session kernel runtime baseline"
 
 ### Task 5: 让 provider 先产出 semantic records，再归一化为 session events
 
+> Status note: 已引入 Claude/Codex semantic records、semantic extractors 与 `EngineSemanticEventMapper`/classifiers，并通过 `EngineSemanticEventMapperTest`、provider diagnostics replay、`com.auracode.assistant.provider.*` 回归验证归一化链路；rollout 期间额外保留了 `UnifiedEventSessionEventMapper` 作为 legacy unified-event 输入接到 session kernel 的过渡适配层。提交步骤仍待执行。
+
 **Files:**
 - Create: `src/main/kotlin/com/auracode/assistant/provider/claude/semantic/ClaudeSemanticRecord.kt`
 - Create: `src/main/kotlin/com/auracode/assistant/provider/claude/semantic/ClaudeSemanticEventExtractor.kt`
@@ -360,7 +368,7 @@ git commit -m "feat: add session kernel runtime baseline"
 - Modify: `src/main/kotlin/com/auracode/assistant/provider/claude/ClaudeUnifiedEventMapper.kt`
 - Modify: `src/main/kotlin/com/auracode/assistant/provider/codex/CodexAppServerConversationBridge.kt`
 
-- [ ] **Step 1: 先写 semantic -> domain 失败测试**
+- [x] **Step 1: 先写 semantic -> domain 失败测试**
 
 至少断言：
 
@@ -369,7 +377,7 @@ git commit -m "feat: add session kernel runtime baseline"
 - file change 有结构化 summary
 - approval / tool input / plan update 会被归一化成明确 domain event
 
-- [ ] **Step 2: 运行 normalizer 测试确认现有 unified item 信息不足**
+- [x] **Step 2: 运行 normalizer 测试确认现有 unified item 信息不足**
 
 Run:
 
@@ -377,9 +385,9 @@ Run:
 ./gradlew test --tests "com.auracode.assistant.session.normalizer.EngineSemanticEventMapperTest"
 ```
 
-- [ ] **Step 3: 仅增加 semantic records 与 normalizer，不先替换 UI**
+- [x] **Step 3: 仅增加 semantic records 与 normalizer，不先替换 UI**
 
-- [ ] **Step 4: 用 Chunk 1 的日志回放测试回归验证 provider 输出**
+- [x] **Step 4: 用 Chunk 1 的日志回放测试回归验证 provider 输出**
 
 Run:
 
@@ -405,6 +413,8 @@ git commit -m "refactor: add provider semantic extraction and session normalizat
 
 ### Task 6: 建立 projection 并接管 conversation / submission / execution
 
+> Status note: `SessionProjection` 已接管 toolwindow conversation/submission/execution 主输出，`conversation/translation/*` 已删除，仅保留 `ConversationModels.kt`；本轮又修正了 engine switch、tool-user-input、session switch 与 timeline reducer/projection 混合路径的并发与状态复活问题，并完成 `com.auracode.assistant.toolwindow.*`、`com.auracode.assistant.session.projection.*` 与更大范围回归验证。提交步骤仍待执行。
+
 **Files:**
 - Create: `src/main/kotlin/com/auracode/assistant/session/projection/SessionProjection.kt`
 - Create: `src/main/kotlin/com/auracode/assistant/session/projection/conversation/ConversationProjection.kt`
@@ -416,7 +426,7 @@ git commit -m "refactor: add provider semantic extraction and session normalizat
 - Modify: `src/main/kotlin/com/auracode/assistant/toolwindow/eventing/ConversationHistoryHandler.kt`
 - Delete after pass: `src/main/kotlin/com/auracode/assistant/conversation/translation/*`
 
-- [ ] **Step 1: 先写 projection 失败测试**
+- [x] **Step 1: 先写 projection 失败测试**
 
 断言 UI 消费结果中：
 
@@ -424,7 +434,7 @@ git commit -m "refactor: add provider semantic extraction and session normalizat
 - approval/tool-input/running-plan 有独立 projection
 - 本地化 key 或本地化文案来自 projection 而不是 parser
 
-- [ ] **Step 2: 运行 projection 测试确认当前无新 projection**
+- [x] **Step 2: 运行 projection 测试确认当前无新 projection**
 
 Run:
 
@@ -432,7 +442,7 @@ Run:
 ./gradlew test --tests "com.auracode.assistant.session.projection.ConversationProjectionTest"
 ```
 
-- [ ] **Step 3: 用 projection 接管 coordinator 对 UI 的输出**
+- [x] **Step 3: 用 projection 接管 coordinator 对 UI 的输出**
 
 注意：
 
@@ -440,9 +450,9 @@ Run:
 - 不在这一阶段做视觉重排
 - 不把命令/文件/文本解析回塞进 UI
 
-- [ ] **Step 4: 删除 `conversation/translation/*` 并修复测试**
+- [x] **Step 4: 删除 `conversation/translation/*` 并修复测试**
 
-- [ ] **Step 5: 运行对话与执行相关测试**
+- [x] **Step 5: 运行对话与执行相关测试**
 
 Run:
 
@@ -467,6 +477,8 @@ git commit -m "refactor: drive toolwindow from session projections"
 
 ### Task 7: 按功能域迁移 toolwindow 包并删除旧链路
 
+> Status note: 截至 2026-04-26，toolwindow 主 UI 已迁入 `shell / sessions / conversation / submission / execution / history / settings / shared` 功能域包，旧 `bootstrap / drawer / header / session / timeline / composer / approval / status / toolinput / plan` 入口已移除，`SessionScopedEventDispatcher` / `SessionUiStateCache` 已删除。为保持现有交互卡片结构，approval / tool-user-input / running-plan / plan-completion 组件仍暂留在 `submission` 包内，但其状态与 store 边界已由 `execution` 域承接；最终验证已回归 `./gradlew test` 全绿。
+
 **Files:**
 - Create: `src/main/kotlin/com/auracode/assistant/toolwindow/shell/*`
 - Create: `src/main/kotlin/com/auracode/assistant/toolwindow/sessions/*`
@@ -481,7 +493,7 @@ git commit -m "refactor: drive toolwindow from session projections"
 - Delete: `src/main/kotlin/com/auracode/assistant/toolwindow/eventing/SessionScopedEventDispatcher.kt`
 - Delete: `src/main/kotlin/com/auracode/assistant/toolwindow/eventing/SessionUiStateCache.kt`
 
-- [ ] **Step 1: 先写 package-level 回归测试**
+- [x] **Step 1: 先写 package-level 回归测试**
 
 验证：
 
@@ -489,9 +501,9 @@ git commit -m "refactor: drive toolwindow from session projections"
 - submission / execution 边界分离
 - sessions / history / settings 入口名称与职责一致
 
-- [ ] **Step 2: 运行目标测试确认旧包依赖仍存在**
+- [x] **Step 2: 运行目标测试确认旧包依赖仍存在**
 
-- [ ] **Step 3: 迁移 UI 文件到功能域包**
+- [x] **Step 3: 迁移 UI 文件到功能域包**
 
 约束：
 
@@ -499,9 +511,9 @@ git commit -m "refactor: drive toolwindow from session projections"
 - 不做无关视觉调整
 - 涉及新增文案时同步补国际化资源
 
-- [ ] **Step 4: 删除旧 timeline / eventing cache / placement-driven 包**
+- [x] **Step 4: 删除旧 timeline / eventing cache / placement-driven 包**
 
-- [ ] **Step 5: 运行完整测试集**
+- [x] **Step 5: 运行完整测试集**
 
 Run:
 

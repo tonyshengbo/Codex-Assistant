@@ -1,4 +1,4 @@
-package com.auracode.assistant.toolwindow.timeline
+package com.auracode.assistant.toolwindow.conversation
 
 import kotlin.test.Test
 import kotlin.test.assertFalse

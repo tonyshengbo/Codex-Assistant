@@ -6,7 +6,7 @@ import com.auracode.assistant.provider.codex.CodexAppServerProvider
 import com.auracode.assistant.provider.codex.CodexModelCatalog
 import com.auracode.assistant.settings.AgentSettingsService
 import com.auracode.assistant.protocol.UnifiedToolUserInputAnswerDraft
-import com.auracode.assistant.toolwindow.approval.ApprovalAction
+import com.auracode.assistant.toolwindow.execution.ApprovalAction
 import java.util.concurrent.ConcurrentHashMap
 
 private val codexCapabilities = EngineCapabilities(

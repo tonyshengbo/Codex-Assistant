@@ -33,7 +33,7 @@ import com.auracode.assistant.provider.CodexProviderFactory
 import com.auracode.assistant.provider.EngineDescriptor
 import com.auracode.assistant.provider.ProviderRegistry
 import com.auracode.assistant.settings.AgentSettingsService
-import com.auracode.assistant.toolwindow.approval.ApprovalAction
+import com.auracode.assistant.toolwindow.execution.ApprovalAction
 import com.intellij.execution.configurations.GeneralCommandLine
 import com.intellij.execution.process.CapturingProcessHandler
 import com.intellij.openapi.Disposable
@@ -41,6 +41,7 @@ import com.intellij.openapi.components.Service
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.application.PathManager
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.collect
@@ -56,6 +57,7 @@ class AgentChatService private constructor(
     private val registry: ProviderRegistry,
     private val workingDirectoryProvider: () -> String,
     private val diagnosticLogger: (String) -> Unit,
+    private val scopeDispatcher: CoroutineDispatcher,
 ) : Disposable {
     constructor(project: Project) : this(
         project = project,
@@ -64,6 +66,7 @@ class AgentChatService private constructor(
         registry = ProviderRegistry(AgentSettingsService.getInstance()),
         workingDirectoryProvider = { project.basePath ?: "." },
         diagnosticLogger = { message -> LOG.info(message) },
+        scopeDispatcher = Dispatchers.IO,
     )
 
     internal constructor(
@@ -72,6 +75,7 @@ class AgentChatService private constructor(
         settings: AgentSettingsService,
         workingDirectoryProvider: () -> String = { "." },
         diagnosticLogger: (String) -> Unit = { message -> LOG.info(message) },
+        scopeDispatcher: CoroutineDispatcher = Dispatchers.IO,
     ) : this(
         project = null,
         repository = repository,
@@ -79,6 +83,7 @@ class AgentChatService private constructor(
         registry = registry,
         workingDirectoryProvider = workingDirectoryProvider,
         diagnosticLogger = diagnosticLogger,
+        scopeDispatcher = scopeDispatcher,
     )
 
     data class SessionSummary(
@@ -105,7 +110,7 @@ class AgentChatService private constructor(
 
     private val scope: ManagedCoroutineScope = AppCoroutineManager.createScope(
         scopeName = "AgentChatService",
-        dispatcher = Dispatchers.IO,
+        dispatcher = scopeDispatcher,
         failureReporter = { _, label, error ->
             diagnosticLogger(
                 "AgentChatService coroutine failed${label?.let { ": $it" }.orEmpty()}: ${error.message}",
@@ -123,6 +128,7 @@ class AgentChatService private constructor(
 
     private val sessions = linkedMapOf<String, SessionData>()
     private val sessionRuns = SessionRunRegistry()
+    private val acceptedRunRequestIdsBySessionId = linkedMapOf<String, String>()
     private var currentSessionId: String = ""
 
     companion object {
@@ -541,6 +547,10 @@ class AgentChatService private constructor(
             )
         }
         val provider = registry.providerOrDefault(engineId)
+        synchronized(stateLock) {
+            sessionRuns.ensureSession(sessionId)
+            acceptedRunRequestIdsBySessionId[sessionId] = request.requestId
+        }
         val job = scope.launch(label = "stream:${request.requestId}") {
             val assistantBuffer = StringBuilder()
             var activeTurnId = localTurnId?.trim().orEmpty()
@@ -548,6 +558,9 @@ class AgentChatService private constructor(
             try {
                 runCatching {
                     provider.stream(request).collect { unified ->
+                        if (!shouldAcceptRunEvent(sessionId = sessionId, requestId = request.requestId)) {
+                            return@collect
+                        }
                         val normalizedEvent = normalizeUnifiedEvent(engineId, unified)
                         collectAssistantOutput(normalizedEvent, assistantBuffer)
                         val persistResult = persistUnifiedEvent(
@@ -602,6 +615,9 @@ class AgentChatService private constructor(
             } finally {
                 synchronized(stateLock) {
                     sessionRuns.clearRun(sessionId, request.requestId)
+                    if (acceptedRunRequestIdsBySessionId[sessionId] == request.requestId) {
+                        acceptedRunRequestIdsBySessionId.remove(sessionId)
+                    }
                 }
                 onRunStateChanged()
             }
@@ -619,6 +635,7 @@ class AgentChatService private constructor(
 
     fun cancelSessionRun(sessionId: String) {
         val cancelledRun = synchronized(stateLock) {
+            acceptedRunRequestIdsBySessionId.remove(sessionId)
             sessionRuns.clearRun(sessionId)
         } ?: return
         cancelledRun.job?.cancel()
@@ -815,6 +832,11 @@ class AgentChatService private constructor(
             )
         }
         persistSessionSnapshot(sessionId)
+    }
+
+    /** Returns whether a unified event still belongs to the currently accepted live run for the session. */
+    private fun shouldAcceptRunEvent(sessionId: String, requestId: String): Boolean = synchronized(stateLock) {
+        acceptedRunRequestIdsBySessionId[sessionId] == requestId
     }
 
     private fun logCodexChain(message: String) {

@@ -1,4 +1,4 @@
-package com.auracode.assistant.toolwindow.toolinput
+package com.auracode.assistant.toolwindow.execution
 
 import kotlin.test.Test
 import kotlin.test.assertEquals

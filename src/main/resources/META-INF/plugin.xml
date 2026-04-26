@@ -23,14 +23,14 @@
 
     <applicationListeners>
         <listener
-                class="com.auracode.assistant.toolwindow.bootstrap.InitializeSkikoLibraryPathEarly"
+                class="com.auracode.assistant.toolwindow.shell.InitializeSkikoLibraryPathEarly"
                 topic="com.intellij.ide.AppLifecycleListener"/>
     </applicationListeners>
 
     <extensions defaultExtensionNs="com.intellij">
         <toolWindow
                 id="Aura Code"
-                factoryClass="com.auracode.assistant.toolwindow.bootstrap.AgentToolWindowFactory"
+                factoryClass="com.auracode.assistant.toolwindow.shell.AgentToolWindowFactory"
                 anchor="right"
                 icon="/icons/toolwindow-stripe.svg"
                 canCloseContents="false"/>

@@ -1,4 +1,4 @@
-package com.auracode.assistant.toolwindow.drawer
+package com.auracode.assistant.toolwindow.history
 
 import com.auracode.assistant.conversation.ConversationSummary
 import com.auracode.assistant.protocol.ItemKind

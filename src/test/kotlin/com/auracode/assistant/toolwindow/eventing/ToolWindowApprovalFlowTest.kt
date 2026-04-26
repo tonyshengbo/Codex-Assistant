@@ -14,19 +14,20 @@ import com.auracode.assistant.provider.EngineDescriptor
 import com.auracode.assistant.provider.ProviderRegistry
 import com.auracode.assistant.service.AgentChatService
 import com.auracode.assistant.settings.AgentSettingsService
-import com.auracode.assistant.toolwindow.approval.ApprovalAction
-import com.auracode.assistant.toolwindow.approval.ApprovalAreaStore
-import com.auracode.assistant.toolwindow.composer.ComposerAreaStore
-import com.auracode.assistant.toolwindow.drawer.RightDrawerAreaStore
-import com.auracode.assistant.toolwindow.header.HeaderAreaStore
-import com.auracode.assistant.toolwindow.status.StatusAreaStore
-import com.auracode.assistant.toolwindow.timeline.TimelineAreaStore
-import com.auracode.assistant.toolwindow.timeline.TimelineNode
+import com.auracode.assistant.toolwindow.execution.ApprovalAction
+import com.auracode.assistant.toolwindow.execution.ApprovalAreaStore
+import com.auracode.assistant.toolwindow.submission.ComposerAreaStore
+import com.auracode.assistant.toolwindow.shell.RightDrawerAreaStore
+import com.auracode.assistant.toolwindow.sessions.HeaderAreaStore
+import com.auracode.assistant.toolwindow.execution.StatusAreaStore
+import com.auracode.assistant.toolwindow.conversation.TimelineAreaStore
+import com.auracode.assistant.toolwindow.conversation.TimelineNode
 import com.auracode.assistant.persistence.chat.SQLiteChatSessionRepository
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.flow.Flow
 import java.nio.file.Files
+import java.util.concurrent.CopyOnWriteArrayList
 import kotlin.io.path.createTempDirectory
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -63,6 +64,7 @@ class ToolWindowApprovalFlowTest {
         val harness = CoordinatorHarness()
 
         harness.eventHub.publishUiIntent(UiIntent.ToggleExecutionMode)
+        harness.waitUntil { harness.composerStore.state.value.executionMode == ComposerMode.APPROVAL }
         harness.eventHub.publishUiIntent(UiIntent.InputChanged("run"))
         harness.eventHub.publishUiIntent(UiIntent.SendPrompt)
 
@@ -172,8 +174,8 @@ class ToolWindowApprovalFlowTest {
     }
 
     private class RecordingApprovalProvider : AgentProvider {
-        val requests = mutableListOf<AgentRequest>()
-        val decisions = mutableListOf<Pair<String, ApprovalAction>>()
+        val requests = CopyOnWriteArrayList<AgentRequest>()
+        val decisions = CopyOnWriteArrayList<Pair<String, ApprovalAction>>()
         private var sink: (UnifiedEvent) -> Unit = {}
 
         override fun stream(request: AgentRequest): Flow<UnifiedEvent> = callbackFlow {

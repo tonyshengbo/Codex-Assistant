@@ -19,17 +19,19 @@ import com.auracode.assistant.protocol.UnifiedToolUserInputPrompt
 import com.auracode.assistant.protocol.UnifiedToolUserInputQuestion
 import com.auracode.assistant.service.AgentChatService
 import com.auracode.assistant.settings.AgentSettingsService
-import com.auracode.assistant.toolwindow.composer.ComposerAreaStore
-import com.auracode.assistant.toolwindow.drawer.RightDrawerAreaStore
-import com.auracode.assistant.toolwindow.header.HeaderAreaStore
-import com.auracode.assistant.toolwindow.status.StatusAreaStore
-import com.auracode.assistant.toolwindow.timeline.TimelineAreaStore
-import com.auracode.assistant.toolwindow.timeline.TimelineNode
+import com.auracode.assistant.toolwindow.submission.ComposerAreaStore
+import com.auracode.assistant.toolwindow.shell.RightDrawerAreaStore
+import com.auracode.assistant.toolwindow.sessions.HeaderAreaStore
+import com.auracode.assistant.toolwindow.execution.StatusAreaStore
+import com.auracode.assistant.toolwindow.conversation.TimelineAreaStore
+import com.auracode.assistant.toolwindow.conversation.TimelineNode
 import com.auracode.assistant.persistence.chat.SQLiteChatSessionRepository
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
 import java.nio.file.Files
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.CopyOnWriteArrayList
 import kotlin.io.path.createTempDirectory
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -95,6 +97,9 @@ class ToolWindowCoordinatorMultiSessionTest {
         assertEquals(0, currentSession.messageCount)
         assertEquals(null, currentSession.usageSnapshot)
         assertTrue(harness.openedSessionIds.isEmpty())
+        harness.waitUntil {
+            harness.timelineStore.state.value.nodes.lastOrNull() is TimelineNode.EngineSwitchedNode
+        }
         val switchNode = harness.timelineStore.state.value.nodes.last() as TimelineNode.EngineSwitchedNode
         assertEquals("Claude", switchNode.targetEngineLabel)
         assertTrue(switchNode.body.contains("Claude"))
@@ -298,7 +303,11 @@ class ToolWindowCoordinatorMultiSessionTest {
         harness.waitUntil { harness.composerStore.state.value.pendingSubmissions.size == 1 }
 
         harness.eventHub.publishUiIntent(UiIntent.SwitchSession(sessionB))
-        harness.waitUntil { harness.chatService.getCurrentSessionId() == sessionB }
+        harness.waitUntil {
+            harness.chatService.getCurrentSessionId() == sessionB &&
+                harness.composerStore.state.value.currentSessionId == sessionB &&
+                harness.composerStore.state.value.pendingSubmissions.isEmpty()
+        }
         assertTrue(harness.composerStore.state.value.pendingSubmissions.isEmpty())
 
         harness.provider.emit("run-a-1", UnifiedEvent.TurnCompleted(turnId = "turn-a-1", outcome = TurnOutcome.SUCCESS))
@@ -338,7 +347,10 @@ class ToolWindowCoordinatorMultiSessionTest {
         }
 
         harness.eventHub.publishUiIntent(UiIntent.SwitchSession(sessionB))
-        harness.waitUntil { harness.chatService.getCurrentSessionId() == sessionB }
+        harness.waitUntil {
+            harness.chatService.getCurrentSessionId() == sessionB &&
+                harness.timelineStore.state.value.nodes.filterIsInstance<TimelineNode.UserInputNode>().none()
+        }
         assertFalse(harness.timelineStore.state.value.nodes.filterIsInstance<TimelineNode.UserInputNode>().any())
 
         harness.provider.emit("run-a", UnifiedEvent.ToolUserInputResolved(requestId = "user-input-a"))
@@ -446,7 +458,7 @@ class ToolWindowCoordinatorMultiSessionTest {
         val workingDir = createTempDirectory("multi-engine-flow")
         val codexProvider = RecordingMultiSessionProvider()
         val claudeProvider = RecordingMultiSessionProvider()
-        val openedSessionIds = mutableListOf<String>()
+        val openedSessionIds = CopyOnWriteArrayList<String>()
         val timelineStore = TimelineAreaStore()
         private val settings = AgentSettingsService().apply { loadState(AgentSettingsService.State()) }
         val service = AgentChatService(
@@ -526,8 +538,8 @@ class ToolWindowCoordinatorMultiSessionTest {
     }
 
     private class RecordingMultiSessionProvider : AgentProvider {
-        val requests = mutableListOf<AgentRequest>()
-        private val sinks = mutableMapOf<String, kotlinx.coroutines.channels.SendChannel<UnifiedEvent>>()
+        val requests = CopyOnWriteArrayList<AgentRequest>()
+        private val sinks = ConcurrentHashMap<String, kotlinx.coroutines.channels.SendChannel<UnifiedEvent>>()
 
         override fun capabilities(): ConversationCapabilities = ConversationCapabilities(
             supportsStructuredHistory = false,

@@ -1,8 +1,8 @@
 package com.auracode.assistant.toolwindow.eventing
 
-import com.auracode.assistant.toolwindow.composer.ComposerAreaState
-import com.auracode.assistant.toolwindow.composer.PendingComposerSubmission
-import com.auracode.assistant.toolwindow.toolinput.ToolUserInputPromptUiModel
+import com.auracode.assistant.toolwindow.submission.ComposerAreaState
+import com.auracode.assistant.toolwindow.submission.PendingComposerSubmission
+import com.auracode.assistant.toolwindow.execution.ToolUserInputPromptUiModel
 
 internal object ToolWindowCoordinatorIds {
     fun newLocalTurnId(): String = "local-turn-${System.currentTimeMillis()}"

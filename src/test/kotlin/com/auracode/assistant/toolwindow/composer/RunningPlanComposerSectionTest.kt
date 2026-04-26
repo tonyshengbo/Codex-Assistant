@@ -1,4 +1,4 @@
-package com.auracode.assistant.toolwindow.composer
+package com.auracode.assistant.toolwindow.submission
 
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.unit.dp

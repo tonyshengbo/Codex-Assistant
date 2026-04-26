@@ -1,7 +1,7 @@
 package com.auracode.assistant.settings.skills
 
 import com.auracode.assistant.settings.AgentSettingsService
-import com.auracode.assistant.toolwindow.composer.SlashSkillDescriptor
+import com.auracode.assistant.toolwindow.submission.SlashSkillDescriptor
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption

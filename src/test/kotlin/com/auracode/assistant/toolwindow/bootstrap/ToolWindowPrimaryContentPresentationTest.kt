@@ -1,4 +1,4 @@
-package com.auracode.assistant.toolwindow.bootstrap
+package com.auracode.assistant.toolwindow.shell
 
 import com.intellij.ui.content.impl.ContentImpl
 import javax.swing.JPanel

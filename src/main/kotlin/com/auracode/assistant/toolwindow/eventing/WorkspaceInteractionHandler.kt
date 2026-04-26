@@ -2,13 +2,13 @@ package com.auracode.assistant.toolwindow.eventing
 
 import com.auracode.assistant.persistence.chat.PersistedAttachmentKind
 import com.auracode.assistant.persistence.chat.PersistedMessageAttachment
-import com.auracode.assistant.toolwindow.composer.AttachmentEntry
-import com.auracode.assistant.toolwindow.composer.AttachmentKind
-import com.auracode.assistant.toolwindow.composer.ContextEntry
-import com.auracode.assistant.toolwindow.composer.MentionSuggestion
-import com.auracode.assistant.toolwindow.composer.sortSessionSubagents
-import com.auracode.assistant.toolwindow.timeline.TimelineFileChange
-import com.auracode.assistant.toolwindow.timeline.TimelineFileChangePreview
+import com.auracode.assistant.toolwindow.submission.AttachmentEntry
+import com.auracode.assistant.toolwindow.submission.AttachmentKind
+import com.auracode.assistant.toolwindow.submission.ContextEntry
+import com.auracode.assistant.toolwindow.submission.MentionSuggestion
+import com.auracode.assistant.toolwindow.submission.sortSessionSubagents
+import com.auracode.assistant.toolwindow.conversation.TimelineFileChange
+import com.auracode.assistant.toolwindow.conversation.TimelineFileChangePreview
 import com.auracode.assistant.toolwindow.shared.UiText
 import com.intellij.openapi.application.PathManager
 import java.awt.Toolkit

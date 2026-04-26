@@ -1,4 +1,4 @@
-package com.auracode.assistant.toolwindow.timeline
+package com.auracode.assistant.toolwindow.conversation
 
 import com.auracode.assistant.i18n.AuraCodeBundle
 import com.auracode.assistant.model.MessageRole

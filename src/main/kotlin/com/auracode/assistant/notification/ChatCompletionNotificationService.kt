@@ -3,7 +3,7 @@ package com.auracode.assistant.notification
 import com.auracode.assistant.i18n.AuraCodeBundle
 import com.auracode.assistant.protocol.TurnOutcome
 import com.auracode.assistant.settings.AgentSettingsService
-import com.auracode.assistant.toolwindow.session.SessionAttentionStore
+import com.auracode.assistant.toolwindow.sessions.SessionAttentionStore
 import com.intellij.notification.NotificationType
 
 /**

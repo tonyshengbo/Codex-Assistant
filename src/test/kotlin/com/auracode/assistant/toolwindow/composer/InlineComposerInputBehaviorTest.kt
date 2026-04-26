@@ -1,9 +1,9 @@
-package com.auracode.assistant.toolwindow.composer
+package com.auracode.assistant.toolwindow.submission
 
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.graphics.Color
-import com.auracode.assistant.toolwindow.toolinput.ToolUserInputChoiceKind
+import com.auracode.assistant.toolwindow.execution.ToolUserInputChoiceKind
 import com.auracode.assistant.toolwindow.shared.DesignPalette
 import kotlin.test.assertEquals
 import kotlin.test.Test

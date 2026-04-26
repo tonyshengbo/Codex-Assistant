@@ -18,15 +18,18 @@ import com.auracode.assistant.settings.skills.SkillSelector
 import com.auracode.assistant.settings.skills.SkillsManagementAdapter
 import com.auracode.assistant.settings.skills.SkillsManagementAdapterRegistry
 import com.auracode.assistant.settings.skills.SkillsRuntimeService
-import com.auracode.assistant.toolwindow.approval.ApprovalAreaStore
-import com.auracode.assistant.toolwindow.composer.ComposerAreaStore
-import com.auracode.assistant.toolwindow.drawer.RightDrawerAreaStore
-import com.auracode.assistant.toolwindow.drawer.SettingsSection
-import com.auracode.assistant.toolwindow.header.HeaderAreaStore
-import com.auracode.assistant.toolwindow.status.StatusAreaStore
-import com.auracode.assistant.toolwindow.timeline.TimelineAreaStore
+import com.auracode.assistant.toolwindow.execution.ApprovalAreaStore
+import com.auracode.assistant.toolwindow.submission.ComposerAreaStore
+import com.auracode.assistant.toolwindow.shell.RightDrawerAreaStore
+import com.auracode.assistant.toolwindow.settings.SettingsSection
+import com.auracode.assistant.toolwindow.sessions.HeaderAreaStore
+import com.auracode.assistant.toolwindow.execution.StatusAreaStore
+import com.auracode.assistant.toolwindow.conversation.TimelineAreaStore
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
+import java.util.concurrent.CopyOnWriteArrayList
 import kotlin.io.path.createDirectories
 import kotlin.io.path.createTempDirectory
 import kotlin.io.path.exists
@@ -36,7 +39,10 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
+@OptIn(ExperimentalCoroutinesApi::class)
 class ToolWindowCoordinatorSkillTest {
+    private val testDispatcher = Dispatchers.Default.limitedParallelism(1)
+
     @Test
     fun `submitting prompt with disabled skill token is blocked before agent run`() {
         val workingDir = createTempDirectory("coordinator-skill-submit")
@@ -85,6 +91,8 @@ class ToolWindowCoordinatorSkillTest {
             rightDrawerStore = RightDrawerAreaStore(),
             approvalStore = ApprovalAreaStore(),
             skillsRuntimeService = runtimeService,
+            runStartupWarmups = false,
+            scopeDispatcher = testDispatcher,
         )
 
         composerStore.onEvent(
@@ -147,7 +155,7 @@ class ToolWindowCoordinatorSkillTest {
         store.onEvent(AppEvent.UiIntentPublished(UiIntent.UpdateDocument(TextFieldValue("/", TextRange(1)))))
 
         val skillNames = store.state.value.slashSuggestions
-            .mapNotNull { (it as? com.auracode.assistant.toolwindow.composer.SlashSuggestionItem.Skill)?.name }
+            .mapNotNull { (it as? com.auracode.assistant.toolwindow.submission.SlashSuggestionItem.Skill)?.name }
 
         assertFalse(skillNames.contains("brainstorming"))
         assertTrue(skillNames.contains("systematic-debugging"))
@@ -191,6 +199,8 @@ class ToolWindowCoordinatorSkillTest {
             rightDrawerStore = RightDrawerAreaStore(),
             approvalStore = ApprovalAreaStore(),
             skillsRuntimeService = runtimeService,
+            runStartupWarmups = false,
+            scopeDispatcher = testDispatcher,
         )
 
         kotlinx.coroutines.runBlocking {
@@ -252,11 +262,18 @@ class ToolWindowCoordinatorSkillTest {
                     defaultEngineId = "codex",
                 ),
             ),
+            runStartupWarmups = false,
+            scopeDispatcher = testDispatcher,
         )
 
+        val initialListCalls = adapter.listCalls
         eventHub.publishUiIntent(UiIntent.SelectSettingsSection(SettingsSection.SKILLS))
 
-        waitUntil(2_000) { adapter.listCalls > 0 }
+        waitUntil(5_000) {
+            adapter.listCalls > initialListCalls &&
+                rightDrawerStore.state.value.settingsSection == SettingsSection.SKILLS &&
+                rightDrawerStore.state.value.skillsHasLoadedSnapshot
+        }
 
         assertEquals(SettingsSection.SKILLS, rightDrawerStore.state.value.settingsSection)
         assertTrue(rightDrawerStore.state.value.skillsHasLoadedSnapshot)
@@ -293,6 +310,8 @@ class ToolWindowCoordinatorSkillTest {
                 revealedPath = path
                 true
             },
+            runStartupWarmups = false,
+            scopeDispatcher = testDispatcher,
         )
 
         eventHub.publishUiIntent(UiIntent.OpenSkillPath("/tmp/brainstorming/SKILL.md"))
@@ -359,6 +378,8 @@ class ToolWindowCoordinatorSkillTest {
                 ),
             ),
             localSkillInstallPolicy = LocalSkillInstallPolicy(homeDir = home),
+            runStartupWarmups = false,
+            scopeDispatcher = testDispatcher,
         )
 
         eventHub.publishUiIntent(UiIntent.SelectSettingsSection(SettingsSection.SKILLS))
@@ -438,7 +459,7 @@ class ToolWindowCoordinatorSkillTest {
     ) : SkillsManagementAdapter {
         override val engineId: String = "codex"
         var listCalls: Int = 0
-        val toggleCalls = mutableListOf<String>()
+        val toggleCalls = CopyOnWriteArrayList<String>()
 
         override fun supportsRuntimeSkills(): Boolean = true
 

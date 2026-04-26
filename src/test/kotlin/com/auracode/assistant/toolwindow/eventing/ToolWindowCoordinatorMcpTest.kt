@@ -19,15 +19,16 @@ import com.auracode.assistant.settings.mcp.McpServerDraft
 import com.auracode.assistant.settings.mcp.McpServerSummary
 import com.auracode.assistant.settings.mcp.McpTestResult
 import com.auracode.assistant.settings.mcp.McpTransportType
-import com.auracode.assistant.toolwindow.approval.ApprovalAreaStore
-import com.auracode.assistant.toolwindow.composer.ComposerAreaStore
-import com.auracode.assistant.toolwindow.drawer.RightDrawerAreaStore
-import com.auracode.assistant.toolwindow.header.HeaderAreaStore
-import com.auracode.assistant.toolwindow.status.StatusAreaStore
-import com.auracode.assistant.toolwindow.timeline.TimelineAreaStore
+import com.auracode.assistant.toolwindow.execution.ApprovalAreaStore
+import com.auracode.assistant.toolwindow.submission.ComposerAreaStore
+import com.auracode.assistant.toolwindow.shell.RightDrawerAreaStore
+import com.auracode.assistant.toolwindow.sessions.HeaderAreaStore
+import com.auracode.assistant.toolwindow.execution.StatusAreaStore
+import com.auracode.assistant.toolwindow.conversation.TimelineAreaStore
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import java.nio.file.Files
+import java.util.concurrent.CopyOnWriteArrayList
 import kotlin.io.path.createTempDirectory
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -45,7 +46,7 @@ class ToolWindowCoordinatorMcpTest {
         )
         val eventHub = ToolWindowEventHub()
         val rightDrawerStore = RightDrawerAreaStore()
-        val diagnostics = mutableListOf<String>()
+        val diagnostics = CopyOnWriteArrayList<String>()
         val adapter = RecordingMcpAdapter().apply {
             getEditorDraftFailure = IllegalStateException("boom draft")
         }
@@ -63,7 +64,7 @@ class ToolWindowCoordinatorMcpTest {
             diagnosticLog = { message, _ -> diagnostics += message },
         )
 
-        eventHub.publishUiIntent(UiIntent.SelectSettingsSection(com.auracode.assistant.toolwindow.drawer.SettingsSection.MCP))
+        eventHub.publishUiIntent(UiIntent.SelectSettingsSection(com.auracode.assistant.toolwindow.settings.SettingsSection.MCP))
         eventHub.publishUiIntent(UiIntent.SelectMcpServerForEdit("docs"))
 
         waitUntil(timeoutMs = 2_000) {
@@ -89,7 +90,7 @@ class ToolWindowCoordinatorMcpTest {
         )
         val eventHub = ToolWindowEventHub()
         val rightDrawerStore = RightDrawerAreaStore()
-        val diagnostics = mutableListOf<String>()
+        val diagnostics = CopyOnWriteArrayList<String>()
         val coordinator = ToolWindowCoordinator(
             chatService = service,
             settingsService = settings,
@@ -104,7 +105,7 @@ class ToolWindowCoordinatorMcpTest {
             diagnosticLog = { message, _ -> diagnostics += message },
         )
 
-        eventHub.publishUiIntent(UiIntent.SelectSettingsSection(com.auracode.assistant.toolwindow.drawer.SettingsSection.MCP))
+        eventHub.publishUiIntent(UiIntent.SelectSettingsSection(com.auracode.assistant.toolwindow.settings.SettingsSection.MCP))
         eventHub.publishUiIntent(UiIntent.CreateNewMcpDraft)
         eventHub.publishUiIntent(UiIntent.ShowMcpSettingsList)
 
@@ -159,7 +160,7 @@ class ToolWindowCoordinatorMcpTest {
             mcpAdapterRegistry = McpManagementAdapterRegistry(mapOf("codex" to adapter)),
         )
 
-        eventHub.publishUiIntent(UiIntent.SelectSettingsSection(com.auracode.assistant.toolwindow.drawer.SettingsSection.MCP))
+        eventHub.publishUiIntent(UiIntent.SelectSettingsSection(com.auracode.assistant.toolwindow.settings.SettingsSection.MCP))
 
         waitUntil(timeoutMs = 2_000) {
             rightDrawerStore.state.value.mcpServers.size == 1 &&
@@ -202,7 +203,7 @@ class ToolWindowCoordinatorMcpTest {
             mcpAdapterRegistry = McpManagementAdapterRegistry(mapOf("codex" to adapter)),
         )
 
-        eventHub.publishUiIntent(UiIntent.SelectSettingsSection(com.auracode.assistant.toolwindow.drawer.SettingsSection.MCP))
+        eventHub.publishUiIntent(UiIntent.SelectSettingsSection(com.auracode.assistant.toolwindow.settings.SettingsSection.MCP))
         eventHub.publishUiIntent(UiIntent.CreateNewMcpDraft)
         eventHub.publishUiIntent(
             UiIntent.EditMcpDraftJson(
@@ -274,7 +275,7 @@ class ToolWindowCoordinatorMcpTest {
             mcpAdapterRegistry = McpManagementAdapterRegistry(mapOf("codex" to adapter)),
         )
 
-        eventHub.publishUiIntent(UiIntent.SelectSettingsSection(com.auracode.assistant.toolwindow.drawer.SettingsSection.MCP))
+        eventHub.publishUiIntent(UiIntent.SelectSettingsSection(com.auracode.assistant.toolwindow.settings.SettingsSection.MCP))
 
         waitUntil(timeoutMs = 2_000) { rightDrawerStore.state.value.mcpServers.size == 1 }
 

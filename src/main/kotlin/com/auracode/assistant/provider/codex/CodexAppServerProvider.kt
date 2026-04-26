@@ -31,7 +31,7 @@ import com.auracode.assistant.protocol.UnifiedToolUserInputPrompt
 import com.auracode.assistant.protocol.UnifiedToolUserInputQuestion
 import com.auracode.assistant.protocol.UnifiedToolUserInputSubmission
 import com.auracode.assistant.settings.AgentSettingsService
-import com.auracode.assistant.toolwindow.approval.ApprovalAction
+import com.auracode.assistant.toolwindow.execution.ApprovalAction
 import com.intellij.openapi.diagnostic.Logger
 import kotlinx.coroutines.DelicateCoroutinesApi
 import kotlinx.coroutines.CompletableDeferred

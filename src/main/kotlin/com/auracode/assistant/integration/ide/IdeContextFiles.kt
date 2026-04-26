@@ -1,7 +1,7 @@
 package com.auracode.assistant.integration.ide
 
 import com.auracode.assistant.model.ContextFile
-import com.auracode.assistant.toolwindow.composer.FocusedContextSnapshot
+import com.auracode.assistant.toolwindow.submission.FocusedContextSnapshot
 
 /**
  * Builds normalized context-file payloads for IDE-originated requests.

@@ -1,4 +1,4 @@
-package com.auracode.assistant.toolwindow.session
+package com.auracode.assistant.toolwindow.sessions
 
 import com.auracode.assistant.protocol.TurnOutcome
 import kotlin.test.Test

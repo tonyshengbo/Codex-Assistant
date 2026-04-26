@@ -5,7 +5,7 @@ import com.auracode.assistant.protocol.UnifiedEvent
 import com.auracode.assistant.protocol.UnifiedToolUserInputAnswerDraft
 import com.auracode.assistant.protocol.UnifiedToolUserInputPrompt
 import com.auracode.assistant.protocol.UnifiedToolUserInputSubmission
-import com.auracode.assistant.toolwindow.approval.ApprovalAction
+import com.auracode.assistant.toolwindow.execution.ApprovalAction
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers

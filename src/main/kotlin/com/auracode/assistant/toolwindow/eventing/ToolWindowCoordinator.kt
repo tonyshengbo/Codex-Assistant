@@ -5,30 +5,41 @@ import com.auracode.assistant.coroutine.ManagedCoroutineScope
 import com.auracode.assistant.context.MentionFileWhitelist
 import com.auracode.assistant.i18n.AuraCodeBundle
 import com.auracode.assistant.notification.ChatCompletionNotificationService
+import com.auracode.assistant.persistence.chat.PersistedMessageAttachment
 import com.auracode.assistant.provider.claude.ClaudeCliVersionService
 import com.auracode.assistant.provider.codex.CodexCliVersionService
 import com.auracode.assistant.provider.codex.CodexEnvironmentDetector
 import com.auracode.assistant.protocol.UnifiedEvent
 import com.auracode.assistant.service.AgentChatService
+import com.auracode.assistant.session.kernel.SessionDomainEvent
+import com.auracode.assistant.session.kernel.SessionKernelManager
+import com.auracode.assistant.session.kernel.SessionMessageAttachment
+import com.auracode.assistant.session.kernel.SessionMessageRole
+import com.auracode.assistant.session.projection.SessionProjectionBuilder
+import com.auracode.assistant.session.projection.execution.ExecutionProjection
+import com.auracode.assistant.session.normalizer.UnifiedEventSessionEventMapper
 import com.auracode.assistant.settings.AgentSettingsService
 import com.auracode.assistant.settings.skills.LocalSkillInstallPolicy
 import com.auracode.assistant.settings.skills.SkillsRuntimeService
 import com.auracode.assistant.settings.mcp.McpManagementAdapterRegistry
 import com.auracode.assistant.provider.runtime.RuntimeExecutableCheckService
-import com.auracode.assistant.toolwindow.approval.ApprovalAreaStore
-import com.auracode.assistant.toolwindow.composer.ComposerAreaStore
-import com.auracode.assistant.toolwindow.drawer.RightDrawerAreaStore
-import com.auracode.assistant.toolwindow.drawer.RightDrawerKind
+import com.auracode.assistant.toolwindow.execution.ApprovalAreaStore
+import com.auracode.assistant.toolwindow.submission.ComposerAreaStore
+import com.auracode.assistant.toolwindow.shell.RightDrawerAreaStore
+import com.auracode.assistant.toolwindow.shell.RightDrawerKind
 import com.auracode.assistant.toolwindow.shared.UiText
-import com.auracode.assistant.toolwindow.session.SessionAttentionStore
-import com.auracode.assistant.toolwindow.header.HeaderAreaStore
-import com.auracode.assistant.toolwindow.status.StatusAreaStore
-import com.auracode.assistant.toolwindow.timeline.TimelineAreaStore
-import com.auracode.assistant.toolwindow.timeline.TimelineFileChange
-import com.auracode.assistant.toolwindow.timeline.TimelineMutation
-import com.auracode.assistant.toolwindow.toolinput.ToolUserInputPromptStore
+import com.auracode.assistant.toolwindow.sessions.SessionAttentionStore
+import com.auracode.assistant.toolwindow.sessions.SessionComposerViewStateRegistry
+import com.auracode.assistant.toolwindow.sessions.SessionTimelineUiStateRegistry
+import com.auracode.assistant.toolwindow.sessions.HeaderAreaStore
+import com.auracode.assistant.toolwindow.execution.StatusAreaStore
+import com.auracode.assistant.toolwindow.conversation.TimelineAreaStore
+import com.auracode.assistant.toolwindow.conversation.TimelineFileChange
+import com.auracode.assistant.toolwindow.conversation.TimelineMutation
+import com.auracode.assistant.toolwindow.execution.ToolUserInputPromptStore
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.diagnostic.Logger
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.collect
 import java.awt.Desktop
@@ -90,6 +101,8 @@ internal class ToolWindowCoordinator(
     },
     private val onSessionSnapshotPublished: () -> Unit = {},
     private val historyPageSize: Int = 40,
+    private val runStartupWarmups: Boolean = true,
+    private val scopeDispatcher: CoroutineDispatcher = Dispatchers.Default,
 ) : Disposable {
     companion object {
         private val LOG = Logger.getInstance(ToolWindowCoordinator::class.java)
@@ -98,26 +111,28 @@ internal class ToolWindowCoordinator(
             "The user approved the latest plan. Execute it now."
     }
 
+    /** Stores per-session paging metadata that is not part of the kernel event log. */
+    private data class SessionTimelinePaging(
+        val oldestCursor: String? = null,
+        val hasOlder: Boolean = false,
+    )
+
     private val scope: ManagedCoroutineScope = AppCoroutineManager.createScope(
         scopeName = "ToolWindowCoordinator",
-        dispatcher = Dispatchers.Default,
+        dispatcher = scopeDispatcher,
         failureReporter = { _, label, error ->
             LOG.error("ToolWindowCoordinator coroutine failed${label?.let { ": $it" }.orEmpty()}", error)
         },
     )
     private val recentFocusedFiles = ArrayDeque<String>()
-    private val sessionUiStateCache = SessionUiStateCache()
-    private val pendingSubmissionsBySessionId = linkedMapOf<String, ArrayDeque<com.auracode.assistant.toolwindow.composer.PendingComposerSubmission>>()
+    private val sessionKernelManager = SessionKernelManager()
+    private val sessionProjectionBuilder = SessionProjectionBuilder()
+    private val unifiedEventMappersBySessionId = linkedMapOf<String, UnifiedEventSessionEventMapper>()
+    private val sessionTimelinePagingBySessionId = linkedMapOf<String, SessionTimelinePaging>()
+    private val sessionComposerViewStateRegistry = SessionComposerViewStateRegistry()
+    private val sessionTimelineUiStateRegistry = SessionTimelineUiStateRegistry()
+    private val pendingSubmissionsBySessionId = linkedMapOf<String, ArrayDeque<com.auracode.assistant.toolwindow.submission.PendingComposerSubmission>>()
     private val activePlanRunContexts = linkedMapOf<String, ActivePlanRunContext>()
-    private val eventDispatcher = SessionScopedEventDispatcher(
-        activeSessionId = { activeSessionId() },
-        sessionUiStateCache = sessionUiStateCache,
-        statusStore = statusStore,
-        timelineStore = timelineStore,
-        composerStore = composerStore,
-        approvalStore = approvalStore,
-        toolUserInputPromptStore = toolUserInputPromptStore,
-    )
     private val coroutineLauncher = CoordinatorCoroutineLauncher(
         scope = scope,
         logger = LOG,
@@ -165,12 +180,39 @@ internal class ToolWindowCoordinator(
         recentFocusedFiles = recentFocusedFiles,
         pendingSubmissionsBySessionId = pendingSubmissionsBySessionId,
         activePlanRunContexts = activePlanRunContexts,
-        eventDispatcher = eventDispatcher,
         coroutineLauncher = coroutineLauncher,
+        dispatchSessionEvent = { sessionId, event -> dispatchSessionEvent(sessionId, event) },
+        captureSessionViewState = { sessionId -> captureSessionViewState(sessionId) },
+        restoreSessionViewState = { sessionId -> restoreSessionViewState(sessionId) },
         publishSessionSnapshot = { publishSessionSnapshot() },
         publishSettingsSnapshot = { publishSettingsSnapshot() },
         publishConversationCapabilities = { publishConversationCapabilities() },
         publishUnifiedEvent = { sessionId: String, event: UnifiedEvent -> publishUnifiedEvent(sessionId, event) },
+        publishLocalUserMessage = { sessionId, sourceId, text, timestamp, turnId, attachments ->
+            publishLocalUserMessage(
+                sessionId = sessionId,
+                sourceId = sourceId,
+                text = text,
+                timestamp = timestamp,
+                turnId = turnId,
+                attachments = attachments,
+            )
+        },
+        restoreSessionHistory = { sessionId, events, oldestCursor, hasOlder, prepend ->
+            restoreSessionHistory(
+                sessionId = sessionId,
+                events = events,
+                oldestCursor = oldestCursor,
+                hasOlder = hasOlder,
+                prepend = prepend,
+            )
+        },
+        applySessionDomainEvents = { sessionId, events ->
+            applySessionDomainEvents(
+                sessionId = sessionId,
+                events = events,
+            )
+        },
     )
     private val workspaceHandler = WorkspaceInteractionHandler(context)
     private val settingsHandler = SettingsAndEnvironmentHandler(context)
@@ -222,9 +264,11 @@ internal class ToolWindowCoordinator(
         publishSettingsSnapshot()
         publishConversationCapabilities()
         historyHandler.restoreCurrentSessionHistory()
-        settingsHandler.warmSkillsRuntimeCache()
-        settingsHandler.warmCodexCliVersionState()
-        settingsHandler.warmClaudeCliVersionState()
+        if (runStartupWarmups) {
+            settingsHandler.warmSkillsRuntimeCache()
+            settingsHandler.warmCodexCliVersionState()
+            settingsHandler.warmClaudeCliVersionState()
+        }
     }
 
     private fun handleUiIntent(intent: UiIntent) {
@@ -244,9 +288,6 @@ internal class ToolWindowCoordinator(
             is UiIntent.SubmitExternalRequest -> conversationHandler.submitExternalRequest(intent.request)
             UiIntent.CancelRun -> conversationHandler.cancelPromptRun(
                 onResetPlanFlowState = { planHandler.resetPlanFlowState() },
-                onTurnCompleted = { sessionId ->
-                    conversationHandler.dispatchNextPendingSubmissionIfIdle(sessionId, allowTurnCompletedBypass = true)
-                },
             )
             is UiIntent.RemovePendingSubmission -> conversationHandler.removePendingSubmission(intent.id)
             is UiIntent.DeleteSession -> conversationHandler.deleteSession(
@@ -301,9 +342,6 @@ internal class ToolWindowCoordinator(
                 planHandler.submitToolUserInputPrompt(cancelled = false) {
                     conversationHandler.cancelPromptRun(
                         onResetPlanFlowState = { planHandler.resetPlanFlowState() },
-                        onTurnCompleted = { sessionId ->
-                            conversationHandler.dispatchNextPendingSubmissionIfIdle(sessionId, allowTurnCompletedBypass = true)
-                        },
                     )
                 }
             }
@@ -311,9 +349,6 @@ internal class ToolWindowCoordinator(
                 planHandler.submitToolUserInputPrompt(cancelled = true) {
                     conversationHandler.cancelPromptRun(
                         onResetPlanFlowState = { planHandler.resetPlanFlowState() },
-                        onTurnCompleted = { sessionId ->
-                            conversationHandler.dispatchNextPendingSubmissionIfIdle(sessionId, allowTurnCompletedBypass = true)
-                        },
                     )
                 }
             }
@@ -369,14 +404,181 @@ internal class ToolWindowCoordinator(
     }
 
     private fun publishUnifiedEvent(sessionId: String, event: UnifiedEvent) {
-        eventDispatcher.dispatchSessionEvent(sessionId, AppEvent.UnifiedEventPublished(event))
-        com.auracode.assistant.toolwindow.timeline.TimelineNodeMapper.fromUnifiedEvent(event)?.let { mutation ->
-            eventDispatcher.dispatchSessionEvent(sessionId, AppEvent.TimelineMutationApplied(mutation = mutation))
-        }
+        dispatchSessionEvent(sessionId, AppEvent.UnifiedEventPublished(event))
+        applyUnifiedEventToKernel(sessionId = sessionId, event = event)
         handleUnifiedEvent(sessionId, event)
         if (event is UnifiedEvent.TurnCompleted) {
             conversationHandler.dispatchNextPendingSubmissionIfIdle(sessionId, allowTurnCompletedBypass = true)
         }
+    }
+
+    /** Records one local user message into the session kernel before provider events arrive. */
+    private fun publishLocalUserMessage(
+        sessionId: String,
+        sourceId: String,
+        text: String,
+        timestamp: Long,
+        turnId: String?,
+        attachments: List<PersistedMessageAttachment>,
+    ) {
+        val localEvents = buildList {
+            turnId?.takeIf { it.isNotBlank() }?.let { localTurnId ->
+                add(
+                    SessionDomainEvent.TurnStarted(
+                        turnId = localTurnId,
+                        threadId = kernelForSession(sessionId).currentState.runtime.activeThreadId,
+                        startedAtMs = timestamp,
+                    ),
+                )
+            }
+            add(
+                SessionDomainEvent.MessageAppended(
+                    messageId = sourceId,
+                    turnId = turnId,
+                    role = SessionMessageRole.USER,
+                    text = text,
+                    attachments = attachments.map { attachment ->
+                        SessionMessageAttachment(
+                            id = attachment.id,
+                            kind = attachment.kind.name.lowercase(),
+                            displayName = attachment.displayName,
+                            assetPath = attachment.assetPath,
+                            originalPath = attachment.originalPath,
+                            mimeType = attachment.mimeType,
+                            sizeBytes = attachment.sizeBytes,
+                            status = when (attachment.status) {
+                                com.auracode.assistant.protocol.ItemStatus.RUNNING ->
+                                    com.auracode.assistant.session.kernel.SessionActivityStatus.RUNNING
+
+                                com.auracode.assistant.protocol.ItemStatus.SUCCESS ->
+                                    com.auracode.assistant.session.kernel.SessionActivityStatus.SUCCESS
+
+                                com.auracode.assistant.protocol.ItemStatus.FAILED ->
+                                    com.auracode.assistant.session.kernel.SessionActivityStatus.FAILED
+
+                                com.auracode.assistant.protocol.ItemStatus.SKIPPED ->
+                                    com.auracode.assistant.session.kernel.SessionActivityStatus.SKIPPED
+                            },
+                        )
+                    },
+                ),
+            )
+        }
+        applySessionDomainEvents(sessionId = sessionId, events = localEvents)
+    }
+
+    /** Restores or prepends persisted history through the same kernel and projection pipeline as live events. */
+    private fun restoreSessionHistory(
+        sessionId: String,
+        events: List<UnifiedEvent>,
+        oldestCursor: String?,
+        hasOlder: Boolean,
+        prepend: Boolean,
+    ) {
+        val mapper = mapperForSession(sessionId)
+        val domainEvents = if (prepend) {
+            val prependMapper = UnifiedEventSessionEventMapper()
+            events.flatMap(prependMapper::map)
+        } else {
+            mapper.reset()
+            events.flatMap(mapper::map)
+        }
+        val kernel = kernelForSession(sessionId)
+        if (prepend) {
+            kernel.prependHistory(domainEvents)
+        } else {
+            kernel.restoreHistory(domainEvents)
+        }
+        sessionTimelinePagingBySessionId[sessionId] = SessionTimelinePaging(
+            oldestCursor = oldestCursor,
+            hasOlder = hasOlder,
+        )
+        events.filterIsInstance<UnifiedEvent.SubagentsUpdated>()
+            .lastOrNull()
+            ?.let { subagentsEvent ->
+                dispatchSessionEvent(
+                    sessionId,
+                    AppEvent.UnifiedEventPublished(subagentsEvent),
+                )
+            }
+        syncSessionProjection(sessionId)
+        if (sessionId == activeSessionId()) {
+            sessionTimelineUiStateRegistry.restore(sessionId, timelineStore)
+        }
+    }
+
+    /** Applies one live unified event to the session kernel. */
+    private fun applyUnifiedEventToKernel(
+        sessionId: String,
+        event: UnifiedEvent,
+    ) {
+        val mappedEvents = mapperForSession(sessionId).map(event)
+        if (mappedEvents.isEmpty()) {
+            if (event is UnifiedEvent.ThreadStarted || event is UnifiedEvent.TurnCompleted || event is UnifiedEvent.Error) {
+                syncSessionProjection(sessionId)
+            }
+            return
+        }
+        applySessionDomainEvents(
+            sessionId = sessionId,
+            events = mappedEvents,
+        )
+    }
+
+    /** Applies one or more kernel domain events and republishes the read-only session projection. */
+    private fun applySessionDomainEvents(
+        sessionId: String,
+        events: List<SessionDomainEvent>,
+    ) {
+        if (events.isEmpty()) {
+            return
+        }
+        kernelForSession(sessionId).applyLiveEvents(events)
+        syncSessionProjection(sessionId)
+    }
+
+    /** Rebuilds the read-only projection for one session and pushes it into scoped UI stores. */
+    private fun syncSessionProjection(sessionId: String) {
+        val projection = sessionProjectionBuilder.project(kernelForSession(sessionId).currentState)
+        val paging = sessionTimelinePagingBySessionId[sessionId] ?: SessionTimelinePaging()
+        dispatchSessionEvent(
+            sessionId,
+            AppEvent.ConversationProjectionUpdated(
+                nodes = projection.conversation.nodes,
+                oldestCursor = paging.oldestCursor,
+                hasOlder = paging.hasOlder,
+                isRunning = projection.conversation.isRunning,
+                latestError = projection.conversation.latestError,
+            ),
+        )
+        syncExecutionProjection(sessionId = sessionId, projection = projection.execution)
+    }
+
+    /** Pushes the execution slice of the current projection into approval, tool-input, plan, and status stores. */
+    private fun syncExecutionProjection(
+        sessionId: String,
+        projection: ExecutionProjection,
+    ) {
+        dispatchSessionEvent(
+            sessionId,
+            AppEvent.ExecutionProjectionUpdated(
+                approvals = projection.approvals,
+                toolUserInputs = projection.toolUserInputs,
+                runningPlan = projection.runningPlan,
+                turnStatus = projection.turnStatus,
+            ),
+        )
+    }
+
+    /** Returns or creates the kernel that owns one session state graph. */
+    private fun kernelForSession(sessionId: String) = sessionKernelManager.getOrCreate(
+        sessionId = sessionId,
+        engineId = chatService.sessionProviderId(sessionId),
+    )
+
+    /** Returns or creates the stateful unified-event mapper bound to one session. */
+    private fun mapperForSession(sessionId: String): UnifiedEventSessionEventMapper {
+        return unifiedEventMappersBySessionId.getOrPut(sessionId) { UnifiedEventSessionEventMapper() }
     }
 
     private fun publishSessionSnapshot() {
@@ -454,9 +656,19 @@ internal class ToolWindowCoordinator(
             providerId = normalizedEngineId,
         )
 
+        if (switchedInPlace) {
+            sessionKernelManager.remove(currentSessionId)
+            unifiedEventMappersBySessionId.remove(currentSessionId)
+            sessionTimelinePagingBySessionId.remove(currentSessionId)
+            sessionComposerViewStateRegistry.drop(currentSessionId)
+            sessionTimelineUiStateRegistry.drop(currentSessionId)
+            // Rebuild an empty projection immediately so the reused session no longer carries stale running UI state.
+            syncSessionProjection(currentSessionId)
+        }
+
         if (switchedInPlace && !switchedEmptySession) {
             val targetEngineLabel = chatService.engineDescriptor(normalizedEngineId)?.displayName ?: normalizedEngineId
-            eventDispatcher.dispatchSessionEvent(
+            dispatchSessionEvent(
                 currentSessionId,
                 AppEvent.TimelineMutationApplied(
                     TimelineMutation.AppendEngineSwitched(
@@ -488,7 +700,7 @@ internal class ToolWindowCoordinator(
 
     fun onSessionActivated() {
         publishSessionSnapshot()
-        if (!eventDispatcher.restoreCachedSessionState(activeSessionId())) {
+        if (!restoreSessionViewState(activeSessionId())) {
             historyHandler.restoreCurrentSessionHistory()
         }
     }
@@ -498,7 +710,46 @@ internal class ToolWindowCoordinator(
     }
 
     fun captureSessionState(sessionId: String) {
-        eventDispatcher.captureVisibleSessionState(sessionId)
+        captureSessionViewState(sessionId)
+    }
+
+    /** Routes a session-scoped UI event either to the visible stores or to per-session draft state registries. */
+    private fun dispatchSessionEvent(
+        sessionId: String,
+        event: AppEvent,
+    ) {
+        if (sessionId == activeSessionId()) {
+            statusStore.onEvent(event)
+            timelineStore.onEvent(event)
+            composerStore.onEvent(event)
+            approvalStore.onEvent(event)
+            toolUserInputPromptStore.onEvent(event)
+            return
+        }
+        sessionComposerViewStateRegistry.applyEvent(sessionId, event)
+    }
+
+    /** Captures the visible session-scoped draft and expansion state before the UI switches tabs. */
+    private fun captureSessionViewState(sessionId: String) {
+        if (sessionId.isBlank()) return
+        sessionComposerViewStateRegistry.capture(sessionId, composerStore.state.value)
+        sessionTimelineUiStateRegistry.capture(sessionId, timelineStore.state.value)
+    }
+
+    /** Restores session-local draft UI while rebuilding projection-backed state from the kernel when available. */
+    private fun restoreSessionViewState(sessionId: String): Boolean {
+        val hasKernel = sessionKernelManager.get(sessionId) != null
+        if (hasKernel) {
+            syncSessionProjection(sessionId)
+            sessionTimelineUiStateRegistry.restore(sessionId, timelineStore)
+        }
+        composerStore.restoreState(
+            sessionComposerViewStateRegistry.restore(
+                sessionId = sessionId,
+                baseState = composerStore.state.value,
+            ),
+        )
+        return hasKernel
     }
 
     override fun dispose() {

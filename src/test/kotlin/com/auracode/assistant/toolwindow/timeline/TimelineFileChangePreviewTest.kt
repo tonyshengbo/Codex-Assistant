@@ -1,4 +1,4 @@
-package com.auracode.assistant.toolwindow.timeline
+package com.auracode.assistant.toolwindow.conversation
 
 import java.nio.file.Files
 import kotlin.test.Test

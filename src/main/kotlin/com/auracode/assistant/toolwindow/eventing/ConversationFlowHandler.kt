@@ -8,9 +8,8 @@ import com.auracode.assistant.model.AgentCollaborationMode
 import com.auracode.assistant.model.FileAttachment
 import com.auracode.assistant.model.ImageAttachment
 import com.auracode.assistant.persistence.chat.PersistedAttachmentKind
-import com.auracode.assistant.toolwindow.composer.PendingComposerSubmission
+import com.auracode.assistant.toolwindow.submission.PendingComposerSubmission
 import com.auracode.assistant.toolwindow.shared.UiText
-import com.auracode.assistant.toolwindow.timeline.TimelineNodeMapper
 
 internal class ConversationFlowHandler(
     private val context: ToolWindowCoordinatorContext,
@@ -30,15 +29,16 @@ internal class ConversationFlowHandler(
     fun switchSession(sessionId: String, onRestoreHistory: () -> Unit) {
         val previousSessionId = context.activeSessionId()
         if (previousSessionId == sessionId) return
-        context.eventDispatcher.captureVisibleSessionState(previousSessionId)
+        context.captureSessionViewState(previousSessionId)
         if (!context.chatService.switchSession(sessionId)) return
         context.sessionAttentionStore.clear(sessionId)
         context.publishSessionSnapshot()
         context.publishSettingsSnapshot()
         context.publishConversationCapabilities()
-        if (!context.eventDispatcher.restoreCachedSessionState(sessionId)) {
+        if (!context.restoreSessionViewState(sessionId)) {
             onRestoreHistory()
         }
+        publishPendingSubmissions(sessionId = sessionId)
     }
 
     fun submitPromptIfAllowed() {
@@ -66,18 +66,17 @@ internal class ConversationFlowHandler(
         }
     }
 
-    fun cancelPromptRun(onResetPlanFlowState: () -> Unit, onTurnCompleted: (String) -> Unit) {
+    fun cancelPromptRun(onResetPlanFlowState: () -> Unit) {
         context.chatService.cancelCurrent()
         onResetPlanFlowState()
         context.eventHub.publish(AppEvent.ActiveRunCancelled)
-        publishUnifiedEvent(
+        context.publishUnifiedEvent(
             context.activeSessionId(),
             com.auracode.assistant.protocol.UnifiedEvent.TurnCompleted(
                 turnId = "",
                 outcome = com.auracode.assistant.protocol.TurnOutcome.CANCELLED,
                 usage = null,
             ),
-            onTurnCompleted,
         )
     }
 
@@ -109,18 +108,8 @@ internal class ConversationFlowHandler(
         )
     }
 
-    fun publishUnifiedEvent(sessionId: String, event: com.auracode.assistant.protocol.UnifiedEvent, onTurnCompleted: (String) -> Unit) {
-        context.eventDispatcher.dispatchSessionEvent(sessionId, AppEvent.UnifiedEventPublished(event))
-        com.auracode.assistant.toolwindow.timeline.TimelineNodeMapper.fromUnifiedEvent(event)?.let { mutation ->
-            context.eventDispatcher.dispatchSessionEvent(sessionId, AppEvent.TimelineMutationApplied(mutation = mutation))
-        }
-        if (event is com.auracode.assistant.protocol.UnifiedEvent.TurnCompleted) {
-            onTurnCompleted(sessionId)
-        }
-    }
-
     private fun buildPendingSubmission(
-        composerState: com.auracode.assistant.toolwindow.composer.ComposerAreaState,
+        composerState: com.auracode.assistant.toolwindow.submission.ComposerAreaState,
     ): PendingComposerSubmission? {
         val disabledSkills = context.skillsRuntimeService.findDisabledSkillMentions(
             engineId = composerState.selectedEngineId,
@@ -189,7 +178,7 @@ internal class ConversationFlowHandler(
     }
 
     private fun publishPendingSubmissions(sessionId: String, clearComposerDraft: Boolean = false) {
-        context.eventDispatcher.dispatchSessionEvent(
+        context.dispatchSessionEvent(
             sessionId,
             AppEvent.PendingSubmissionsUpdated(
                 submissions = context.pendingSubmissionQueue(sessionId).toList(),
@@ -221,24 +210,20 @@ internal class ConversationFlowHandler(
         } else {
             context.activePlanRunContexts.remove(sessionId)
         }
-        context.eventDispatcher.dispatchSessionEvent(sessionId, AppEvent.PlanCompletionPromptUpdated(prompt = null))
-        context.eventDispatcher.dispatchSessionEvent(sessionId, AppEvent.ClearToolUserInputs)
-        context.eventDispatcher.dispatchSessionEvent(
+        context.dispatchSessionEvent(sessionId, AppEvent.PlanCompletionPromptUpdated(prompt = null))
+        context.dispatchSessionEvent(sessionId, AppEvent.ClearToolUserInputs)
+        context.dispatchSessionEvent(
             sessionId,
             AppEvent.PromptAccepted(prompt = submission.prompt, localTurnId = localTurnId),
         )
         localMessage?.let { message ->
-            context.eventDispatcher.dispatchSessionEvent(
+            context.publishLocalUserMessage(
                 sessionId,
-                AppEvent.TimelineMutationApplied(
-                    mutation = TimelineNodeMapper.localUserMessageMutation(
-                        sourceId = message.sourceId,
-                        text = message.prompt,
-                        timestamp = message.timestamp,
-                        turnId = message.turnId,
-                        attachments = message.attachments,
-                    ),
-                ),
+                message.sourceId,
+                message.prompt,
+                message.timestamp,
+                message.turnId,
+                message.attachments,
             )
         }
         context.publishSessionSnapshot()

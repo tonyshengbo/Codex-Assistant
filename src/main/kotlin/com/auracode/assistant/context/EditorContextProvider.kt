@@ -5,7 +5,7 @@ import com.intellij.openapi.editor.Editor
 import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.openapi.fileEditor.FileEditorManager
 import com.intellij.openapi.project.Project
-import com.auracode.assistant.toolwindow.composer.FocusedContextSnapshot
+import com.auracode.assistant.toolwindow.submission.FocusedContextSnapshot
 
 @Service(Service.Level.PROJECT)
 class EditorContextProvider(private val project: Project) {

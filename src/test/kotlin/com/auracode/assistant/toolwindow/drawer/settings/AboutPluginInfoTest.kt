@@ -1,4 +1,4 @@
-package com.auracode.assistant.toolwindow.drawer.settings
+package com.auracode.assistant.toolwindow.settings
 
 import kotlin.test.Test
 import kotlin.test.assertEquals

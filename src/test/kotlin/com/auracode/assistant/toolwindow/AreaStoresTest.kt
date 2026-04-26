@@ -26,27 +26,27 @@ import com.auracode.assistant.provider.codex.CodexCliVersionSnapshot
 import com.auracode.assistant.provider.claude.ClaudeCliVersionCheckStatus
 import com.auracode.assistant.provider.claude.ClaudeCliVersionSnapshot
 import com.auracode.assistant.conversation.ConversationCapabilities
-import com.auracode.assistant.toolwindow.composer.ComposerAreaStore
-import com.auracode.assistant.toolwindow.composer.ContextEntry
-import com.auracode.assistant.toolwindow.composer.FocusedContextSnapshot
-import com.auracode.assistant.toolwindow.composer.MentionSuggestion
-import com.auracode.assistant.toolwindow.drawer.RightDrawerAreaStore
-import com.auracode.assistant.toolwindow.drawer.AgentSettingsPage
-import com.auracode.assistant.toolwindow.drawer.McpSettingsPage
-import com.auracode.assistant.toolwindow.drawer.RightDrawerKind
-import com.auracode.assistant.toolwindow.drawer.RuntimeSettingsTab
-import com.auracode.assistant.toolwindow.drawer.SettingsSection
+import com.auracode.assistant.toolwindow.submission.ComposerAreaStore
+import com.auracode.assistant.toolwindow.submission.ContextEntry
+import com.auracode.assistant.toolwindow.submission.FocusedContextSnapshot
+import com.auracode.assistant.toolwindow.submission.MentionSuggestion
+import com.auracode.assistant.toolwindow.shell.RightDrawerAreaStore
+import com.auracode.assistant.toolwindow.shell.AgentSettingsPage
+import com.auracode.assistant.toolwindow.shell.McpSettingsPage
+import com.auracode.assistant.toolwindow.shell.RightDrawerKind
+import com.auracode.assistant.toolwindow.settings.RuntimeSettingsTab
+import com.auracode.assistant.toolwindow.settings.SettingsSection
 import com.auracode.assistant.toolwindow.eventing.AppEvent
 import com.auracode.assistant.toolwindow.eventing.ComposerMode
 import com.auracode.assistant.toolwindow.eventing.ComposerReasoning
 import com.auracode.assistant.toolwindow.eventing.UiIntent
-import com.auracode.assistant.toolwindow.header.HeaderAreaStore
-import com.auracode.assistant.toolwindow.status.StatusAreaStore
-import com.auracode.assistant.toolwindow.timeline.TimelineAreaStore
-import com.auracode.assistant.toolwindow.timeline.TimelineFileChange
-import com.auracode.assistant.toolwindow.timeline.TimelineFileChangeKind
-import com.auracode.assistant.toolwindow.timeline.TimelineMutation
-import com.auracode.assistant.toolwindow.timeline.TimelineNode
+import com.auracode.assistant.toolwindow.sessions.HeaderAreaStore
+import com.auracode.assistant.toolwindow.execution.StatusAreaStore
+import com.auracode.assistant.toolwindow.conversation.TimelineAreaStore
+import com.auracode.assistant.toolwindow.conversation.TimelineFileChange
+import com.auracode.assistant.toolwindow.conversation.TimelineFileChangeKind
+import com.auracode.assistant.toolwindow.conversation.TimelineMutation
+import com.auracode.assistant.toolwindow.conversation.TimelineNode
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -1429,11 +1429,11 @@ class AreaStoresTest {
         val store = ComposerAreaStore(
             availableSkillsProvider = {
                 listOf(
-                    com.auracode.assistant.toolwindow.composer.SlashSkillDescriptor(
+                    com.auracode.assistant.toolwindow.submission.SlashSkillDescriptor(
                         name = "brainstorming",
                         description = "Explore requirements before building.",
                     ),
-                    com.auracode.assistant.toolwindow.composer.SlashSkillDescriptor(
+                    com.auracode.assistant.toolwindow.submission.SlashSkillDescriptor(
                         name = "systematic-debugging",
                         description = "Debug unexpected behavior step by step.",
                     ),
@@ -1452,10 +1452,10 @@ class AreaStoresTest {
         assertEquals(
             listOf("/plan", "/auto", "/new"),
             store.state.value.slashSuggestions.mapNotNull {
-                (it as? com.auracode.assistant.toolwindow.composer.SlashSuggestionItem.Command)?.command
+                (it as? com.auracode.assistant.toolwindow.submission.SlashSuggestionItem.Command)?.command
             },
         )
-        assertTrue(store.state.value.slashSuggestions.any { it is com.auracode.assistant.toolwindow.composer.SlashSuggestionItem.Skill })
+        assertTrue(store.state.value.slashSuggestions.any { it is com.auracode.assistant.toolwindow.submission.SlashSuggestionItem.Skill })
     }
 
     @Test
@@ -1473,7 +1473,7 @@ class AreaStoresTest {
         assertEquals(
             listOf("/plan"),
             store.state.value.slashSuggestions.mapNotNull {
-                (it as? com.auracode.assistant.toolwindow.composer.SlashSuggestionItem.Command)?.command
+                (it as? com.auracode.assistant.toolwindow.submission.SlashSuggestionItem.Command)?.command
             },
         )
     }
@@ -1493,7 +1493,7 @@ class AreaStoresTest {
         assertEquals(
             listOf("/auto"),
             store.state.value.slashSuggestions.mapNotNull {
-                (it as? com.auracode.assistant.toolwindow.composer.SlashSuggestionItem.Command)?.command
+                (it as? com.auracode.assistant.toolwindow.submission.SlashSuggestionItem.Command)?.command
             },
         )
     }
@@ -1582,7 +1582,7 @@ class AreaStoresTest {
 
         val initialDescriptions = store.state.value.slashSuggestions
             .mapNotNull { suggestion ->
-                (suggestion as? com.auracode.assistant.toolwindow.composer.SlashSuggestionItem.Command)
+                (suggestion as? com.auracode.assistant.toolwindow.submission.SlashSuggestionItem.Command)
                     ?.let { it.command to it.description }
             }
             .toMap()
@@ -1600,7 +1600,7 @@ class AreaStoresTest {
 
         val toggledDescriptions = store.state.value.slashSuggestions
             .mapNotNull { suggestion ->
-                (suggestion as? com.auracode.assistant.toolwindow.composer.SlashSuggestionItem.Command)
+                (suggestion as? com.auracode.assistant.toolwindow.submission.SlashSuggestionItem.Command)
                     ?.let { it.command to it.description }
             }
             .toMap()
@@ -1632,7 +1632,7 @@ class AreaStoresTest {
         val store = ComposerAreaStore(
             availableSkillsProvider = {
                 listOf(
-                    com.auracode.assistant.toolwindow.composer.SlashSkillDescriptor(
+                    com.auracode.assistant.toolwindow.submission.SlashSkillDescriptor(
                         name = "brainstorming",
                         description = "Explore requirements before building.",
                     ),

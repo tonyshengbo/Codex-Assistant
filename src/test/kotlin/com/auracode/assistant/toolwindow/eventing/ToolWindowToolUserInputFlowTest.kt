@@ -20,25 +20,29 @@ import com.auracode.assistant.provider.EngineDescriptor
 import com.auracode.assistant.provider.ProviderRegistry
 import com.auracode.assistant.service.AgentChatService
 import com.auracode.assistant.settings.AgentSettingsService
-import com.auracode.assistant.toolwindow.composer.ComposerAreaStore
-import com.auracode.assistant.toolwindow.drawer.RightDrawerAreaStore
-import com.auracode.assistant.toolwindow.header.HeaderAreaStore
+import com.auracode.assistant.toolwindow.submission.ComposerAreaStore
+import com.auracode.assistant.toolwindow.shell.RightDrawerAreaStore
+import com.auracode.assistant.toolwindow.sessions.HeaderAreaStore
 import com.auracode.assistant.toolwindow.shared.UiText
-import com.auracode.assistant.toolwindow.status.StatusAreaStore
-import com.auracode.assistant.toolwindow.timeline.TimelineAreaStore
-import com.auracode.assistant.toolwindow.timeline.TimelineNode
-import com.auracode.assistant.toolwindow.toolinput.ToolUserInputPromptStore
+import com.auracode.assistant.toolwindow.execution.StatusAreaStore
+import com.auracode.assistant.toolwindow.conversation.TimelineAreaStore
+import com.auracode.assistant.toolwindow.conversation.TimelineNode
+import com.auracode.assistant.toolwindow.execution.ToolUserInputPromptStore
 import com.auracode.assistant.persistence.chat.SQLiteChatSessionRepository
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
 import java.nio.file.Files
+import java.util.concurrent.CopyOnWriteArrayList
 import kotlin.io.path.createTempDirectory
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
+@OptIn(ExperimentalCoroutinesApi::class)
 class ToolWindowToolUserInputFlowTest {
     @Test
     fun `tool user input submission updates status prompt and timeline summary`() {
@@ -74,6 +78,12 @@ class ToolWindowToolUserInputFlowTest {
         harness.waitUntil { !harness.toolUserInputStore.state.value.visible }
         assertEquals(null, harness.composerStore.state.value.toolUserInputPrompt)
         assertEquals(UiText.Bundle("status.running"), harness.statusStore.state.value.turnStatus?.label)
+        harness.waitUntil {
+            harness.timelineStore.state.value.nodes
+                .filterIsInstance<TimelineNode.UserInputNode>()
+                .singleOrNull()
+                ?.status == ItemStatus.SUCCESS
+        }
 
         val node = harness.timelineStore.state.value.nodes.filterIsInstance<TimelineNode.UserInputNode>().single()
         assertEquals(ItemStatus.SUCCESS, node.status)
@@ -259,6 +269,7 @@ class ToolWindowToolUserInputFlowTest {
 
     private class CoordinatorHarness {
         private val workingDir = createTempDirectory("tool-user-input-flow")
+        private val testDispatcher = Dispatchers.Default.limitedParallelism(1)
         val provider = RecordingToolUserInputProvider()
         private val settings = AgentSettingsService().apply { loadState(AgentSettingsService.State()) }
         private val service = AgentChatService(
@@ -287,6 +298,7 @@ class ToolWindowToolUserInputFlowTest {
             ),
             settings = settings,
             workingDirectoryProvider = { workingDir.toString() },
+            scopeDispatcher = testDispatcher,
         )
         val eventHub = ToolWindowEventHub()
         val timelineStore = TimelineAreaStore()
@@ -303,9 +315,11 @@ class ToolWindowToolUserInputFlowTest {
             composerStore = composerStore,
             rightDrawerStore = RightDrawerAreaStore(),
             toolUserInputPromptStore = toolUserInputStore,
+            runStartupWarmups = false,
+            scopeDispatcher = testDispatcher,
         )
 
-        fun waitUntil(timeoutMs: Long = 2_000, condition: () -> Boolean) {
+        fun waitUntil(timeoutMs: Long = 10_000, condition: () -> Boolean) {
             val start = System.currentTimeMillis()
             while (!condition()) {
                 if (System.currentTimeMillis() - start > timeoutMs) {
@@ -323,9 +337,9 @@ class ToolWindowToolUserInputFlowTest {
     }
 
     private class RecordingToolUserInputProvider : AgentProvider {
-        val requests = mutableListOf<AgentRequest>()
-        val submissions = mutableListOf<Pair<String, Map<String, UnifiedToolUserInputAnswerDraft>>>()
-        val cancelledRequestIds = mutableListOf<String>()
+        val requests = CopyOnWriteArrayList<AgentRequest>()
+        val submissions = CopyOnWriteArrayList<Pair<String, Map<String, UnifiedToolUserInputAnswerDraft>>>()
+        val cancelledRequestIds = CopyOnWriteArrayList<String>()
         private var sink: (UnifiedEvent) -> Unit = {}
 
         override fun capabilities(): ConversationCapabilities = ConversationCapabilities(

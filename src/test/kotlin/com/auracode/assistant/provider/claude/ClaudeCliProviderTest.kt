@@ -451,6 +451,9 @@ class ClaudeCliProviderTest {
                     return exitCode
                 }
 
+                /** Ignores stdin writes because this fake session only replays recorded output. */
+                override suspend fun writeStdin(line: String) = Unit
+
                 override fun cancel() = Unit
             }
         }
@@ -481,6 +484,9 @@ class ClaudeCliProviderTest {
                     }
                     return 0
                 }
+
+                /** Ignores stdin writes because this fake session only replays recorded output. */
+                override suspend fun writeStdin(line: String) = Unit
 
                 /** 单测不需要真正取消子进程。 */
                 override fun cancel() = Unit

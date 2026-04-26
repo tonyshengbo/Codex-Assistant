@@ -23,23 +23,24 @@ import com.auracode.assistant.provider.claude.ClaudeCliVersionSnapshot
 import com.auracode.assistant.provider.codex.CodexEnvironmentCheckResult
 import com.auracode.assistant.provider.codex.CodexCliVersionSnapshot
 import com.auracode.assistant.provider.runtime.RuntimeExecutableCheckResult
-import com.auracode.assistant.toolwindow.approval.ApprovalAction
-import com.auracode.assistant.toolwindow.composer.ComposerRunningPlanState
-import com.auracode.assistant.toolwindow.composer.MentionSuggestion
-import com.auracode.assistant.toolwindow.composer.PlanCompletionAction
-import com.auracode.assistant.toolwindow.composer.PendingComposerSubmission
-import com.auracode.assistant.toolwindow.approval.PendingApprovalRequestUiModel
-import com.auracode.assistant.toolwindow.composer.ContextEntry
-import com.auracode.assistant.toolwindow.composer.FocusedContextSnapshot
+import com.auracode.assistant.toolwindow.execution.ApprovalAction
+import com.auracode.assistant.toolwindow.submission.ComposerRunningPlanState
+import com.auracode.assistant.toolwindow.submission.MentionSuggestion
+import com.auracode.assistant.toolwindow.submission.PlanCompletionAction
+import com.auracode.assistant.toolwindow.submission.PendingComposerSubmission
+import com.auracode.assistant.toolwindow.execution.PendingApprovalRequestUiModel
+import com.auracode.assistant.toolwindow.submission.ContextEntry
+import com.auracode.assistant.toolwindow.submission.FocusedContextSnapshot
 import com.auracode.assistant.i18n.AuraCodeBundle
-import com.auracode.assistant.toolwindow.plan.PlanCompletionPromptUiModel
-import com.auracode.assistant.toolwindow.toolinput.ToolUserInputPromptUiModel
-import com.auracode.assistant.toolwindow.drawer.RuntimeSettingsTab
-import com.auracode.assistant.toolwindow.drawer.SettingsSection
+import com.auracode.assistant.toolwindow.execution.PlanCompletionPromptUiModel
+import com.auracode.assistant.toolwindow.execution.ToolUserInputPromptUiModel
+import com.auracode.assistant.toolwindow.settings.RuntimeSettingsTab
+import com.auracode.assistant.toolwindow.settings.SettingsSection
 import com.auracode.assistant.toolwindow.shared.UiText
-import com.auracode.assistant.toolwindow.timeline.TimelineFileChange
-import com.auracode.assistant.toolwindow.timeline.TimelineMutation
-import com.auracode.assistant.toolwindow.timeline.TimelineNode
+import com.auracode.assistant.toolwindow.execution.TurnStatusUiState
+import com.auracode.assistant.toolwindow.conversation.TimelineFileChange
+import com.auracode.assistant.toolwindow.conversation.TimelineMutation
+import com.auracode.assistant.toolwindow.conversation.TimelineNode
 
 internal sealed interface UiIntent {
     data object NewSession : UiIntent
@@ -296,6 +297,19 @@ internal sealed interface AppEvent {
     data class McpFeedbackUpdated(val message: String, val isError: Boolean) : AppEvent
     data class StatusTextUpdated(val text: UiText) : AppEvent
     data class TimelineOlderLoadingChanged(val loading: Boolean) : AppEvent
+    data class ConversationProjectionUpdated(
+        val nodes: List<TimelineNode>,
+        val oldestCursor: String?,
+        val hasOlder: Boolean,
+        val isRunning: Boolean,
+        val latestError: String?,
+    ) : AppEvent
+    data class ExecutionProjectionUpdated(
+        val approvals: List<PendingApprovalRequestUiModel>,
+        val toolUserInputs: List<ToolUserInputPromptUiModel>,
+        val runningPlan: ComposerRunningPlanState?,
+        val turnStatus: TurnStatusUiState?,
+    ) : AppEvent
     data class TimelineHistoryLoaded(
         val nodes: List<TimelineNode>,
         val oldestCursor: String?,

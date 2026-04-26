@@ -1,4 +1,4 @@
-package com.auracode.assistant.toolwindow.bootstrap
+package com.auracode.assistant.toolwindow.shell
 
 import kotlin.test.Test
 import kotlin.test.assertEquals

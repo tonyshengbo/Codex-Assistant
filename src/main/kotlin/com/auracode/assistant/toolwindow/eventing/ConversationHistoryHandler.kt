@@ -1,13 +1,9 @@
 package com.auracode.assistant.toolwindow.eventing
 
 import com.auracode.assistant.conversation.ConversationSummary
-import com.auracode.assistant.protocol.UnifiedEvent
-import com.auracode.assistant.toolwindow.drawer.formatConversationExportMarkdown
-import com.auracode.assistant.toolwindow.drawer.suggestConversationExportFileName
+import com.auracode.assistant.toolwindow.history.formatConversationExportMarkdown
+import com.auracode.assistant.toolwindow.history.suggestConversationExportFileName
 import com.auracode.assistant.toolwindow.shared.UiText
-import com.auracode.assistant.toolwindow.timeline.TimelineNode
-import com.auracode.assistant.toolwindow.timeline.TimelineNodeMapper
-import com.auracode.assistant.toolwindow.timeline.TimelineNodeReducer
 
 internal class ConversationHistoryHandler(
     private val context: ToolWindowCoordinatorContext,
@@ -88,27 +84,10 @@ internal class ConversationHistoryHandler(
     fun restoreCurrentSessionHistory() {
         val sessionId = context.activeSessionId()
         onResetPlanFlowState()
-        context.eventDispatcher.dispatchSessionEvent(sessionId, AppEvent.ConversationReset)
+        context.dispatchSessionEvent(sessionId, AppEvent.ConversationReset)
         context.coroutineLauncher.launch("restoreCurrentSessionHistory") {
             val page = context.chatService.loadCurrentConversationHistory(limit = context.historyPageSize)
-            page.events
-                .filterIsInstance<UnifiedEvent.SubagentsUpdated>()
-                .lastOrNull()
-                ?.let { subagentsEvent ->
-                    context.eventDispatcher.dispatchSessionEvent(
-                        sessionId,
-                        AppEvent.UnifiedEventPublished(subagentsEvent),
-                    )
-                }
-            context.eventDispatcher.dispatchSessionEvent(
-                sessionId,
-                AppEvent.TimelineHistoryLoaded(
-                    nodes = restoreNodes(page.events),
-                    oldestCursor = page.olderCursor,
-                    hasOlder = page.hasOlder,
-                    prepend = false,
-                ),
-            )
+            context.restoreSessionHistory(sessionId, page.events, page.olderCursor, page.hasOlder, false)
         }
     }
 
@@ -117,29 +96,13 @@ internal class ConversationHistoryHandler(
         val state = context.timelineStore.state.value
         if (!state.hasOlder || state.isLoadingOlder) return
         val beforeCursor = state.oldestCursor ?: return
-        context.eventDispatcher.dispatchSessionEvent(sessionId, AppEvent.TimelineOlderLoadingChanged(loading = true))
+        context.dispatchSessionEvent(sessionId, AppEvent.TimelineOlderLoadingChanged(loading = true))
         context.coroutineLauncher.launch("loadOlderMessages(cursor=$beforeCursor)") {
             val page = context.chatService.loadOlderConversationHistory(
                 cursor = beforeCursor,
                 limit = context.historyPageSize,
             )
-            context.eventDispatcher.dispatchSessionEvent(
-                sessionId,
-                AppEvent.TimelineHistoryLoaded(
-                    nodes = restoreNodes(page.events),
-                    oldestCursor = page.olderCursor,
-                    hasOlder = page.hasOlder,
-                    prepend = true,
-                ),
-            )
+            context.restoreSessionHistory(sessionId, page.events, page.olderCursor, page.hasOlder, true)
         }
-    }
-
-    private fun restoreNodes(events: List<UnifiedEvent>): List<TimelineNode> {
-        val reducer = TimelineNodeReducer()
-        events.forEach { event ->
-            TimelineNodeMapper.fromUnifiedEvent(event)?.let(reducer::accept)
-        }
-        return reducer.state.nodes.filterNot { it is TimelineNode.LoadMoreNode }
     }
 }
