@@ -521,7 +521,7 @@ Run:
 ./gradlew test
 ```
 
-- [ ] **Step 6: 提交最终收敛与删除**
+- [x] **Step 6: 提交最终收敛与删除**
 
 ```bash
 git add src/main/kotlin src/test/kotlin src/main/resources/messages
