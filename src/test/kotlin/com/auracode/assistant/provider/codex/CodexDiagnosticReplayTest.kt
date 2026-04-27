@@ -1,7 +1,7 @@
 package com.auracode.assistant.provider.codex
 
 import com.auracode.assistant.protocol.ItemKind
-import com.auracode.assistant.protocol.UnifiedEvent
+import com.auracode.assistant.protocol.ProviderEvent
 import com.auracode.assistant.provider.diagnostics.ProviderDiagnosticFixture
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.buildJsonObject
@@ -32,7 +32,7 @@ class CodexDiagnosticReplayTest {
      */
     @Test
     fun `replays codex file change diagnostic fixture into structured unified events`() {
-        val parser = CodexAppServerProvider.AppServerNotificationParser(
+        val parser = CodexRuntimeProvider.CodexRuntimeNotificationParser(
             requestId = "req-diagnostic",
             diagnosticLogger = {},
         )
@@ -44,14 +44,14 @@ class CodexDiagnosticReplayTest {
         )
 
         assertTrue(events.any { event ->
-            event is UnifiedEvent.ItemUpdated &&
+            event is ProviderEvent.ItemUpdated &&
                 event.item.kind == ItemKind.DIFF_APPLY &&
                 event.item.fileChanges.singleOrNull()?.path ==
                 "/Users/tonysheng/StudioProject/Aura/docs/superpowers/specs/2026-04-25-multi-engine-render-kernel-design.md" &&
                 event.item.fileChanges.singleOrNull()?.kind == "update"
         })
         assertTrue(events.any { event ->
-            event is UnifiedEvent.ItemUpdated &&
+            event is ProviderEvent.ItemUpdated &&
                 event.item.kind == ItemKind.DIFF_APPLY &&
                 event.item.text.orEmpty().contains("Updated the following files:")
         })
@@ -62,8 +62,8 @@ class CodexDiagnosticReplayTest {
      */
     private fun replayFixture(
         fixture: ProviderDiagnosticFixture,
-        parser: CodexAppServerProvider.AppServerNotificationParser,
-    ): List<UnifiedEvent> {
+        parser: CodexRuntimeProvider.CodexRuntimeNotificationParser,
+    ): List<ProviderEvent> {
         return fixture.lines.flatMap { line ->
             val payload = json.parseToJsonElement(line).jsonObject
             val method = payload["method"]?.jsonPrimitive?.contentOrNull ?: return@flatMap emptyList()

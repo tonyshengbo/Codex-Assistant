@@ -16,6 +16,15 @@ internal class ClaudeStreamAccumulator {
         return buildList {
             observeSession(event = event)?.let(::add)
             when (event) {
+                is ClaudeStreamEvent.ApiRetry -> add(
+                    ClaudeConversationEvent.RetryScheduled(
+                        attempt = event.attempt,
+                        maxRetries = event.maxRetries,
+                        retryDelayMs = event.retryDelayMs,
+                        errorStatus = event.errorStatus,
+                        error = event.error,
+                    ),
+                )
                 is ClaudeStreamEvent.SessionStarted -> Unit
                 is ClaudeStreamEvent.MessageStart -> handleMessageStart(event, this)
                 is ClaudeStreamEvent.ContentBlockStarted -> handleContentBlockStarted(event, this)
@@ -442,6 +451,7 @@ internal class ClaudeStreamAccumulator {
     /** 返回当前原始事件可能携带的 sessionId。 */
     private fun ClaudeStreamEvent.sessionIdOrNull(): String? {
         return when (this) {
+            is ClaudeStreamEvent.ApiRetry -> sessionId
             is ClaudeStreamEvent.AssistantSnapshot -> sessionId
             is ClaudeStreamEvent.ContentBlockDelta -> sessionId
             is ClaudeStreamEvent.ContentBlockStarted -> sessionId
@@ -463,6 +473,7 @@ internal class ClaudeStreamAccumulator {
             is ClaudeStreamEvent.MessageStart -> model
             is ClaudeStreamEvent.Result -> modelUsage.keys.firstOrNull()
             is ClaudeStreamEvent.SessionStarted -> model
+            is ClaudeStreamEvent.ApiRetry -> null
             is ClaudeStreamEvent.ControlRequest -> null
             else -> null
         }

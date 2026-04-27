@@ -24,6 +24,23 @@ class ClaudeStreamEventParserTest {
         assertEquals("claude-sonnet-4-6", session.model)
     }
 
+    /** 验证 system/api_retry 行会保留重试次数、最大次数与退避延迟。 */
+    @Test
+    fun `parses system api retry line into retry event`() {
+        val event = parser.parse(
+            """
+            {"type":"system","subtype":"api_retry","attempt":3,"max_retries":10,"retry_delay_ms":2436.076846771844,"error_status":null,"error":"unknown","session_id":"session-123","uuid":"retry-1"}
+            """.trimIndent(),
+        )
+
+        val retry = assertIs<ClaudeStreamEvent.ApiRetry>(event)
+        assertEquals("session-123", retry.sessionId)
+        assertEquals(3, retry.attempt)
+        assertEquals(10, retry.maxRetries)
+        assertEquals(2436L, retry.retryDelayMs)
+        assertEquals("unknown", retry.error)
+    }
+
     /** 验证 stream_event 的工具启动块会保留 tool_use 标识、名称与索引。 */
     @Test
     fun `parses stream event tool block start into structured raw event`() {

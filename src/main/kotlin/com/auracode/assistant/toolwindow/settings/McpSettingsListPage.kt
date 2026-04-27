@@ -20,7 +20,7 @@ import androidx.compose.ui.unit.dp
 import com.auracode.assistant.i18n.AuraCodeBundle
 import com.auracode.assistant.settings.mcp.McpServerSummary
 import com.auracode.assistant.settings.mcp.McpTransportType
-import com.auracode.assistant.toolwindow.shell.RightDrawerAreaState
+import com.auracode.assistant.toolwindow.shell.SidePanelAreaState
 import com.auracode.assistant.toolwindow.eventing.UiIntent
 import com.auracode.assistant.toolwindow.shared.DesignPalette
 import com.auracode.assistant.toolwindow.shared.assistantUiTokens
@@ -28,7 +28,7 @@ import com.auracode.assistant.toolwindow.shared.assistantUiTokens
 @Composable
 internal fun McpSettingsListPage(
     p: DesignPalette,
-    state: RightDrawerAreaState,
+    state: SidePanelAreaState,
     onIntent: (UiIntent) -> Unit,
 ) {
     val t = assistantUiTokens()

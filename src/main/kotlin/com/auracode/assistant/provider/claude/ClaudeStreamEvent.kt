@@ -106,6 +106,16 @@ internal sealed interface ClaudeStreamEvent {
         val model: String? = null,
     ) : ClaudeStreamEvent
 
+    /** Represents one retry notification emitted while Claude auto-recovers from an API failure. */
+    data class ApiRetry(
+        val sessionId: String? = null,
+        val attempt: Int,
+        val maxRetries: Int,
+        val retryDelayMs: Long,
+        val errorStatus: String? = null,
+        val error: String? = null,
+    ) : ClaudeStreamEvent
+
     /** 表示一条 assistant 消息开始。 */
     data class MessageStart(
         val sessionId: String? = null,

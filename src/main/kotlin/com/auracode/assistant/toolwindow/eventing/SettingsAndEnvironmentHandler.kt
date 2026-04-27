@@ -65,22 +65,22 @@ internal class SettingsAndEnvironmentHandler(
     }
 
     fun saveSettings() {
-        val drawerState = context.rightDrawerStore.state.value
+        val sidePanelState = context.sidePanelStore.state.value
         val oldLanguage = context.settingsService.uiLanguageMode()
         val oldTheme = context.settingsService.uiThemeMode()
         val oldUiScale = context.settingsService.uiScaleMode()
         val state = context.settingsService.state
-        state.setExecutablePathFor("codex", drawerState.codexCliPath.trim())
-        state.setExecutablePathFor("claude", drawerState.claudeCliPath.trim())
-        context.settingsService.setNodeExecutablePath(drawerState.nodePath.trim())
-        context.settingsService.setUiLanguageMode(drawerState.languageMode)
-        context.settingsService.setUiThemeMode(drawerState.themeMode)
-        context.settingsService.setUiScaleMode(drawerState.uiScaleMode)
-        context.settingsService.setAutoContextEnabled(drawerState.autoContextEnabled)
+        state.setExecutablePathFor("codex", sidePanelState.codexCliPath.trim())
+        state.setExecutablePathFor("claude", sidePanelState.claudeCliPath.trim())
+        context.settingsService.setNodeExecutablePath(sidePanelState.nodePath.trim())
+        context.settingsService.setUiLanguageMode(sidePanelState.languageMode)
+        context.settingsService.setUiThemeMode(sidePanelState.themeMode)
+        context.settingsService.setUiScaleMode(sidePanelState.uiScaleMode)
+        context.settingsService.setAutoContextEnabled(sidePanelState.autoContextEnabled)
         context.settingsService.setBackgroundCompletionNotificationsEnabled(
-            drawerState.backgroundCompletionNotificationsEnabled,
+            sidePanelState.backgroundCompletionNotificationsEnabled,
         )
-        context.settingsService.setCodexCliAutoUpdateCheckEnabled(drawerState.codexCliAutoUpdateCheckEnabled)
+        context.settingsService.setCodexCliAutoUpdateCheckEnabled(sidePanelState.codexCliAutoUpdateCheckEnabled)
         if (oldLanguage != context.settingsService.uiLanguageMode()) {
             context.settingsService.notifyLanguageChanged()
         }
@@ -92,13 +92,13 @@ internal class SettingsAndEnvironmentHandler(
     }
 
     fun detectCodexEnvironment() {
-        val drawerState = context.rightDrawerStore.state.value
+        val sidePanelState = context.sidePanelStore.state.value
         context.eventHub.publish(AppEvent.CodexEnvironmentCheckRunning(true))
         context.coroutineLauncher.launch("detectCodexEnvironment") {
             runCatching {
                 context.codexEnvironmentDetector.autoDetect(
-                    configuredCodexPath = drawerState.codexCliPath,
-                    configuredNodePath = drawerState.nodePath,
+                    configuredCodexPath = sidePanelState.codexCliPath,
+                    configuredNodePath = sidePanelState.nodePath,
                 )
             }.onSuccess { result ->
                 context.eventHub.publish(
@@ -119,13 +119,13 @@ internal class SettingsAndEnvironmentHandler(
     }
 
     fun testCodexEnvironment() {
-        val drawerState = context.rightDrawerStore.state.value
+        val sidePanelState = context.sidePanelStore.state.value
         context.eventHub.publish(AppEvent.CodexEnvironmentCheckRunning(true))
         context.coroutineLauncher.launch("testCodexEnvironment") {
             runCatching {
                 context.codexEnvironmentDetector.testEnvironment(
-                    configuredCodexPath = drawerState.codexCliPath,
-                    configuredNodePath = drawerState.nodePath,
+                    configuredCodexPath = sidePanelState.codexCliPath,
+                    configuredNodePath = sidePanelState.nodePath,
                 )
             }.onSuccess { result ->
                 context.eventHub.publish(AppEvent.CodexEnvironmentCheckUpdated(result = result))
@@ -276,10 +276,10 @@ internal class SettingsAndEnvironmentHandler(
     }
 
     fun saveAgentDraft() {
-        val drawerState = context.rightDrawerStore.state.value
-        val id = drawerState.editingAgentId?.takeIf { it.isNotBlank() }
-        val name = drawerState.agentDraftName.trim()
-        val prompt = drawerState.agentDraftPrompt.trim()
+        val sidePanelState = context.sidePanelStore.state.value
+        val id = sidePanelState.editingAgentId?.takeIf { it.isNotBlank() }
+        val name = sidePanelState.agentDraftName.trim()
+        val prompt = sidePanelState.agentDraftPrompt.trim()
         if (name.isBlank() || prompt.isBlank()) {
             context.eventHub.publish(AppEvent.StatusTextUpdated(UiText.raw("Agent name and prompt are required.")))
             return
@@ -310,7 +310,7 @@ internal class SettingsAndEnvironmentHandler(
     }
 
     fun saveCustomModel() {
-        val draft = context.composerStore.state.value.customModelDraft.trim()
+        val draft = context.submissionStore.state.value.customModelDraft.trim()
         if (draft.isBlank()) {
             context.eventHub.publish(
                 AppEvent.StatusTextUpdated(UiText.raw(AuraCodeBundle.message("composer.model.custom.error.blank"))),
@@ -338,8 +338,8 @@ internal class SettingsAndEnvironmentHandler(
         if (updated.size == existing.size) return
         context.settingsService.setCustomModelIds(updated)
         context.publishSettingsSnapshot()
-        if (context.composerStore.state.value.selectedModel == normalized) {
-            val fallbackModel = context.settingsService.selectedComposerModel(context.chatService.defaultEngineId())
+        if (context.submissionStore.state.value.selectedModel == normalized) {
+            val fallbackModel = context.settingsService.selectedSubmissionModel(context.chatService.defaultEngineId())
             context.eventHub.publishUiIntent(UiIntent.SelectModel(fallbackModel))
         }
     }
@@ -490,7 +490,7 @@ internal class SettingsAndEnvironmentHandler(
 
     fun openSkillPath(path: String) {
         if (path.isBlank()) return
-        context.openTimelineFilePath(path)
+        context.openConversationFilePath(path)
     }
 
     fun revealSkillPath(path: String) {
@@ -595,7 +595,7 @@ internal class SettingsAndEnvironmentHandler(
     }
 
     fun saveMcpDraft(afterSave: (suspend (List<String>) -> Unit)? = null) {
-        val normalized = context.rightDrawerStore.state.value.mcpDraft.normalized()
+        val normalized = context.sidePanelStore.state.value.mcpDraft.normalized()
         val validation = normalized.validate()
         context.eventHub.publish(AppEvent.McpValidationErrorsUpdated(validation))
         if (validation.hasAny()) {
@@ -787,7 +787,7 @@ internal class SettingsAndEnvironmentHandler(
 
     fun onSettingsDrawerOpened() {
         context.publishSettingsSnapshot()
-        when (context.rightDrawerStore.state.value.settingsSection) {
+        when (context.sidePanelStore.state.value.settingsSection) {
             SettingsSection.MCP -> loadMcpServers()
             SettingsSection.SKILLS -> loadSkills()
             SettingsSection.BASIC -> Unit
@@ -805,7 +805,7 @@ internal class SettingsAndEnvironmentHandler(
             SettingsSection.SKILLS -> loadSkills()
             SettingsSection.BASIC -> Unit
             SettingsSection.RUNTIME -> {
-                if (context.rightDrawerStore.state.value.kind == com.auracode.assistant.toolwindow.shell.RightDrawerKind.SETTINGS) {
+                if (context.sidePanelStore.state.value.kind == com.auracode.assistant.toolwindow.shell.SidePanelKind.SETTINGS) {
                     refreshRuntimeChecksForCurrentState()
                 }
             }
@@ -865,7 +865,7 @@ internal class SettingsAndEnvironmentHandler(
 
     /** Refreshes runtime validation and version data based on the currently active Runtime tab. */
     private fun refreshRuntimeChecksForCurrentState() {
-        when (context.rightDrawerStore.state.value.runtimeSettingsTab) {
+        when (context.sidePanelStore.state.value.runtimeSettingsTab) {
             RuntimeSettingsTab.CODEX -> {
                 detectCodexEnvironment()
                 refreshCodexCliVersion(force = false, announceResult = false)
@@ -879,12 +879,12 @@ internal class SettingsAndEnvironmentHandler(
 
     /** Resolves the Claude executable and shared Node path for lightweight inline validation. */
     private fun refreshClaudeRuntimeCheck() {
-        val drawerState = context.rightDrawerStore.state.value
+        val sidePanelState = context.sidePanelStore.state.value
         context.coroutineLauncher.launch("refreshClaudeRuntimeCheck") {
             val result = context.runtimeExecutableCheckService.check(
                 commandName = "claude",
-                configuredCliPath = drawerState.claudeCliPath,
-                configuredNodePath = drawerState.nodePath,
+                configuredCliPath = sidePanelState.claudeCliPath,
+                configuredNodePath = sidePanelState.nodePath,
             )
             context.eventHub.publish(AppEvent.ClaudeRuntimeExecutableCheckUpdated(result))
         }
@@ -937,14 +937,14 @@ internal class SettingsAndEnvironmentHandler(
 
     private fun updateMcpBusy(transform: McpBusyState.() -> McpBusyState) {
         context.eventHub.publish(
-            AppEvent.McpBusyStateUpdated(context.rightDrawerStore.state.value.mcpBusyState.transform()),
+            AppEvent.McpBusyStateUpdated(context.sidePanelStore.state.value.mcpBusyState.transform()),
         )
     }
 
     private fun mcpAdapter(): McpManagementAdapter = context.mcpAdapterRegistry.defaultAdapter()
 
     private fun mcpContextSnapshot(requestedName: String? = null): String {
-        val state = context.rightDrawerStore.state.value
+        val state = context.sidePanelStore.state.value
         val draftName = state.mcpDraft.name.ifBlank { "<blank>" }
         val editingName = state.editingMcpName ?: "<none>"
         val preview = state.mcpDraft.configJson

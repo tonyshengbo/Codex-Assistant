@@ -1,9 +1,12 @@
 package com.auracode.assistant.provider.claude
 
 import com.auracode.assistant.model.AgentRequest
-import com.auracode.assistant.protocol.ItemKind
-import com.auracode.assistant.protocol.TurnOutcome
-import com.auracode.assistant.protocol.UnifiedEvent
+import com.auracode.assistant.session.kernel.SessionActivityStatus
+import com.auracode.assistant.session.kernel.SessionCommandKind
+import com.auracode.assistant.session.kernel.SessionDomainEvent
+import com.auracode.assistant.session.kernel.SessionMessageRole
+import com.auracode.assistant.session.kernel.SessionToolKind
+import com.auracode.assistant.session.kernel.SessionTurnOutcome
 import com.auracode.assistant.settings.AgentSettingsService
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.toList
@@ -44,21 +47,21 @@ class ClaudeCliProviderTest {
             ),
         ).toList()
 
-        assertIs<UnifiedEvent.ThreadStarted>(events[0])
-        assertEquals("session-123", (events[0] as UnifiedEvent.ThreadStarted).threadId)
+        val threadStarted = assertIs<SessionDomainEvent.ThreadStarted>(events[0])
+        assertEquals("session-123", threadStarted.threadId)
 
-        val turnStarted = assertIs<UnifiedEvent.TurnStarted>(events[1])
+        val turnStarted = assertIs<SessionDomainEvent.TurnStarted>(events[1])
         assertEquals("session-123", turnStarted.threadId)
 
-        val assistant = assertIs<UnifiedEvent.ItemUpdated>(events[2])
-        assertEquals(ItemKind.NARRATIVE, assistant.item.kind)
-        assertEquals("Hello from Claude", assistant.item.text)
+        val assistant = assertIs<SessionDomainEvent.MessageAppended>(events[2])
+        assertEquals(SessionMessageRole.ASSISTANT, assistant.role)
+        assertEquals("Hello from Claude", assistant.text)
 
-        val finalAssistant = assertIs<UnifiedEvent.ItemUpdated>(events[3])
-        assertEquals("Hello from Claude", finalAssistant.item.text)
+        val finalAssistant = assertIs<SessionDomainEvent.MessageAppended>(events[3])
+        assertEquals("Hello from Claude", finalAssistant.text)
 
-        val completed = assertIs<UnifiedEvent.TurnCompleted>(events[4])
-        assertEquals(TurnOutcome.SUCCESS, completed.outcome)
+        val completed = assertIs<SessionDomainEvent.TurnCompleted>(events[4])
+        assertEquals(SessionTurnOutcome.SUCCESS, completed.outcome)
     }
 
     @Test
@@ -80,7 +83,7 @@ class ClaudeCliProviderTest {
             ),
         ).toList()
 
-        val error = assertIs<UnifiedEvent.Error>(events.single())
+        val error = assertIs<SessionDomainEvent.ErrorAppended>(events.single())
         assertFalse(error.message.isBlank())
     }
 
@@ -106,10 +109,10 @@ class ClaudeCliProviderTest {
         ).toList()
 
         assertEquals(2, events.size)
-        val error = assertIs<UnifiedEvent.Error>(events[0])
+        val error = assertIs<SessionDomainEvent.ErrorAppended>(events[0])
         assertFalse(error.message.isBlank())
-        val completed = assertIs<UnifiedEvent.TurnCompleted>(events[1])
-        assertEquals(TurnOutcome.FAILED, completed.outcome)
+        val completed = assertIs<SessionDomainEvent.TurnCompleted>(events[1])
+        assertEquals(SessionTurnOutcome.FAILED, completed.outcome)
     }
 
     @Test
@@ -137,12 +140,12 @@ class ClaudeCliProviderTest {
         ).toList()
 
         assertEquals(4, events.size)
-        assertIs<UnifiedEvent.ThreadStarted>(events[0])
-        assertIs<UnifiedEvent.TurnStarted>(events[1])
-        val error = assertIs<UnifiedEvent.Error>(events[2])
+        assertIs<SessionDomainEvent.ThreadStarted>(events[0])
+        assertIs<SessionDomainEvent.TurnStarted>(events[1])
+        val error = assertIs<SessionDomainEvent.ErrorAppended>(events[2])
         assertEquals("API Error: 402 余额不足", error.message)
-        val completed = assertIs<UnifiedEvent.TurnCompleted>(events[3])
-        assertEquals(TurnOutcome.FAILED, completed.outcome)
+        val completed = assertIs<SessionDomainEvent.TurnCompleted>(events[3])
+        assertEquals(SessionTurnOutcome.FAILED, completed.outcome)
     }
 
     @Test
@@ -163,12 +166,12 @@ class ClaudeCliProviderTest {
             ),
         ).toList()
 
-        assertIs<UnifiedEvent.ThreadStarted>(events[0])
-        assertIs<UnifiedEvent.TurnStarted>(events[1])
-        val assistant = assertIs<UnifiedEvent.ItemUpdated>(events[2])
-        assertEquals("Hello from Claude", assistant.item.text)
-        val completed = assertIs<UnifiedEvent.TurnCompleted>(events.last())
-        assertEquals(TurnOutcome.SUCCESS, completed.outcome)
+        assertIs<SessionDomainEvent.ThreadStarted>(events[0])
+        assertIs<SessionDomainEvent.TurnStarted>(events[1])
+        val assistant = assertIs<SessionDomainEvent.MessageAppended>(events[2])
+        assertEquals("Hello from Claude", assistant.text)
+        val completed = assertIs<SessionDomainEvent.TurnCompleted>(events.last())
+        assertEquals(SessionTurnOutcome.SUCCESS, completed.outcome)
     }
 
     @Test
@@ -241,38 +244,33 @@ class ClaudeCliProviderTest {
         ).toList()
 
         assertTrue(events.any { event ->
-            event is UnifiedEvent.ItemUpdated &&
-                event.item.kind == ItemKind.COMMAND_EXEC &&
-                event.item.name == "Read" &&
-                event.item.command?.contains("/tmp/demo.txt") == true
+            event is SessionDomainEvent.CommandUpdated &&
+                event.commandKind == SessionCommandKind.READ_FILE &&
+                event.command?.contains("/tmp/demo.txt") == true
         })
         assertTrue(events.any { event ->
-            event is UnifiedEvent.ItemUpdated &&
-                event.item.kind == ItemKind.COMMAND_EXEC &&
-                event.item.status == com.auracode.assistant.protocol.ItemStatus.FAILED &&
-                event.item.text?.contains("File does not exist") == true
+            event is SessionDomainEvent.CommandUpdated &&
+                event.status == SessionActivityStatus.FAILED &&
+                event.outputText?.contains("File does not exist") == true
         })
         assertTrue(events.any { event ->
-            event is UnifiedEvent.ItemUpdated &&
-                event.item.kind == ItemKind.NARRATIVE &&
-                event.item.name == "reasoning" &&
-                event.item.text == "Inspecting repository structure"
+            event is SessionDomainEvent.ReasoningUpdated &&
+                event.text == "Inspecting repository structure"
         })
         assertTrue(events.any { event ->
-            event is UnifiedEvent.ItemUpdated &&
-                event.item.kind == ItemKind.NARRATIVE &&
-                event.item.name == "message" &&
-                event.item.text == "工程已全部创建完毕。"
+            event is SessionDomainEvent.MessageAppended &&
+                event.role == SessionMessageRole.ASSISTANT &&
+                event.text == "工程已全部创建完毕。"
         })
 
-        val finalUsage = events.filterIsInstance<UnifiedEvent.ThreadTokenUsageUpdated>().last()
+        val finalUsage = events.filterIsInstance<SessionDomainEvent.UsageUpdated>().last()
         assertEquals("session-123", finalUsage.threadId)
         assertEquals(200000, finalUsage.contextWindow)
         assertEquals(539211, finalUsage.inputTokens)
         assertEquals(12125, finalUsage.outputTokens)
 
-        val completed = assertIs<UnifiedEvent.TurnCompleted>(events.last())
-        assertEquals(TurnOutcome.SUCCESS, completed.outcome)
+        val completed = assertIs<SessionDomainEvent.TurnCompleted>(events.last())
+        assertEquals(SessionTurnOutcome.SUCCESS, completed.outcome)
     }
 
     @Test
@@ -310,27 +308,25 @@ class ClaudeCliProviderTest {
             ),
         ).toList()
 
-        val itemUpdates = events.filterIsInstance<UnifiedEvent.ItemUpdated>()
-        val messageUpdates = itemUpdates.filter { event ->
-            event.item.kind == ItemKind.NARRATIVE && event.item.name == "message"
-        }
-        val distinctMessageIds = messageUpdates.map { it.item.id }.distinct()
+        val messageUpdates = events.filterIsInstance<SessionDomainEvent.MessageAppended>()
+            .filter { it.role == SessionMessageRole.ASSISTANT }
+        val distinctMessageIds = messageUpdates.map { it.messageId }.distinct()
         assertEquals(2, distinctMessageIds.size)
         assertNotEquals(distinctMessageIds[0], distinctMessageIds[1])
 
-        val firstMessageIndex = itemUpdates.indexOfFirst { event ->
-            event.item.kind == ItemKind.NARRATIVE &&
-                event.item.name == "message" &&
-                event.item.text == "先说明一下。"
+        val firstMessageIndex = events.indexOfFirst { event ->
+            event is SessionDomainEvent.MessageAppended &&
+                event.role == SessionMessageRole.ASSISTANT &&
+                event.text == "先说明一下。"
         }
-        val toolIndex = itemUpdates.indexOfFirst { event ->
-            event.item.kind == ItemKind.COMMAND_EXEC &&
-                event.item.name == "Read"
+        val toolIndex = events.indexOfFirst { event ->
+            event is SessionDomainEvent.CommandUpdated &&
+                event.commandKind == SessionCommandKind.READ_FILE
         }
-        val secondMessageIndex = itemUpdates.indexOfFirst { event ->
-            event.item.kind == ItemKind.NARRATIVE &&
-                event.item.name == "message" &&
-                event.item.text == "再给最终答复。"
+        val secondMessageIndex = events.indexOfFirst { event ->
+            event is SessionDomainEvent.MessageAppended &&
+                event.role == SessionMessageRole.ASSISTANT &&
+                event.text == "再给最终答复。"
         }
         assertTrue(firstMessageIndex >= 0)
         assertTrue(toolIndex > firstMessageIndex)
@@ -369,43 +365,46 @@ class ClaudeCliProviderTest {
             ),
         ).toList()
 
-        val turnStarted = events.filterIsInstance<UnifiedEvent.TurnStarted>().firstOrNull()
+        val turnStarted = events.filterIsInstance<SessionDomainEvent.TurnStarted>().firstOrNull()
             ?: error("Missing TurnStarted event.")
-        val runningPlan = events.filterIsInstance<UnifiedEvent.RunningPlanUpdated>().firstOrNull()
+        val runningPlan = events.filterIsInstance<SessionDomainEvent.RunningPlanUpdated>().firstOrNull()
             ?: error("Missing RunningPlanUpdated event for TodoWrite.")
-        assertEquals(turnStarted.turnId, runningPlan.turnId)
-        assertEquals(3, runningPlan.steps.size)
-        assertEquals("Create ClaudeLocalHistoryReader.kt", runningPlan.steps[0].step)
-        assertEquals("Override loadInitialHistory() in ClaudeCliProvider", runningPlan.steps[1].step)
-        assertEquals("completed", runningPlan.steps[0].status)
-        assertEquals("in_progress", runningPlan.steps[1].status)
-        assertTrue(runningPlan.body.contains("- [x] Create ClaudeLocalHistoryReader.kt"))
-        assertTrue(runningPlan.body.contains("Override loadInitialHistory() in ClaudeCliProvider"))
+        assertEquals(turnStarted.turnId, runningPlan.plan.turnId)
+        assertEquals(3, runningPlan.plan.steps.size)
+        assertEquals("Create ClaudeLocalHistoryReader.kt", runningPlan.plan.steps[0].step)
+        assertEquals("Override loadInitialHistory() in ClaudeCliProvider", runningPlan.plan.steps[1].step)
+        assertEquals("completed", runningPlan.plan.steps[0].status)
+        assertEquals("in_progress", runningPlan.plan.steps[1].status)
+        assertTrue(runningPlan.plan.body.contains("- [x] Create ClaudeLocalHistoryReader.kt"))
+        assertTrue(runningPlan.plan.body.contains("Override loadInitialHistory() in ClaudeCliProvider"))
 
-        val itemUpdates = events.filterIsInstance<UnifiedEvent.ItemUpdated>()
-        assertFalse(itemUpdates.any { it.item.id.contains("tooluse_todo") })
+        val commandUpdates = events.filterIsInstance<SessionDomainEvent.CommandUpdated>()
+        val fileChangeUpdates = events.filterIsInstance<SessionDomainEvent.FileChangesUpdated>()
+        assertFalse(commandUpdates.any { it.itemId.contains("tooluse_todo") })
+        assertFalse(fileChangeUpdates.any { it.itemId.contains("tooluse_todo") })
 
-        val readItem = itemUpdates.firstOrNull {
-            it.item.id.contains("tooluse_read") &&
-                it.item.status == com.auracode.assistant.protocol.ItemStatus.SUCCESS
+        val readItem = commandUpdates.firstOrNull {
+            it.itemId.contains("tooluse_read") &&
+                it.status == SessionActivityStatus.SUCCESS
         }
             ?: error("Missing Read item.")
-        assertEquals(ItemKind.COMMAND_EXEC, readItem.item.kind)
-        assertEquals("Read", readItem.item.name)
-        assertTrue(readItem.item.command.orEmpty().contains("/tmp/ClaudeCliProviderTest.kt"))
-        assertTrue(readItem.item.text.orEmpty().contains("ClaudeCliProviderTest"))
+        assertEquals(SessionCommandKind.READ_FILE, readItem.commandKind)
+        assertTrue(readItem.command.orEmpty().contains("/tmp/ClaudeCliProviderTest.kt"))
+        assertTrue(readItem.outputText.orEmpty().contains("ClaudeCliProviderTest"))
 
-        val writeItem = itemUpdates.firstOrNull { it.item.id.contains("tooluse_write") && it.item.status == com.auracode.assistant.protocol.ItemStatus.SUCCESS }
+        val writeItem = fileChangeUpdates.firstOrNull {
+            it.itemId.contains("tooluse_write") && it.status == SessionActivityStatus.SUCCESS
+        }
             ?: error("Missing Write item.")
-        assertEquals(ItemKind.DIFF_APPLY, writeItem.item.kind)
-        assertEquals("/tmp/ClaudeLocalHistoryReader.kt", writeItem.item.fileChanges.single().path)
-        assertEquals("create", writeItem.item.fileChanges.single().kind)
+        assertEquals("/tmp/ClaudeLocalHistoryReader.kt", writeItem.changes.single().path)
+        assertEquals("create", writeItem.changes.single().kind)
 
-        val editItem = itemUpdates.firstOrNull { it.item.id.contains("tooluse_edit") && it.item.status == com.auracode.assistant.protocol.ItemStatus.SUCCESS }
+        val editItem = fileChangeUpdates.firstOrNull {
+            it.itemId.contains("tooluse_edit") && it.status == SessionActivityStatus.SUCCESS
+        }
             ?: error("Missing Edit item.")
-        assertEquals(ItemKind.DIFF_APPLY, editItem.item.kind)
-        assertEquals("/tmp/ClaudeCliProvider.kt", editItem.item.fileChanges.single().path)
-        assertEquals("update", editItem.item.fileChanges.single().kind)
+        assertEquals("/tmp/ClaudeCliProvider.kt", editItem.changes.single().path)
+        assertEquals("update", editItem.changes.single().kind)
     }
 
     @Test

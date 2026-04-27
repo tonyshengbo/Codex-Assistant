@@ -5,15 +5,15 @@ import com.auracode.assistant.provider.claude.semantic.ClaudeSemanticEventExtrac
 import com.auracode.assistant.provider.codex.semantic.CodexSemanticEventExtractor
 import com.auracode.assistant.protocol.ItemKind
 import com.auracode.assistant.protocol.ItemStatus
-import com.auracode.assistant.protocol.UnifiedApprovalRequest
-import com.auracode.assistant.protocol.UnifiedApprovalRequestKind
-import com.auracode.assistant.protocol.UnifiedEvent
-import com.auracode.assistant.protocol.UnifiedFileChange
-import com.auracode.assistant.protocol.UnifiedItem
-import com.auracode.assistant.protocol.UnifiedRunningPlanStep
-import com.auracode.assistant.protocol.UnifiedToolUserInputOption
-import com.auracode.assistant.protocol.UnifiedToolUserInputPrompt
-import com.auracode.assistant.protocol.UnifiedToolUserInputQuestion
+import com.auracode.assistant.protocol.ProviderApprovalRequest
+import com.auracode.assistant.protocol.ProviderApprovalRequestKind
+import com.auracode.assistant.protocol.ProviderEvent
+import com.auracode.assistant.protocol.ProviderFileChange
+import com.auracode.assistant.protocol.ProviderItem
+import com.auracode.assistant.protocol.ProviderPlanStep
+import com.auracode.assistant.protocol.ProviderToolUserInputOption
+import com.auracode.assistant.protocol.ProviderToolUserInputPrompt
+import com.auracode.assistant.protocol.ProviderToolUserInputQuestion
 import com.auracode.assistant.session.kernel.SessionApprovalRequestKind
 import com.auracode.assistant.session.kernel.SessionCommandKind
 import com.auracode.assistant.session.kernel.SessionDomainEvent
@@ -83,8 +83,8 @@ class EngineSemanticEventMapperTest {
     @Test
     fun `normalizes codex tool item into shared tool kind`() {
         val records = CodexSemanticEventExtractor().extract(
-            UnifiedEvent.ItemUpdated(
-                item = UnifiedItem(
+            ProviderEvent.ItemUpdated(
+                item = ProviderItem(
                     id = "tool-3",
                     kind = ItemKind.TOOL_CALL,
                     status = ItemStatus.RUNNING,
@@ -107,16 +107,16 @@ class EngineSemanticEventMapperTest {
     @Test
     fun `normalizes codex approval and tool user input into explicit execution events`() {
         val approvalEvents = CodexSemanticEventExtractor().extract(
-            UnifiedEvent.ApprovalRequested(
-                request = UnifiedApprovalRequest(
+            ProviderEvent.ApprovalRequested(
+                request = ProviderApprovalRequest(
                     requestId = "approval-1",
                     turnId = "turn-1",
                     itemId = "diff-1",
-                    kind = UnifiedApprovalRequestKind.FILE_CHANGE,
+                    kind = ProviderApprovalRequestKind.FILE_CHANGE,
                     title = "Apply file changes",
                     body = "update /tmp/design.md",
                     fileChanges = listOf(
-                        UnifiedFileChange(
+                        ProviderFileChange(
                             sourceScopedId = "diff-1:0",
                             path = "/tmp/design.md",
                             kind = "update",
@@ -132,19 +132,19 @@ class EngineSemanticEventMapperTest {
         assertTrue(approvalEvent.request.body.contains("update /tmp/design.md"))
 
         val toolInputEvents = CodexSemanticEventExtractor().extract(
-            UnifiedEvent.ToolUserInputRequested(
-                prompt = UnifiedToolUserInputPrompt(
+            ProviderEvent.ToolUserInputRequested(
+                prompt = ProviderToolUserInputPrompt(
                     requestId = "input-1",
                     threadId = "thread-1",
                     turnId = "turn-1",
                     itemId = "tool-1",
                     questions = listOf(
-                        UnifiedToolUserInputQuestion(
+                        ProviderToolUserInputQuestion(
                             id = "sandbox",
                             header = "Sandbox",
                             question = "Choose a sandbox mode",
                             options = listOf(
-                                UnifiedToolUserInputOption(
+                                ProviderToolUserInputOption(
                                     label = "workspace-write",
                                     description = "Only allow workspace writes",
                                 ),
@@ -167,16 +167,16 @@ class EngineSemanticEventMapperTest {
     @Test
     fun `normalizes codex running plan update into explicit session plan event`() {
         val records = CodexSemanticEventExtractor().extract(
-            UnifiedEvent.RunningPlanUpdated(
+            ProviderEvent.RunningPlanUpdated(
                 threadId = "thread-1",
                 turnId = "turn-1",
                 explanation = "Finish normalization",
                 steps = listOf(
-                    UnifiedRunningPlanStep(
+                    ProviderPlanStep(
                         step = "Add semantic records",
                         status = "completed",
                     ),
-                    UnifiedRunningPlanStep(
+                    ProviderPlanStep(
                         step = "Map provider events into session domain events",
                         status = "in_progress",
                     ),

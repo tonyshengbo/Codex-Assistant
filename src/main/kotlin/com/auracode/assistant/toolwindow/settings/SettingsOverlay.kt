@@ -25,7 +25,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.auracode.assistant.i18n.AuraCodeBundle
-import com.auracode.assistant.toolwindow.shell.RightDrawerAreaState
+import com.auracode.assistant.toolwindow.shell.SidePanelAreaState
 import com.auracode.assistant.toolwindow.settings.SettingsSection
 import com.auracode.assistant.toolwindow.settings.presentation
 import com.auracode.assistant.toolwindow.eventing.UiIntent
@@ -35,7 +35,7 @@ import com.auracode.assistant.toolwindow.shared.assistantUiTokens
 @Composable
 internal fun SettingsOverlay(
     p: DesignPalette,
-    state: RightDrawerAreaState,
+    state: SidePanelAreaState,
     onIntent: (UiIntent) -> Unit,
 ) {
     val t = assistantUiTokens()
@@ -117,7 +117,7 @@ internal fun SettingsOverlay(
             ) {
                 OverlayCloseButton(
                     p = p,
-                    onClick = { onIntent(UiIntent.CloseRightDrawer) },
+                    onClick = { onIntent(UiIntent.CloseSidePanel) },
                 )
             }
             Column(
@@ -125,7 +125,7 @@ internal fun SettingsOverlay(
                     .fillMaxSize()
                     .padding(horizontal = t.spacing.lg, vertical = t.spacing.md),
             ) {
-                DrawerHeader(
+                PanelHeader(
                     p = p,
                     title = AuraCodeBundle.message(presentation.titleKey),
                     subtitle = AuraCodeBundle.message(presentation.subtitleKey),
@@ -209,7 +209,7 @@ internal fun SettingsOverlay(
 @Composable
 private fun McpEditorDialog(
     p: DesignPalette,
-    state: RightDrawerAreaState,
+    state: SidePanelAreaState,
     onIntent: (UiIntent) -> Unit,
 ) {
     val t = assistantUiTokens()
@@ -240,7 +240,7 @@ private fun McpEditorDialog(
                     verticalAlignment = Alignment.Top,
                     horizontalArrangement = Arrangement.spacedBy(t.spacing.md),
                 ) {
-                    DrawerHeader(
+                    PanelHeader(
                         p = p,
                         title = AuraCodeBundle.message("settings.mcp.editor.title"),
                         subtitle = AuraCodeBundle.message("settings.mcp.editor.subtitle"),

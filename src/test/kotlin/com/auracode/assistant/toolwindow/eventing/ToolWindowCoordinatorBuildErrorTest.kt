@@ -7,7 +7,7 @@ import com.auracode.assistant.integration.ide.IdeRequestSource
 import com.auracode.assistant.model.ContextFile
 import com.auracode.assistant.model.AgentRequest
 import com.auracode.assistant.protocol.TurnOutcome
-import com.auracode.assistant.protocol.UnifiedEvent
+import com.auracode.assistant.protocol.ProviderEvent
 import com.auracode.assistant.provider.AgentProvider
 import com.auracode.assistant.provider.AgentProviderFactory
 import com.auracode.assistant.provider.EngineCapabilities
@@ -15,11 +15,11 @@ import com.auracode.assistant.provider.EngineDescriptor
 import com.auracode.assistant.provider.ProviderRegistry
 import com.auracode.assistant.service.AgentChatService
 import com.auracode.assistant.settings.AgentSettingsService
-import com.auracode.assistant.toolwindow.submission.ComposerAreaStore
-import com.auracode.assistant.toolwindow.shell.RightDrawerAreaStore
-import com.auracode.assistant.toolwindow.sessions.HeaderAreaStore
-import com.auracode.assistant.toolwindow.execution.StatusAreaStore
-import com.auracode.assistant.toolwindow.conversation.TimelineAreaStore
+import com.auracode.assistant.toolwindow.submission.SubmissionAreaStore
+import com.auracode.assistant.toolwindow.shell.SidePanelAreaStore
+import com.auracode.assistant.toolwindow.sessions.SessionTabsAreaStore
+import com.auracode.assistant.toolwindow.execution.ExecutionStatusAreaStore
+import com.auracode.assistant.toolwindow.conversation.ConversationAreaStore
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
@@ -51,7 +51,7 @@ class ToolWindowCoordinatorBuildErrorTest {
         harness.waitUntil { harness.provider.requests.isNotEmpty() }
         val request = harness.provider.requests.single()
         assertEquals("Analyze this build error", request.prompt)
-        assertTrue(harness.composerStore.state.value.document.text.isBlank())
+        assertTrue(harness.submissionStore.state.value.document.text.isBlank())
 
         harness.dispose()
     }
@@ -76,7 +76,7 @@ class ToolWindowCoordinatorBuildErrorTest {
             ),
         )
 
-        harness.waitUntil { harness.composerStore.state.value.pendingSubmissions.size == 1 }
+        harness.waitUntil { harness.submissionStore.state.value.pendingSubmissions.size == 1 }
         assertEquals(1, harness.provider.requests.size)
 
         harness.provider.completeTurn("turn-1")
@@ -148,16 +148,16 @@ class ToolWindowCoordinatorBuildErrorTest {
             workingDirectoryProvider = { workingDir.toString() },
         )
         val eventHub = ToolWindowEventHub()
-        val composerStore = ComposerAreaStore()
+        val submissionStore = SubmissionAreaStore()
         private val coordinator = ToolWindowCoordinator(
             chatService = service,
             settingsService = settings,
             eventHub = eventHub,
-            headerStore = HeaderAreaStore(),
-            statusStore = StatusAreaStore(),
-            timelineStore = TimelineAreaStore(),
-            composerStore = composerStore,
-            rightDrawerStore = RightDrawerAreaStore(),
+            sessionTabsStore = SessionTabsAreaStore(),
+            executionStatusStore = ExecutionStatusAreaStore(),
+            conversationStore = ConversationAreaStore(),
+            submissionStore = submissionStore,
+            sidePanelStore = SidePanelAreaStore(),
         )
 
         fun waitUntil(timeoutMs: Long = 2_000, condition: () -> Boolean) {
@@ -179,21 +179,21 @@ class ToolWindowCoordinatorBuildErrorTest {
 
     private class RecordingProvider : AgentProvider {
         val requests = CopyOnWriteArrayList<AgentRequest>()
-        private var sink: (UnifiedEvent) -> Unit = {}
+        private var sink: (ProviderEvent) -> Unit = {}
         private var nextThreadIndex: Int = 1
 
-        override fun stream(request: AgentRequest): Flow<UnifiedEvent> = callbackFlow {
+        override fun stream(request: AgentRequest): kotlinx.coroutines.flow.Flow<com.auracode.assistant.session.kernel.SessionDomainEvent> = callbackFlow {
             requests += request
             val turnId = "turn-${requests.size}"
             val threadId = "thread-${nextThreadIndex++}"
-            sink = { event -> trySend(event); Unit }
-            trySend(UnifiedEvent.ThreadStarted(threadId))
-            trySend(UnifiedEvent.TurnStarted(turnId, threadId))
+            sink = { event -> com.auracode.assistant.test.trySendProviderEvent(this, event); Unit }
+            com.auracode.assistant.test.trySendProviderEvent(this, ProviderEvent.ThreadStarted(threadId))
+            com.auracode.assistant.test.trySendProviderEvent(this, ProviderEvent.TurnStarted(turnId, threadId))
             awaitClose { sink = {} }
         }
 
         fun completeTurn(turnId: String) {
-            sink(UnifiedEvent.TurnCompleted(turnId, TurnOutcome.SUCCESS))
+            sink(ProviderEvent.TurnCompleted(turnId, TurnOutcome.SUCCESS))
         }
 
         override fun cancel(requestId: String) = Unit

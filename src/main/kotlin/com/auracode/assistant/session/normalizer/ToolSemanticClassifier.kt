@@ -18,7 +18,7 @@ internal class ToolSemanticClassifier {
     }
 
     /** Classifies one unified tool item name into a shared tool kind. */
-    fun classifyUnifiedTool(toolName: String?): SessionToolKind {
+    fun classifyProviderTool(toolName: String?): SessionToolKind {
         return when (toolName?.trim()?.lowercase()) {
             "read" -> SessionToolKind.FILE_READ
             "write" -> SessionToolKind.FILE_WRITE

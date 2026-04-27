@@ -4,9 +4,9 @@ import com.auracode.assistant.model.AgentApprovalMode
 import com.auracode.assistant.model.AgentRequest
 import com.auracode.assistant.protocol.ItemStatus
 import com.auracode.assistant.protocol.TurnOutcome
-import com.auracode.assistant.protocol.UnifiedApprovalRequest
-import com.auracode.assistant.protocol.UnifiedApprovalRequestKind
-import com.auracode.assistant.protocol.UnifiedEvent
+import com.auracode.assistant.protocol.ProviderApprovalRequest
+import com.auracode.assistant.protocol.ProviderApprovalRequestKind
+import com.auracode.assistant.protocol.ProviderEvent
 import com.auracode.assistant.provider.AgentProvider
 import com.auracode.assistant.provider.AgentProviderFactory
 import com.auracode.assistant.provider.EngineCapabilities
@@ -16,12 +16,12 @@ import com.auracode.assistant.service.AgentChatService
 import com.auracode.assistant.settings.AgentSettingsService
 import com.auracode.assistant.toolwindow.execution.ApprovalAction
 import com.auracode.assistant.toolwindow.execution.ApprovalAreaStore
-import com.auracode.assistant.toolwindow.submission.ComposerAreaStore
-import com.auracode.assistant.toolwindow.shell.RightDrawerAreaStore
-import com.auracode.assistant.toolwindow.sessions.HeaderAreaStore
-import com.auracode.assistant.toolwindow.execution.StatusAreaStore
-import com.auracode.assistant.toolwindow.conversation.TimelineAreaStore
-import com.auracode.assistant.toolwindow.conversation.TimelineNode
+import com.auracode.assistant.toolwindow.submission.SubmissionAreaStore
+import com.auracode.assistant.toolwindow.shell.SidePanelAreaStore
+import com.auracode.assistant.toolwindow.sessions.SessionTabsAreaStore
+import com.auracode.assistant.toolwindow.execution.ExecutionStatusAreaStore
+import com.auracode.assistant.toolwindow.conversation.ConversationAreaStore
+import com.auracode.assistant.toolwindow.conversation.ConversationActivityItem
 import com.auracode.assistant.persistence.chat.SQLiteChatSessionRepository
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.callbackFlow
@@ -62,9 +62,10 @@ class ToolWindowApprovalFlowTest {
     @Test
     fun `approval mode is passed to provider from composer mode`() {
         val harness = CoordinatorHarness()
+        harness.settleStartup()
 
         harness.eventHub.publishUiIntent(UiIntent.ToggleExecutionMode)
-        harness.waitUntil { harness.composerStore.state.value.executionMode == ComposerMode.APPROVAL }
+        harness.waitUntil { harness.submissionStore.state.value.executionMode == SubmissionMode.APPROVAL }
         harness.eventHub.publishUiIntent(UiIntent.InputChanged("run"))
         harness.eventHub.publishUiIntent(UiIntent.SendPrompt)
 
@@ -83,11 +84,11 @@ class ToolWindowApprovalFlowTest {
         harness.waitUntil { harness.provider.requests.isNotEmpty() }
 
         harness.provider.emitApproval(
-            UnifiedApprovalRequest(
+            ProviderApprovalRequest(
                 requestId = "approval-1",
                 turnId = "turn-1",
                 itemId = "item-1",
-                kind = UnifiedApprovalRequestKind.COMMAND,
+                kind = ProviderApprovalRequestKind.COMMAND,
                 title = "Run command",
                 body = "./gradlew test",
                 command = "./gradlew test",
@@ -96,13 +97,13 @@ class ToolWindowApprovalFlowTest {
         )
 
         harness.waitUntil { harness.approvalStore.state.value.current?.requestId == "approval-1" }
-        harness.waitUntil { harness.composerStore.state.value.approvalPrompt?.requestId == "approval-1" }
+        harness.waitUntil { harness.submissionStore.state.value.approvalPrompt?.requestId == "approval-1" }
         harness.eventHub.publishUiIntent(UiIntent.SubmitApprovalAction(ApprovalAction.ALLOW_FOR_SESSION))
 
         harness.waitUntil { harness.provider.decisions.isNotEmpty() }
         assertEquals("approval-1" to ApprovalAction.ALLOW_FOR_SESSION, harness.provider.decisions.single())
-        assertEquals(null, harness.composerStore.state.value.approvalPrompt)
-        val approvalNode = harness.timelineStore.state.value.nodes.filterIsInstance<TimelineNode.ApprovalNode>().single()
+        assertEquals(null, harness.submissionStore.state.value.approvalPrompt)
+        val approvalNode = harness.conversationStore.state.value.nodes.filterIsInstance<ConversationActivityItem.ApprovalNode>().single()
         assertEquals(ItemStatus.SUCCESS, approvalNode.status)
         assertTrue(approvalNode.body.contains("Remembered for session"))
 
@@ -141,18 +142,18 @@ class ToolWindowApprovalFlowTest {
             workingDirectoryProvider = { workingDir.toString() },
         )
         val eventHub = ToolWindowEventHub()
-        val timelineStore = TimelineAreaStore()
+        val conversationStore = ConversationAreaStore()
         val approvalStore = ApprovalAreaStore()
-        val composerStore = ComposerAreaStore()
+        val submissionStore = SubmissionAreaStore()
         private val coordinator = ToolWindowCoordinator(
             chatService = service,
             settingsService = settings,
             eventHub = eventHub,
-            headerStore = HeaderAreaStore(),
-            statusStore = StatusAreaStore(),
-            timelineStore = timelineStore,
-            composerStore = composerStore,
-            rightDrawerStore = RightDrawerAreaStore(),
+            sessionTabsStore = SessionTabsAreaStore(),
+            executionStatusStore = ExecutionStatusAreaStore(),
+            conversationStore = conversationStore,
+            submissionStore = submissionStore,
+            sidePanelStore = SidePanelAreaStore(),
             approvalStore = approvalStore,
         )
 
@@ -166,6 +167,10 @@ class ToolWindowApprovalFlowTest {
             }
         }
 
+        fun settleStartup() {
+            Thread.sleep(150)
+        }
+
         fun dispose() {
             coordinator.dispose()
             service.dispose()
@@ -176,22 +181,22 @@ class ToolWindowApprovalFlowTest {
     private class RecordingApprovalProvider : AgentProvider {
         val requests = CopyOnWriteArrayList<AgentRequest>()
         val decisions = CopyOnWriteArrayList<Pair<String, ApprovalAction>>()
-        private var sink: (UnifiedEvent) -> Unit = {}
+        private var sink: (ProviderEvent) -> Unit = {}
 
-        override fun stream(request: AgentRequest): Flow<UnifiedEvent> = callbackFlow {
+        override fun stream(request: AgentRequest): kotlinx.coroutines.flow.Flow<com.auracode.assistant.session.kernel.SessionDomainEvent> = callbackFlow {
             requests += request
-            sink = { event -> trySend(event); Unit }
-            trySend(UnifiedEvent.TurnStarted("turn-1", "thread-1"))
+            sink = { event -> com.auracode.assistant.test.trySendProviderEvent(this, event); Unit }
+            com.auracode.assistant.test.trySendProviderEvent(this, ProviderEvent.TurnStarted("turn-1", "thread-1"))
             awaitClose { sink = {} }
         }
 
-        fun emitApproval(request: UnifiedApprovalRequest) {
-            sink(UnifiedEvent.ApprovalRequested(request))
+        fun emitApproval(request: ProviderApprovalRequest) {
+            sink(ProviderEvent.ApprovalRequested(request))
         }
 
         override fun submitApprovalDecision(requestId: String, decision: ApprovalAction): Boolean {
             decisions += requestId to decision
-            sink(UnifiedEvent.TurnCompleted("turn-1", TurnOutcome.SUCCESS))
+            sink(ProviderEvent.TurnCompleted("turn-1", TurnOutcome.SUCCESS))
             return true
         }
 

@@ -38,7 +38,7 @@ internal class CodexEnvironmentDetector(
     private val commonSearchPaths: List<String> = defaultCodexCommonSearchPaths(System.getProperty("os.name").orEmpty()),
     private val executableResolver: CodexExecutableResolver = CodexExecutableResolver(commonSearchPaths = commonSearchPaths),
     private val launchEnvironmentBuilder: CodexLaunchEnvironmentBuilder = CodexLaunchEnvironmentBuilder(),
-    private val appServerProbe: CodexAppServerProbe = CodexAppServerProbe(),
+    private val appServerProbe: CodexRuntimeProbe = CodexRuntimeProbe(),
 ) {
     @Volatile
     private var cachedShellEnvironment: Map<String, String>? = null

@@ -1,7 +1,7 @@
 package com.auracode.assistant.toolwindow.execution
 
-import com.auracode.assistant.protocol.UnifiedToolUserInputAnswerDraft
-import com.auracode.assistant.protocol.UnifiedToolUserInputPrompt
+import com.auracode.assistant.protocol.ProviderToolUserInputAnswerDraft
+import com.auracode.assistant.protocol.ProviderToolUserInputPrompt
 
 internal const val TOOL_USER_INPUT_OTHER_OPTION: String = "__tool_user_input_other__"
 
@@ -77,12 +77,12 @@ internal data class ToolUserInputPromptState(
         get() = activeQuestion?.presentedChoices()?.getOrNull(activeChoiceIndex)
 }
 
-internal fun ToolUserInputPromptState.toSubmissionAnswers(): Map<String, UnifiedToolUserInputAnswerDraft> {
+internal fun ToolUserInputPromptState.toSubmissionAnswers(): Map<String, ProviderToolUserInputAnswerDraft> {
     val prompt = current ?: return emptyMap()
     return prompt.questions.mapNotNull { question ->
         val draft = answerDrafts[question.id] ?: ToolUserInputAnswerDraftUiModel()
         val answers = draft.toAnswers(question)
-        answers.takeIf { it.isNotEmpty() }?.let { question.id to UnifiedToolUserInputAnswerDraft(it) }
+        answers.takeIf { it.isNotEmpty() }?.let { question.id to ProviderToolUserInputAnswerDraft(it) }
     }.toMap()
 }
 
@@ -156,7 +156,7 @@ internal fun ToolUserInputPromptState.syncSelection(): ToolUserInputPromptState 
     ).recomputeCanSubmit()
 }
 
-internal fun UnifiedToolUserInputPrompt.toUiModel(): ToolUserInputPromptUiModel {
+internal fun ProviderToolUserInputPrompt.toUiModel(): ToolUserInputPromptUiModel {
     return ToolUserInputPromptUiModel(
         requestId = requestId,
         threadId = threadId,

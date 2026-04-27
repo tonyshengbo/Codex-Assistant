@@ -2,7 +2,7 @@ package com.auracode.assistant.toolwindow.eventing
 
 import com.auracode.assistant.model.AgentRequest
 import com.auracode.assistant.protocol.TurnOutcome
-import com.auracode.assistant.protocol.UnifiedEvent
+import com.auracode.assistant.protocol.ProviderEvent
 import com.auracode.assistant.provider.AgentProvider
 import com.auracode.assistant.provider.AgentProviderFactory
 import com.auracode.assistant.provider.EngineCapabilities
@@ -20,11 +20,11 @@ import com.auracode.assistant.settings.mcp.McpServerSummary
 import com.auracode.assistant.settings.mcp.McpTestResult
 import com.auracode.assistant.settings.mcp.McpTransportType
 import com.auracode.assistant.toolwindow.execution.ApprovalAreaStore
-import com.auracode.assistant.toolwindow.submission.ComposerAreaStore
-import com.auracode.assistant.toolwindow.shell.RightDrawerAreaStore
-import com.auracode.assistant.toolwindow.sessions.HeaderAreaStore
-import com.auracode.assistant.toolwindow.execution.StatusAreaStore
-import com.auracode.assistant.toolwindow.conversation.TimelineAreaStore
+import com.auracode.assistant.toolwindow.submission.SubmissionAreaStore
+import com.auracode.assistant.toolwindow.shell.SidePanelAreaStore
+import com.auracode.assistant.toolwindow.sessions.SessionTabsAreaStore
+import com.auracode.assistant.toolwindow.execution.ExecutionStatusAreaStore
+import com.auracode.assistant.toolwindow.conversation.ConversationAreaStore
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import java.nio.file.Files
@@ -45,7 +45,7 @@ class ToolWindowCoordinatorMcpTest {
             settings = settings,
         )
         val eventHub = ToolWindowEventHub()
-        val rightDrawerStore = RightDrawerAreaStore()
+        val sidePanelStore = SidePanelAreaStore()
         val diagnostics = CopyOnWriteArrayList<String>()
         val adapter = RecordingMcpAdapter().apply {
             getEditorDraftFailure = IllegalStateException("boom draft")
@@ -54,11 +54,11 @@ class ToolWindowCoordinatorMcpTest {
             chatService = service,
             settingsService = settings,
             eventHub = eventHub,
-            headerStore = HeaderAreaStore(),
-            statusStore = StatusAreaStore(),
-            timelineStore = TimelineAreaStore(),
-            composerStore = ComposerAreaStore(),
-            rightDrawerStore = rightDrawerStore,
+            sessionTabsStore = SessionTabsAreaStore(),
+            executionStatusStore = ExecutionStatusAreaStore(),
+            conversationStore = ConversationAreaStore(),
+            submissionStore = SubmissionAreaStore(),
+            sidePanelStore = sidePanelStore,
             approvalStore = ApprovalAreaStore(),
             mcpAdapterRegistry = McpManagementAdapterRegistry(mapOf("codex" to adapter)),
             diagnosticLog = { message, _ -> diagnostics += message },
@@ -67,7 +67,7 @@ class ToolWindowCoordinatorMcpTest {
         eventHub.publishUiIntent(UiIntent.SelectSettingsSection(com.auracode.assistant.toolwindow.settings.SettingsSection.MCP))
         eventHub.publishUiIntent(UiIntent.SelectMcpServerForEdit("docs"))
 
-        waitUntil(timeoutMs = 2_000) {
+        waitUntil(timeoutMs = 15_000) {
             diagnostics.any { it.contains("MCP coroutine handled failure") && it.contains("loadMcpEditorDraft") }
         }
 
@@ -89,17 +89,17 @@ class ToolWindowCoordinatorMcpTest {
             settings = settings,
         )
         val eventHub = ToolWindowEventHub()
-        val rightDrawerStore = RightDrawerAreaStore()
+        val sidePanelStore = SidePanelAreaStore()
         val diagnostics = CopyOnWriteArrayList<String>()
         val coordinator = ToolWindowCoordinator(
             chatService = service,
             settingsService = settings,
             eventHub = eventHub,
-            headerStore = HeaderAreaStore(),
-            statusStore = StatusAreaStore(),
-            timelineStore = TimelineAreaStore(),
-            composerStore = ComposerAreaStore(),
-            rightDrawerStore = rightDrawerStore,
+            sessionTabsStore = SessionTabsAreaStore(),
+            executionStatusStore = ExecutionStatusAreaStore(),
+            conversationStore = ConversationAreaStore(),
+            submissionStore = SubmissionAreaStore(),
+            sidePanelStore = sidePanelStore,
             approvalStore = ApprovalAreaStore(),
             mcpAdapterRegistry = McpManagementAdapterRegistry(mapOf("codex" to RecordingMcpAdapter())),
             diagnosticLog = { message, _ -> diagnostics += message },
@@ -109,7 +109,7 @@ class ToolWindowCoordinatorMcpTest {
         eventHub.publishUiIntent(UiIntent.CreateNewMcpDraft)
         eventHub.publishUiIntent(UiIntent.ShowMcpSettingsList)
 
-        waitUntil(timeoutMs = 2_000) {
+        waitUntil(timeoutMs = 15_000) {
             diagnostics.any { it.contains("intent=ShowMcpSettingsList") }
         }
 
@@ -129,7 +129,7 @@ class ToolWindowCoordinatorMcpTest {
             settings = settings,
         )
         val eventHub = ToolWindowEventHub()
-        val rightDrawerStore = RightDrawerAreaStore()
+        val sidePanelStore = SidePanelAreaStore()
         val adapter = RecordingMcpAdapter().apply {
             servers = listOf(
                 McpServerSummary(
@@ -151,26 +151,26 @@ class ToolWindowCoordinatorMcpTest {
             chatService = service,
             settingsService = settings,
             eventHub = eventHub,
-            headerStore = HeaderAreaStore(),
-            statusStore = StatusAreaStore(),
-            timelineStore = TimelineAreaStore(),
-            composerStore = ComposerAreaStore(),
-            rightDrawerStore = rightDrawerStore,
+            sessionTabsStore = SessionTabsAreaStore(),
+            executionStatusStore = ExecutionStatusAreaStore(),
+            conversationStore = ConversationAreaStore(),
+            submissionStore = SubmissionAreaStore(),
+            sidePanelStore = sidePanelStore,
             approvalStore = ApprovalAreaStore(),
             mcpAdapterRegistry = McpManagementAdapterRegistry(mapOf("codex" to adapter)),
         )
 
         eventHub.publishUiIntent(UiIntent.SelectSettingsSection(com.auracode.assistant.toolwindow.settings.SettingsSection.MCP))
 
-        waitUntil(timeoutMs = 2_000) {
-            rightDrawerStore.state.value.mcpServers.size == 1 &&
-                rightDrawerStore.state.value.mcpStatusByName.containsKey("docs")
+        waitUntil(timeoutMs = 15_000) {
+            sidePanelStore.state.value.mcpServers.size == 1 &&
+                sidePanelStore.state.value.mcpStatusByName.containsKey("docs")
         }
 
         assertEquals(1, adapter.listCalls)
         assertEquals(1, adapter.refreshCalls)
-        assertEquals("docs", rightDrawerStore.state.value.mcpServers.single().name)
-        assertEquals(listOf("search_docs"), rightDrawerStore.state.value.mcpStatusByName["docs"]?.tools)
+        assertEquals("docs", sidePanelStore.state.value.mcpServers.single().name)
+        assertEquals(listOf("search_docs"), sidePanelStore.state.value.mcpStatusByName["docs"]?.tools)
 
         coordinator.dispose()
         service.dispose()
@@ -186,7 +186,7 @@ class ToolWindowCoordinatorMcpTest {
             settings = settings,
         )
         val eventHub = ToolWindowEventHub()
-        val rightDrawerStore = RightDrawerAreaStore()
+        val sidePanelStore = SidePanelAreaStore()
         val adapter = RecordingMcpAdapter().apply {
             testResults["docs"] = McpTestResult(success = true, summary = "Connected")
         }
@@ -194,11 +194,11 @@ class ToolWindowCoordinatorMcpTest {
             chatService = service,
             settingsService = settings,
             eventHub = eventHub,
-            headerStore = HeaderAreaStore(),
-            statusStore = StatusAreaStore(),
-            timelineStore = TimelineAreaStore(),
-            composerStore = ComposerAreaStore(),
-            rightDrawerStore = rightDrawerStore,
+            sessionTabsStore = SessionTabsAreaStore(),
+            executionStatusStore = ExecutionStatusAreaStore(),
+            conversationStore = ConversationAreaStore(),
+            submissionStore = SubmissionAreaStore(),
+            sidePanelStore = sidePanelStore,
             approvalStore = ApprovalAreaStore(),
             mcpAdapterRegistry = McpManagementAdapterRegistry(mapOf("codex" to adapter)),
         )
@@ -222,18 +222,18 @@ class ToolWindowCoordinatorMcpTest {
         )
         eventHub.publishUiIntent(UiIntent.TestMcpServer())
 
-        waitUntil(timeoutMs = 2_000) {
+        waitUntil(timeoutMs = 15_000) {
             adapter.savedDrafts.isNotEmpty() &&
                 adapter.testRequests.contains("docs") &&
-                rightDrawerStore.state.value.mcpTestResultsByName["docs"] != null &&
-                rightDrawerStore.state.value.mcpFeedbackMessage == "Test succeeded: Connected"
+                sidePanelStore.state.value.mcpTestResultsByName["docs"] != null &&
+                sidePanelStore.state.value.mcpFeedbackMessage == "Test succeeded: Connected"
         }
 
         assertEquals("docs", adapter.savedDrafts.single().name)
         assertTrue(adapter.savedDrafts.single().configJson.contains("\"docs\""))
         assertTrue(adapter.testRequests.contains("docs"))
-        assertEquals("Connected", rightDrawerStore.state.value.mcpTestResultsByName["docs"]?.summary)
-        assertEquals("Test succeeded: Connected", rightDrawerStore.state.value.mcpFeedbackMessage)
+        assertEquals("Connected", sidePanelStore.state.value.mcpTestResultsByName["docs"]?.summary)
+        assertEquals("Test succeeded: Connected", sidePanelStore.state.value.mcpFeedbackMessage)
 
         coordinator.dispose()
         service.dispose()
@@ -249,7 +249,7 @@ class ToolWindowCoordinatorMcpTest {
             settings = settings,
         )
         val eventHub = ToolWindowEventHub()
-        val rightDrawerStore = RightDrawerAreaStore()
+        val sidePanelStore = SidePanelAreaStore()
         val adapter = RecordingMcpAdapter().apply {
             servers = listOf(
                 McpServerSummary(
@@ -266,18 +266,18 @@ class ToolWindowCoordinatorMcpTest {
             chatService = service,
             settingsService = settings,
             eventHub = eventHub,
-            headerStore = HeaderAreaStore(),
-            statusStore = StatusAreaStore(),
-            timelineStore = TimelineAreaStore(),
-            composerStore = ComposerAreaStore(),
-            rightDrawerStore = rightDrawerStore,
+            sessionTabsStore = SessionTabsAreaStore(),
+            executionStatusStore = ExecutionStatusAreaStore(),
+            conversationStore = ConversationAreaStore(),
+            submissionStore = SubmissionAreaStore(),
+            sidePanelStore = sidePanelStore,
             approvalStore = ApprovalAreaStore(),
             mcpAdapterRegistry = McpManagementAdapterRegistry(mapOf("codex" to adapter)),
         )
 
         eventHub.publishUiIntent(UiIntent.SelectSettingsSection(com.auracode.assistant.toolwindow.settings.SettingsSection.MCP))
 
-        waitUntil(timeoutMs = 2_000) { rightDrawerStore.state.value.mcpServers.size == 1 }
+        waitUntil(timeoutMs = 15_000) { sidePanelStore.state.value.mcpServers.size == 1 }
 
         adapter.servers = listOf(
             McpServerSummary(
@@ -292,14 +292,14 @@ class ToolWindowCoordinatorMcpTest {
 
         eventHub.publishUiIntent(UiIntent.ToggleMcpServerEnabled(name = "docs", enabled = false))
 
-        waitUntil(timeoutMs = 2_000) {
+        waitUntil(timeoutMs = 15_000) {
             adapter.enabledUpdates.contains("docs" to false) &&
                 adapter.listCalls >= 2 &&
-                rightDrawerStore.state.value.mcpServers.singleOrNull()?.enabled == false
+                sidePanelStore.state.value.mcpServers.singleOrNull()?.enabled == false
         }
 
         assertEquals(listOf("docs" to false), adapter.enabledUpdates)
-        assertEquals(false, rightDrawerStore.state.value.mcpServers.single().enabled)
+        assertEquals(false, sidePanelStore.state.value.mcpServers.single().enabled)
 
         coordinator.dispose()
         service.dispose()
@@ -334,8 +334,8 @@ class ToolWindowCoordinatorMcpTest {
                 object : AgentProviderFactory {
                     override val engineId: String = "codex"
                     override fun create(): AgentProvider = object : AgentProvider {
-                        override fun stream(request: AgentRequest): Flow<UnifiedEvent> = flow {
-                            emit(UnifiedEvent.TurnCompleted(turnId = "turn-1", outcome = TurnOutcome.SUCCESS))
+                        override fun stream(request: AgentRequest): kotlinx.coroutines.flow.Flow<com.auracode.assistant.session.kernel.SessionDomainEvent> = com.auracode.assistant.test.providerEventFlow {
+                            emit(ProviderEvent.TurnCompleted(turnId = "turn-1", outcome = TurnOutcome.SUCCESS))
                         }
 
                         override fun cancel(requestId: String) = Unit

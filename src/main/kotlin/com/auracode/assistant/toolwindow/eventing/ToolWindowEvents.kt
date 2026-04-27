@@ -5,8 +5,6 @@ import com.auracode.assistant.conversation.ConversationCapabilities
 import com.auracode.assistant.conversation.ConversationSummary
 import com.auracode.assistant.integration.build.BuildErrorAuraRequest
 import com.auracode.assistant.integration.ide.IdeExternalRequest
-import com.auracode.assistant.model.EngineEvent
-import com.auracode.assistant.protocol.UnifiedEvent
 import com.auracode.assistant.service.AgentChatService
 import com.auracode.assistant.settings.SavedAgentDefinition
 import com.auracode.assistant.settings.UiLanguageMode
@@ -24,10 +22,11 @@ import com.auracode.assistant.provider.codex.CodexEnvironmentCheckResult
 import com.auracode.assistant.provider.codex.CodexCliVersionSnapshot
 import com.auracode.assistant.provider.runtime.RuntimeExecutableCheckResult
 import com.auracode.assistant.toolwindow.execution.ApprovalAction
-import com.auracode.assistant.toolwindow.submission.ComposerRunningPlanState
+import com.auracode.assistant.toolwindow.submission.SubmissionRunningPlanState
 import com.auracode.assistant.toolwindow.submission.MentionSuggestion
 import com.auracode.assistant.toolwindow.submission.PlanCompletionAction
-import com.auracode.assistant.toolwindow.submission.PendingComposerSubmission
+import com.auracode.assistant.toolwindow.submission.PendingSubmission
+import com.auracode.assistant.toolwindow.submission.SessionSubagentUiModel
 import com.auracode.assistant.toolwindow.execution.PendingApprovalRequestUiModel
 import com.auracode.assistant.toolwindow.submission.ContextEntry
 import com.auracode.assistant.toolwindow.submission.FocusedContextSnapshot
@@ -37,10 +36,9 @@ import com.auracode.assistant.toolwindow.execution.ToolUserInputPromptUiModel
 import com.auracode.assistant.toolwindow.settings.RuntimeSettingsTab
 import com.auracode.assistant.toolwindow.settings.SettingsSection
 import com.auracode.assistant.toolwindow.shared.UiText
-import com.auracode.assistant.toolwindow.execution.TurnStatusUiState
-import com.auracode.assistant.toolwindow.conversation.TimelineFileChange
-import com.auracode.assistant.toolwindow.conversation.TimelineMutation
-import com.auracode.assistant.toolwindow.conversation.TimelineNode
+import com.auracode.assistant.toolwindow.execution.ExecutionTurnStatusUiState
+import com.auracode.assistant.toolwindow.conversation.ConversationFileChange
+import com.auracode.assistant.toolwindow.conversation.ConversationActivityItem
 
 internal sealed interface UiIntent {
     data object NewSession : UiIntent
@@ -52,13 +50,13 @@ internal sealed interface UiIntent {
     data class OpenRemoteConversation(val remoteConversationId: String, val title: String) : UiIntent
     data class ExportRemoteConversation(val remoteConversationId: String, val title: String) : UiIntent
     data object ToggleSettings : UiIntent
-    data object CloseRightDrawer : UiIntent
+    data object CloseSidePanel : UiIntent
     data class DeleteSession(val sessionId: String) : UiIntent
     data class SwitchSession(val sessionId: String) : UiIntent
     data object LoadOlderMessages : UiIntent
     data class ToggleNodeExpanded(val nodeId: String) : UiIntent
-    data class OpenTimelineFileChange(val change: TimelineFileChange) : UiIntent
-    data class OpenTimelineFilePath(val path: String) : UiIntent
+    data class OpenConversationFileChange(val change: ConversationFileChange) : UiIntent
+    data class OpenConversationFilePath(val path: String) : UiIntent
     data class UpdateDocument(val value: TextFieldValue) : UiIntent
     data class InputChanged(val value: String) : UiIntent
     data class SubmitBuildErrorRequest(val request: BuildErrorAuraRequest) : UiIntent
@@ -66,7 +64,7 @@ internal sealed interface UiIntent {
     data object SendPrompt : UiIntent
     data object CancelRun : UiIntent
     data class RemovePendingSubmission(val id: String) : UiIntent
-    data class SelectMode(val mode: ComposerMode) : UiIntent
+    data class SelectMode(val mode: SubmissionMode) : UiIntent
     data object ToggleExecutionMode : UiIntent
     data object TogglePlanMode : UiIntent
     data object ToggleEngineMenu : UiIntent
@@ -81,7 +79,7 @@ internal sealed interface UiIntent {
     data object CancelAddingCustomModel : UiIntent
     data class DeleteCustomModel(val model: String) : UiIntent
     data object ToggleReasoningMenu : UiIntent
-    data class SelectReasoning(val reasoning: ComposerReasoning) : UiIntent
+    data class SelectReasoning(val reasoning: SubmissionReasoning) : UiIntent
     data object OpenAttachmentPicker : UiIntent
     data object PasteImageFromClipboard : UiIntent
     data class AddAttachments(val paths: List<String>) : UiIntent
@@ -106,6 +104,7 @@ internal sealed interface UiIntent {
     data object MoveMentionSelectionPrevious : UiIntent
     data object DismissMentionPopup : UiIntent
     data object ToggleSubagentTrayExpanded : UiIntent
+    data object DismissSubagentTray : UiIntent
     data class RequestAgentSuggestions(val query: String, val documentVersion: Long) : UiIntent
     data class SelectAgent(val agent: SavedAgentDefinition) : UiIntent
     data class RemoveSelectedAgent(val id: String) : UiIntent
@@ -186,12 +185,12 @@ internal sealed interface UiIntent {
     data object SaveSettings : UiIntent
 }
 
-internal enum class ComposerMode {
+internal enum class SubmissionMode {
     AUTO,
     APPROVAL,
 }
 
-internal enum class ComposerReasoning(
+internal enum class SubmissionReasoning(
     val effort: String,
 ) {
     LOW("low"),
@@ -200,23 +199,20 @@ internal enum class ComposerReasoning(
     MAX("xhigh"),
 }
 
-internal fun ComposerMode.localizedLabel(): String = when (this) {
-    ComposerMode.AUTO -> AuraCodeBundle.message("composer.mode.auto")
-    ComposerMode.APPROVAL -> AuraCodeBundle.message("composer.mode.approval")
+internal fun SubmissionMode.localizedLabel(): String = when (this) {
+    SubmissionMode.AUTO -> AuraCodeBundle.message("composer.mode.auto")
+    SubmissionMode.APPROVAL -> AuraCodeBundle.message("composer.mode.approval")
 }
 
-internal fun ComposerReasoning.localizedLabel(): String = when (this) {
-    ComposerReasoning.LOW -> AuraCodeBundle.message("composer.reasoning.low")
-    ComposerReasoning.MEDIUM -> AuraCodeBundle.message("composer.reasoning.medium")
-    ComposerReasoning.HIGH -> AuraCodeBundle.message("composer.reasoning.high")
-    ComposerReasoning.MAX -> AuraCodeBundle.message("composer.reasoning.max")
+internal fun SubmissionReasoning.localizedLabel(): String = when (this) {
+    SubmissionReasoning.LOW -> AuraCodeBundle.message("composer.reasoning.low")
+    SubmissionReasoning.MEDIUM -> AuraCodeBundle.message("composer.reasoning.medium")
+    SubmissionReasoning.HIGH -> AuraCodeBundle.message("composer.reasoning.high")
+    SubmissionReasoning.MAX -> AuraCodeBundle.message("composer.reasoning.max")
 }
 
 internal sealed interface AppEvent {
     data class UiIntentPublished(val intent: UiIntent) : AppEvent
-    data class UnifiedEventPublished(val event: UnifiedEvent) : AppEvent
-    data class TimelineMutationApplied(val mutation: TimelineMutation) : AppEvent
-    data class EngineEventPublished(val event: EngineEvent) : AppEvent
     data class SessionSnapshotUpdated(
         val sessions: List<AgentChatService.SessionSummary>,
         val activeSessionId: String,
@@ -253,7 +249,7 @@ internal sealed interface AppEvent {
         val selectedAgentIds: List<String> = emptyList(),
         val customModelIds: List<String> = emptyList(),
         val selectedModel: String = com.auracode.assistant.provider.codex.CodexModelCatalog.defaultModel,
-        val selectedReasoning: String = ComposerReasoning.MEDIUM.effort,
+        val selectedReasoning: String = SubmissionReasoning.MEDIUM.effort,
         val codexCliVersionSnapshot: CodexCliVersionSnapshot = CodexCliVersionSnapshot(),
         val claudeCliVersionSnapshot: ClaudeCliVersionSnapshot = ClaudeCliVersionSnapshot(),
     ) : AppEvent
@@ -296,25 +292,25 @@ internal sealed interface AppEvent {
     data class McpValidationErrorsUpdated(val errors: McpValidationErrors) : AppEvent
     data class McpFeedbackUpdated(val message: String, val isError: Boolean) : AppEvent
     data class StatusTextUpdated(val text: UiText) : AppEvent
-    data class TimelineOlderLoadingChanged(val loading: Boolean) : AppEvent
-    data class ConversationProjectionUpdated(
-        val nodes: List<TimelineNode>,
+    data class ConversationOlderLoadingChanged(val loading: Boolean) : AppEvent
+    data class ConversationUiProjectionUpdated(
+        val nodes: List<ConversationActivityItem>,
         val oldestCursor: String?,
         val hasOlder: Boolean,
         val isRunning: Boolean,
         val latestError: String?,
     ) : AppEvent
-    data class ExecutionProjectionUpdated(
+    data class ExecutionUiProjectionUpdated(
         val approvals: List<PendingApprovalRequestUiModel>,
         val toolUserInputs: List<ToolUserInputPromptUiModel>,
-        val runningPlan: ComposerRunningPlanState?,
-        val turnStatus: TurnStatusUiState?,
+        val turnStatus: ExecutionTurnStatusUiState?,
     ) : AppEvent
-    data class TimelineHistoryLoaded(
-        val nodes: List<TimelineNode>,
-        val oldestCursor: String?,
-        val hasOlder: Boolean,
-        val prepend: Boolean,
+    data class SubmissionUiProjectionUpdated(
+        val isRunning: Boolean,
+        val editedFiles: List<com.auracode.assistant.toolwindow.submission.EditedFileAggregate>,
+    ) : AppEvent
+    data class SessionNavigationUiProjectionUpdated(
+        val subagents: List<SessionSubagentUiModel>,
     ) : AppEvent
     data class ApprovalRequested(
         val request: PendingApprovalRequestUiModel,
@@ -332,19 +328,14 @@ internal sealed interface AppEvent {
     data object ActiveRunCancelled : AppEvent
     data object ClearToolUserInputs : AppEvent
     data class PendingSubmissionsUpdated(
-        val submissions: List<PendingComposerSubmission>,
-        val clearComposerDraft: Boolean = false,
+        val submissions: List<PendingSubmission>,
+        val clearSubmissionDraft: Boolean = false,
     ) : AppEvent
     data class PlanCompletionPromptUpdated(
         val prompt: PlanCompletionPromptUiModel?,
     ) : AppEvent
     data class RunningPlanUpdated(
-        val plan: ComposerRunningPlanState?,
-    ) : AppEvent
-    data class TurnDiffUpdated(
-        val threadId: String,
-        val turnId: String,
-        val diff: String,
+        val plan: SubmissionRunningPlanState?,
     ) : AppEvent
 
     data class PromptAccepted(

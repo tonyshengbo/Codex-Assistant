@@ -18,7 +18,7 @@ import com.auracode.assistant.i18n.AuraCodeBundle
 import com.auracode.assistant.settings.UiLanguageMode
 import com.auracode.assistant.settings.UiScaleMode
 import com.auracode.assistant.settings.UiThemeMode
-import com.auracode.assistant.toolwindow.shell.RightDrawerAreaState
+import com.auracode.assistant.toolwindow.shell.SidePanelAreaState
 import com.auracode.assistant.toolwindow.eventing.UiIntent
 import com.auracode.assistant.toolwindow.shared.DesignPalette
 import com.auracode.assistant.toolwindow.shared.assistantUiTokens
@@ -27,7 +27,7 @@ import com.auracode.assistant.toolwindow.shared.assistantUiTokens
 @Composable
 internal fun BasicSettingsPage(
     p: DesignPalette,
-    state: RightDrawerAreaState,
+    state: SidePanelAreaState,
     onIntent: (UiIntent) -> Unit,
 ) {
     val t = assistantUiTokens()

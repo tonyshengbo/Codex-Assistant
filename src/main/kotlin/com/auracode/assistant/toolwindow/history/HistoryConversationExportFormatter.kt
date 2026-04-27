@@ -1,11 +1,10 @@
 package com.auracode.assistant.toolwindow.history
 
 import com.auracode.assistant.conversation.ConversationSummary
-import com.auracode.assistant.protocol.ActivityTitleFormatter
-import com.auracode.assistant.protocol.ItemKind
-import com.auracode.assistant.protocol.UnifiedEvent
-import com.auracode.assistant.protocol.UnifiedFileChange
-import com.auracode.assistant.protocol.UnifiedItem
+import com.auracode.assistant.conversation.presentation.ActivityTitleFormatter
+import com.auracode.assistant.session.kernel.SessionConversationEntry
+import com.auracode.assistant.session.kernel.SessionDomainEvent
+import com.auracode.assistant.session.kernel.SessionMessageRole
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -17,7 +16,7 @@ private val exportTimestampFormatter: DateTimeFormatter =
 
 internal fun formatConversationExportMarkdown(
     summary: ConversationSummary,
-    events: List<UnifiedEvent>,
+    events: List<SessionDomainEvent>,
 ): String {
     val title = summary.title.trim().ifBlank { summary.remoteConversationId }
     return buildString {
@@ -27,8 +26,7 @@ internal fun formatConversationExportMarkdown(
         appendLine("- Status: ${formatHistoryStatus(summary.status)}")
         appendLine("- Updated: ${formatExportTimestamp(summary.updatedAt)}")
         events.asSequence()
-            .filterIsInstance<UnifiedEvent.ItemUpdated>()
-            .mapNotNull { it.item.toMarkdownSection() }
+            .mapNotNull(::toMarkdownSection)
             .forEach { section ->
                 appendLine()
                 append(section)
@@ -51,34 +49,36 @@ internal fun suggestConversationExportFileName(
     return "$baseName.md"
 }
 
-private fun UnifiedItem.toMarkdownSection(): String? {
-    return when (kind) {
-        ItemKind.NARRATIVE -> narrativeSection()
-        ItemKind.COMMAND_EXEC -> commandSection()
-        ItemKind.DIFF_APPLY -> diffSection()
-        ItemKind.TOOL_CALL -> toolSection()
-        ItemKind.CONTEXT_COMPACTION -> genericSection("Context", text)
-        ItemKind.PLAN_UPDATE -> genericSection("Plan", text)
-        ItemKind.APPROVAL_REQUEST -> genericSection("Approval", text)
-        ItemKind.USER_INPUT -> genericSection("Input", text)
-        ItemKind.UNKNOWN -> genericSection("Event", text ?: command)
+private fun toMarkdownSection(event: SessionDomainEvent): String? {
+    return when (event) {
+        is SessionDomainEvent.MessageAppended -> narrativeSection(event)
+        is SessionDomainEvent.CommandUpdated -> commandSection(event)
+        is SessionDomainEvent.FileChangesUpdated -> diffSection(event)
+        is SessionDomainEvent.ToolUpdated -> toolSection(event)
+        is SessionDomainEvent.RunningPlanUpdated -> genericSection("Plan", event.plan.body)
+        is SessionDomainEvent.ApprovalRequested -> genericSection("Approval", event.request.body)
+        is SessionDomainEvent.ToolUserInputRequested -> genericSection("Input", null)
+        is SessionDomainEvent.ToolUserInputResolved -> genericSection("Input", event.responseSummary)
+        is SessionDomainEvent.ErrorAppended -> genericSection("Error", event.message)
+        is SessionDomainEvent.EngineSwitched -> genericSection("System", event.targetEngineLabel)
+        else -> null
     }
 }
 
-private fun UnifiedItem.narrativeSection(): String? {
-    val body = text?.trim().orEmpty()
+private fun narrativeSection(event: SessionDomainEvent.MessageAppended): String? {
+    val body = event.text.trim()
     if (body.isBlank()) return null
-    val heading = when (name) {
-        "user_message" -> "User"
-        "system_message" -> "System"
+    val heading = when (event.role) {
+        SessionMessageRole.USER -> "User"
+        SessionMessageRole.SYSTEM -> "System"
         else -> "Assistant"
     }
     return "## $heading\n\n$body\n"
 }
 
-private fun UnifiedItem.commandSection(): String? {
-    val shell = command?.trim().orEmpty()
-    val output = text?.trim().orEmpty()
+private fun commandSection(event: SessionDomainEvent.CommandUpdated): String? {
+    val shell = event.command?.trim().orEmpty()
+    val output = event.outputText?.trim().orEmpty()
     if (shell.isBlank() && output.isBlank()) return null
     return buildString {
         appendLine("## Command")
@@ -99,10 +99,10 @@ private fun UnifiedItem.commandSection(): String? {
     }
 }
 
-private fun UnifiedItem.diffSection(): String? {
-    if (fileChanges.isEmpty()) return null
+private fun diffSection(event: SessionDomainEvent.FileChangesUpdated): String? {
+    if (event.changes.isEmpty()) return null
     return buildString {
-        fileChanges.forEachIndexed { index, change ->
+        event.changes.forEachIndexed { index, change ->
             if (index > 0) appendLine()
             appendLine("## File Change")
             appendLine()
@@ -118,28 +118,37 @@ private fun UnifiedItem.diffSection(): String? {
     }
 }
 
-private fun UnifiedItem.toolSection(): String? {
-    val normalized = (text ?: command)?.trim().orEmpty()
+private fun toolSection(event: SessionDomainEvent.ToolUpdated): String? {
+    val normalized = event.summary?.trim().orEmpty()
     if (normalized.isBlank()) return null
     val heading = ActivityTitleFormatter.toolTitle(
-        explicitName = name,
+        explicitName = event.toolName,
         body = normalized,
-        status = status,
+        status = event.status.toItemStatus(),
     )
     return "## $heading\n\n$normalized\n"
 }
 
-private fun UnifiedItem.genericSection(title: String, body: String?): String? {
+private fun genericSection(title: String, body: String?): String? {
     val normalized = body?.trim().orEmpty()
     if (normalized.isBlank()) return null
     return "## $title\n\n$normalized\n"
 }
 
-private fun UnifiedFileChange.kindLabel(): String {
+private fun com.auracode.assistant.session.kernel.SessionFileChange.kindLabel(): String {
     return when (kind.trim().lowercase()) {
         "created", "create", "added", "add" -> "Created"
         "deleted", "delete", "removed", "remove" -> "Deleted"
         else -> "Updated"
+    }
+}
+
+private fun com.auracode.assistant.session.kernel.SessionActivityStatus.toItemStatus(): com.auracode.assistant.protocol.ItemStatus {
+    return when (this) {
+        com.auracode.assistant.session.kernel.SessionActivityStatus.RUNNING -> com.auracode.assistant.protocol.ItemStatus.RUNNING
+        com.auracode.assistant.session.kernel.SessionActivityStatus.SUCCESS -> com.auracode.assistant.protocol.ItemStatus.SUCCESS
+        com.auracode.assistant.session.kernel.SessionActivityStatus.FAILED -> com.auracode.assistant.protocol.ItemStatus.FAILED
+        com.auracode.assistant.session.kernel.SessionActivityStatus.SKIPPED -> com.auracode.assistant.protocol.ItemStatus.SKIPPED
     }
 }
 

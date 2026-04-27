@@ -43,7 +43,7 @@ internal class CodexSkillsManagementAdapter(
 
     private suspend fun <T> withClient(
         cwd: String,
-        block: suspend (client: CodexAppServerClient) -> T,
+        block: suspend (client: CodexRuntimeClient) -> T,
     ): T {
         val resolution = environmentDetector.resolveForLaunch(
             configuredCodexPath = settings.getState().executablePathFor(CodexProviderFactory.ENGINE_ID),
@@ -54,14 +54,14 @@ internal class CodexSkillsManagementAdapter(
             "Configured Codex Runtime Path is not executable. Update Settings and try again."
         }
         val binary = resolution.codexPath.trim()
-        val process = createCodexAppServerProcess(
+        val process = createCodexRuntimeProcess(
             binary = binary,
             environmentOverrides = resolution.environmentOverrides,
             workingDirectory = File(cwd),
         )
         return try {
-            val session = CodexProcessAppServerSession(process, diagnosticLogger)
-            val client = CodexAppServerClient(session, diagnosticLogger)
+            val session = CodexProcessRuntimeSession(process, diagnosticLogger)
+            val client = CodexRuntimeClient(session, diagnosticLogger)
             session.start()
             withTimeout(APP_SERVER_HANDSHAKE_TIMEOUT_MS) {
                 session.initialize()

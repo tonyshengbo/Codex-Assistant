@@ -30,7 +30,7 @@ import com.auracode.assistant.toolwindow.shared.assistantUiTokens
 @Composable
 internal fun PendingQueueSection(
     p: DesignPalette,
-    submissions: List<PendingComposerSubmission>,
+    submissions: List<PendingSubmission>,
     onIntent: (UiIntent) -> Unit,
 ) {
     if (submissions.isEmpty()) return
@@ -61,7 +61,7 @@ internal fun PendingQueueSection(
 @Composable
 private fun PendingQueueRow(
     p: DesignPalette,
-    submission: PendingComposerSubmission,
+    submission: PendingSubmission,
     onCancel: () -> Unit,
 ) {
     val t = assistantUiTokens()

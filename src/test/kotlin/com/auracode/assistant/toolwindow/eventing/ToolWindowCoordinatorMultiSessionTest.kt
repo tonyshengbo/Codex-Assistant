@@ -13,18 +13,18 @@ import com.auracode.assistant.provider.claude.ClaudeModelCatalog
 import com.auracode.assistant.protocol.ItemKind
 import com.auracode.assistant.protocol.ItemStatus
 import com.auracode.assistant.protocol.TurnOutcome
-import com.auracode.assistant.protocol.UnifiedEvent
-import com.auracode.assistant.protocol.UnifiedItem
-import com.auracode.assistant.protocol.UnifiedToolUserInputPrompt
-import com.auracode.assistant.protocol.UnifiedToolUserInputQuestion
+import com.auracode.assistant.protocol.ProviderEvent
+import com.auracode.assistant.protocol.ProviderItem
+import com.auracode.assistant.protocol.ProviderToolUserInputPrompt
+import com.auracode.assistant.protocol.ProviderToolUserInputQuestion
 import com.auracode.assistant.service.AgentChatService
 import com.auracode.assistant.settings.AgentSettingsService
-import com.auracode.assistant.toolwindow.submission.ComposerAreaStore
-import com.auracode.assistant.toolwindow.shell.RightDrawerAreaStore
-import com.auracode.assistant.toolwindow.sessions.HeaderAreaStore
-import com.auracode.assistant.toolwindow.execution.StatusAreaStore
-import com.auracode.assistant.toolwindow.conversation.TimelineAreaStore
-import com.auracode.assistant.toolwindow.conversation.TimelineNode
+import com.auracode.assistant.toolwindow.submission.SubmissionAreaStore
+import com.auracode.assistant.toolwindow.shell.SidePanelAreaStore
+import com.auracode.assistant.toolwindow.sessions.SessionTabsAreaStore
+import com.auracode.assistant.toolwindow.execution.ExecutionStatusAreaStore
+import com.auracode.assistant.toolwindow.conversation.ConversationAreaStore
+import com.auracode.assistant.toolwindow.conversation.ConversationActivityItem
 import com.auracode.assistant.persistence.chat.SQLiteChatSessionRepository
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
@@ -42,9 +42,10 @@ class ToolWindowCoordinatorMultiSessionTest {
     @Test
     fun `selecting claude routes the next submission through claude provider`() {
         val harness = MultiEngineCoordinatorHarness()
+        harness.settleStartup()
 
         harness.eventHub.publishUiIntent(UiIntent.SelectEngine("claude"))
-        harness.waitUntil { harness.composerStore.state.value.selectedEngineId == "claude" }
+        harness.waitUntil { harness.submissionStore.state.value.selectedEngineId == "claude" }
 
         harness.eventHub.publishUiIntent(UiIntent.UpdateDocument(TextFieldValue("run-claude", TextRange(10))))
         harness.eventHub.publishUiIntent(UiIntent.SendPrompt)
@@ -61,6 +62,7 @@ class ToolWindowCoordinatorMultiSessionTest {
     @Test
     fun `selecting a different engine from a populated session keeps the same session and preserves draft state`() {
         val harness = MultiEngineCoordinatorHarness()
+        harness.settleStartup()
         val sentFile = harness.workingDir.resolve("sent.md")
         val draftFile = harness.workingDir.resolve("draft.md")
         Files.writeString(sentFile, "sent file")
@@ -72,9 +74,9 @@ class ToolWindowCoordinatorMultiSessionTest {
         harness.eventHub.publishUiIntent(UiIntent.AddAttachments(listOf(sentFile.toString())))
         harness.eventHub.publishUiIntent(UiIntent.SendPrompt)
         harness.waitUntil { harness.codexProvider.requests.size == 1 }
-        harness.codexProvider.emit("run-codex", UnifiedEvent.ThreadStarted(threadId = "thread-codex"))
-        harness.codexProvider.emit("run-codex", UnifiedEvent.TurnStarted(turnId = "turn-codex", threadId = "thread-codex"))
-        harness.codexProvider.emit("run-codex", UnifiedEvent.TurnCompleted(turnId = "turn-codex", outcome = TurnOutcome.SUCCESS))
+        harness.codexProvider.emit("run-codex", ProviderEvent.ThreadStarted(threadId = "thread-codex"))
+        harness.codexProvider.emit("run-codex", ProviderEvent.TurnStarted(turnId = "turn-codex", threadId = "thread-codex"))
+        harness.codexProvider.emit("run-codex", ProviderEvent.TurnCompleted(turnId = "turn-codex", outcome = TurnOutcome.SUCCESS))
         harness.waitUntil {
             harness.service.listSessions().first { it.id == originalSessionId }.messageCount == 1
         }
@@ -84,7 +86,7 @@ class ToolWindowCoordinatorMultiSessionTest {
         harness.eventHub.publishUiIntent(UiIntent.AddAttachments(listOf(draftFile.toString())))
 
         harness.eventHub.publishUiIntent(UiIntent.SelectEngine("claude"))
-        harness.waitUntil { harness.composerStore.state.value.selectedEngineId == "claude" }
+        harness.waitUntil { harness.submissionStore.state.value.selectedEngineId == "claude" }
         harness.waitUntil {
             harness.service.listSessions().first { it.id == originalSessionId }.providerId == "claude"
         }
@@ -98,14 +100,14 @@ class ToolWindowCoordinatorMultiSessionTest {
         assertEquals(null, currentSession.usageSnapshot)
         assertTrue(harness.openedSessionIds.isEmpty())
         harness.waitUntil {
-            harness.timelineStore.state.value.nodes.lastOrNull() is TimelineNode.EngineSwitchedNode
+            harness.conversationStore.state.value.nodes.lastOrNull() is ConversationActivityItem.EngineSwitchedNode
         }
-        val switchNode = harness.timelineStore.state.value.nodes.last() as TimelineNode.EngineSwitchedNode
+        val switchNode = harness.conversationStore.state.value.nodes.last() as ConversationActivityItem.EngineSwitchedNode
         assertEquals("Claude", switchNode.targetEngineLabel)
         assertTrue(switchNode.body.contains("Claude"))
-        assertEquals("draft-follow-up", harness.composerStore.state.value.document.text)
-        assertEquals(1, harness.composerStore.state.value.attachments.size)
-        assertTrue(harness.composerStore.state.value.contextEntries.any { it.path == draftFile.toString() })
+        assertEquals("draft-follow-up", harness.submissionStore.state.value.document.text)
+        assertEquals(1, harness.submissionStore.state.value.attachments.size)
+        assertTrue(harness.submissionStore.state.value.contextEntries.any { it.path == draftFile.toString() })
 
         harness.dispose()
     }
@@ -113,6 +115,7 @@ class ToolWindowCoordinatorMultiSessionTest {
     @Test
     fun `requesting engine switch on a populated session no longer opens a confirmation dialog`() {
         val harness = MultiEngineCoordinatorHarness()
+        harness.settleStartup()
 
         val originalSessionId = harness.service.getCurrentSessionId()
         harness.eventHub.publishUiIntent(UiIntent.UpdateDocument(TextFieldValue("run-codex", TextRange(9))))
@@ -123,7 +126,7 @@ class ToolWindowCoordinatorMultiSessionTest {
         }
 
         harness.eventHub.publishUiIntent(UiIntent.RequestEngineSwitch("claude"))
-        harness.waitUntil { harness.composerStore.state.value.engineSwitchConfirmation == null }
+        harness.waitUntil { harness.submissionStore.state.value.engineSwitchConfirmation == null }
 
         assertEquals(originalSessionId, harness.service.getCurrentSessionId())
         assertEquals("codex", harness.service.listSessions().first { it.id == originalSessionId }.providerId)
@@ -135,20 +138,24 @@ class ToolWindowCoordinatorMultiSessionTest {
     @Test
     fun `sending after an in-place engine switch starts a fresh remote conversation`() {
         val harness = MultiEngineCoordinatorHarness()
+        harness.settleStartup()
 
         harness.eventHub.publishUiIntent(UiIntent.UpdateDocument(TextFieldValue("run-codex", TextRange(9))))
         harness.eventHub.publishUiIntent(UiIntent.SendPrompt)
         harness.waitUntil { harness.codexProvider.requests.size == 1 }
-        harness.codexProvider.emit("run-codex", UnifiedEvent.ThreadStarted(threadId = "thread-codex"))
-        harness.codexProvider.emit("run-codex", UnifiedEvent.TurnStarted(turnId = "turn-codex", threadId = "thread-codex"))
-        harness.codexProvider.emit("run-codex", UnifiedEvent.TurnCompleted(turnId = "turn-codex", outcome = TurnOutcome.SUCCESS))
+        harness.codexProvider.emit("run-codex", ProviderEvent.ThreadStarted(threadId = "thread-codex"))
+        harness.codexProvider.emit("run-codex", ProviderEvent.TurnStarted(turnId = "turn-codex", threadId = "thread-codex"))
+        harness.codexProvider.emit("run-codex", ProviderEvent.TurnCompleted(turnId = "turn-codex", outcome = TurnOutcome.SUCCESS))
         harness.waitUntil {
             harness.service.listSessions().first { it.id == harness.service.getCurrentSessionId() }.remoteConversationId == "thread-codex"
         }
         harness.service.cancelSessionRun(harness.service.getCurrentSessionId())
 
         harness.eventHub.publishUiIntent(UiIntent.SelectEngine("claude"))
-        harness.waitUntil { harness.composerStore.state.value.selectedEngineId == "claude" }
+        harness.waitUntil { harness.submissionStore.state.value.selectedEngineId == "claude" }
+        harness.waitUntil {
+            harness.service.listSessions().first { it.id == harness.service.getCurrentSessionId() }.providerId == "claude"
+        }
 
         harness.eventHub.publishUiIntent(UiIntent.UpdateDocument(TextFieldValue("run-claude", TextRange(10))))
         harness.eventHub.publishUiIntent(UiIntent.SendPrompt)
@@ -162,13 +169,14 @@ class ToolWindowCoordinatorMultiSessionTest {
     @Test
     fun `switching engine while current session is running is ignored`() {
         val harness = MultiEngineCoordinatorHarness()
+        harness.settleStartup()
         val originalSessionId = harness.service.getCurrentSessionId()
 
         harness.eventHub.publishUiIntent(UiIntent.UpdateDocument(TextFieldValue("run-codex", TextRange(9))))
         harness.eventHub.publishUiIntent(UiIntent.SendPrompt)
         harness.waitUntil { harness.codexProvider.requests.size == 1 }
-        harness.codexProvider.emit("run-codex", UnifiedEvent.ThreadStarted(threadId = "thread-codex"))
-        harness.codexProvider.emit("run-codex", UnifiedEvent.TurnStarted(turnId = "turn-codex", threadId = "thread-codex"))
+        harness.codexProvider.emit("run-codex", ProviderEvent.ThreadStarted(threadId = "thread-codex"))
+        harness.codexProvider.emit("run-codex", ProviderEvent.TurnStarted(turnId = "turn-codex", threadId = "thread-codex"))
         harness.waitUntil {
             harness.service.listSessions().first { it.id == originalSessionId }.isRunning
         }
@@ -180,7 +188,7 @@ class ToolWindowCoordinatorMultiSessionTest {
         assertEquals("codex", currentSession.providerId)
         assertEquals("thread-codex", currentSession.remoteConversationId)
         assertTrue(
-            harness.timelineStore.state.value.nodes.none { it is TimelineNode.EngineSwitchedNode },
+            harness.conversationStore.state.value.nodes.none { it is ConversationActivityItem.EngineSwitchedNode },
         )
 
         harness.dispose()
@@ -189,17 +197,58 @@ class ToolWindowCoordinatorMultiSessionTest {
     @Test
     fun `switching engine on an empty session does not append engine switched marker`() {
         val harness = MultiEngineCoordinatorHarness()
+        harness.settleStartup()
         val originalSessionId = harness.service.getCurrentSessionId()
 
         harness.eventHub.publishUiIntent(UiIntent.SelectEngine("claude"))
-        harness.waitUntil { harness.composerStore.state.value.selectedEngineId == "claude" }
+        harness.waitUntil { harness.submissionStore.state.value.selectedEngineId == "claude" }
+        harness.waitUntil {
+            harness.service.listSessions().first { it.id == originalSessionId }.providerId == "claude"
+        }
 
         val currentSession = harness.service.listSessions().first { it.id == originalSessionId }
         assertEquals("claude", currentSession.providerId)
         assertEquals(0, currentSession.messageCount)
         assertTrue(
-            harness.timelineStore.state.value.nodes.none { it is TimelineNode.EngineSwitchedNode },
+            harness.conversationStore.state.value.nodes.none { it is ConversationActivityItem.EngineSwitchedNode },
         )
+
+        harness.dispose()
+    }
+
+    @Test
+    fun `engine switched marker survives session projection rebuild after tab switches`() {
+        val harness = MultiEngineCoordinatorHarness()
+        harness.settleStartup()
+        val originalSessionId = harness.service.getCurrentSessionId()
+
+        harness.eventHub.publishUiIntent(UiIntent.UpdateDocument(TextFieldValue("run-codex", TextRange(9))))
+        harness.eventHub.publishUiIntent(UiIntent.SendPrompt)
+        harness.waitUntil { harness.codexProvider.requests.size == 1 }
+        harness.codexProvider.emit("run-codex", ProviderEvent.ThreadStarted(threadId = "thread-codex"))
+        harness.codexProvider.emit("run-codex", ProviderEvent.TurnStarted(turnId = "turn-codex", threadId = "thread-codex"))
+        harness.codexProvider.emit("run-codex", ProviderEvent.TurnCompleted(turnId = "turn-codex", outcome = TurnOutcome.SUCCESS))
+        harness.waitUntil {
+            harness.service.listSessions().first { it.id == originalSessionId }.messageCount == 1
+        }
+        harness.service.cancelSessionRun(originalSessionId)
+
+        harness.eventHub.publishUiIntent(UiIntent.SelectEngine("claude"))
+        harness.waitUntil {
+            harness.conversationStore.state.value.nodes.lastOrNull() is ConversationActivityItem.EngineSwitchedNode
+        }
+
+        val secondSessionId = harness.createSession()
+        harness.eventHub.publishUiIntent(UiIntent.SwitchSession(secondSessionId))
+        harness.waitUntil { harness.service.getCurrentSessionId() == secondSessionId }
+        harness.eventHub.publishUiIntent(UiIntent.SwitchSession(originalSessionId))
+        harness.waitUntil { harness.service.getCurrentSessionId() == originalSessionId }
+
+        harness.waitUntil {
+            harness.conversationStore.state.value.nodes.lastOrNull() is ConversationActivityItem.EngineSwitchedNode
+        }
+        val switchNode = harness.conversationStore.state.value.nodes.last() as ConversationActivityItem.EngineSwitchedNode
+        assertEquals("Claude", switchNode.targetEngineLabel)
 
         harness.dispose()
     }
@@ -219,16 +268,16 @@ class ToolWindowCoordinatorMultiSessionTest {
 
         harness.provider.emit(
             prompt = "run-a",
-            event = UnifiedEvent.ThreadStarted(threadId = "thread-a"),
+            event = ProviderEvent.ThreadStarted(threadId = "thread-a"),
         )
         harness.provider.emit(
             prompt = "run-a",
-            event = UnifiedEvent.TurnStarted(turnId = "turn-a", threadId = "thread-a"),
+            event = ProviderEvent.TurnStarted(turnId = "turn-a", threadId = "thread-a"),
         )
         harness.provider.emit(
             prompt = "run-a",
-            event = UnifiedEvent.ItemUpdated(
-                UnifiedItem(
+            event = ProviderEvent.ItemUpdated(
+                ProviderItem(
                     id = "run-a:assistant",
                     kind = ItemKind.NARRATIVE,
                     status = ItemStatus.RUNNING,
@@ -238,19 +287,19 @@ class ToolWindowCoordinatorMultiSessionTest {
             ),
         )
         harness.waitUntil {
-            harness.timelineStore.state.value.nodes.filterIsInstance<TimelineNode.MessageNode>().any { it.text == "assistant-a" }
+            harness.conversationStore.state.value.nodes.filterIsInstance<ConversationActivityItem.MessageNode>().any { it.text == "assistant-a" }
         }
 
         harness.eventHub.publishUiIntent(UiIntent.SwitchSession(sessionB))
         harness.waitUntil { harness.chatService.getCurrentSessionId() == sessionB }
         harness.waitUntil {
-            harness.timelineStore.state.value.nodes.filterIsInstance<TimelineNode.MessageNode>().none { it.text == "assistant-a" }
+            harness.conversationStore.state.value.nodes.filterIsInstance<ConversationActivityItem.MessageNode>().none { it.text == "assistant-a" }
         }
 
         harness.provider.emit(
             prompt = "run-a",
-            event = UnifiedEvent.ItemUpdated(
-                UnifiedItem(
+            event = ProviderEvent.ItemUpdated(
+                ProviderItem(
                     id = "run-a:assistant",
                     kind = ItemKind.NARRATIVE,
                     status = ItemStatus.SUCCESS,
@@ -261,23 +310,23 @@ class ToolWindowCoordinatorMultiSessionTest {
         )
         harness.provider.emit(
             prompt = "run-a",
-            event = UnifiedEvent.TurnCompleted(turnId = "turn-a", outcome = TurnOutcome.SUCCESS),
+            event = ProviderEvent.TurnCompleted(turnId = "turn-a", outcome = TurnOutcome.SUCCESS),
         )
 
         Thread.sleep(150)
         assertTrue(
-            harness.timelineStore.state.value.nodes.filterIsInstance<TimelineNode.MessageNode>().none {
+            harness.conversationStore.state.value.nodes.filterIsInstance<ConversationActivityItem.MessageNode>().none {
                 it.text.contains("assistant-a", ignoreCase = true)
             },
         )
 
         harness.eventHub.publishUiIntent(UiIntent.SwitchSession(sessionA))
         harness.waitUntil {
-            harness.timelineStore.state.value.nodes.filterIsInstance<TimelineNode.MessageNode>().map { it.text } ==
+            harness.conversationStore.state.value.nodes.filterIsInstance<ConversationActivityItem.MessageNode>().map { it.text } ==
                 listOf("run-a", "assistant-a done")
         }
 
-        val messages = harness.timelineStore.state.value.nodes.filterIsInstance<TimelineNode.MessageNode>().map { it.text }
+        val messages = harness.conversationStore.state.value.nodes.filterIsInstance<ConversationActivityItem.MessageNode>().map { it.text }
         assertEquals(listOf("run-a", "assistant-a done"), messages)
 
         harness.dispose()
@@ -295,32 +344,65 @@ class ToolWindowCoordinatorMultiSessionTest {
         harness.eventHub.publishUiIntent(UiIntent.UpdateDocument(TextFieldValue("run-a-1", TextRange(7))))
         harness.eventHub.publishUiIntent(UiIntent.SendPrompt)
         harness.waitUntil { harness.provider.requests.size == 1 }
-        harness.provider.emit("run-a-1", UnifiedEvent.ThreadStarted(threadId = "thread-a"))
-        harness.provider.emit("run-a-1", UnifiedEvent.TurnStarted(turnId = "turn-a-1", threadId = "thread-a"))
+        harness.provider.emit("run-a-1", ProviderEvent.ThreadStarted(threadId = "thread-a"))
+        harness.provider.emit("run-a-1", ProviderEvent.TurnStarted(turnId = "turn-a-1", threadId = "thread-a"))
 
         harness.eventHub.publishUiIntent(UiIntent.UpdateDocument(TextFieldValue("run-a-2", TextRange(7))))
         harness.eventHub.publishUiIntent(UiIntent.SendPrompt)
-        harness.waitUntil { harness.composerStore.state.value.pendingSubmissions.size == 1 }
+        harness.waitUntil { harness.submissionStore.state.value.pendingSubmissions.size == 1 }
 
         harness.eventHub.publishUiIntent(UiIntent.SwitchSession(sessionB))
         harness.waitUntil {
             harness.chatService.getCurrentSessionId() == sessionB &&
-                harness.composerStore.state.value.currentSessionId == sessionB &&
-                harness.composerStore.state.value.pendingSubmissions.isEmpty()
+                harness.submissionStore.state.value.currentSessionId == sessionB &&
+                harness.submissionStore.state.value.pendingSubmissions.isEmpty()
         }
-        assertTrue(harness.composerStore.state.value.pendingSubmissions.isEmpty())
+        assertTrue(harness.submissionStore.state.value.pendingSubmissions.isEmpty())
 
-        harness.provider.emit("run-a-1", UnifiedEvent.TurnCompleted(turnId = "turn-a-1", outcome = TurnOutcome.SUCCESS))
+        harness.provider.emit("run-a-1", ProviderEvent.TurnCompleted(turnId = "turn-a-1", outcome = TurnOutcome.SUCCESS))
         harness.waitUntil { harness.provider.requests.size == 2 }
         assertEquals("run-a-2", harness.provider.requests.last().prompt)
         assertTrue(
-            harness.timelineStore.state.value.nodes.filterIsInstance<TimelineNode.MessageNode>().none { it.text == "run-a-2" },
+            harness.conversationStore.state.value.nodes.filterIsInstance<ConversationActivityItem.MessageNode>().none { it.text == "run-a-2" },
         )
 
         harness.eventHub.publishUiIntent(UiIntent.SwitchSession(sessionA))
         harness.waitUntil {
-            harness.timelineStore.state.value.nodes.filterIsInstance<TimelineNode.MessageNode>().any { it.text == "run-a-2" }
+            harness.conversationStore.state.value.nodes.filterIsInstance<ConversationActivityItem.MessageNode>().any { it.text == "run-a-2" }
         }
+
+        harness.dispose()
+    }
+
+    /** Verifies queued submissions survive session view restoration and stay scoped to their original session. */
+    @Test
+    fun `queued submission restores after switching away and back to the original session`() {
+        val harness = CoordinatorHarness()
+
+        val sessionA = harness.service.getCurrentSessionId()
+        val sessionB = harness.createSession()
+        harness.eventHub.publishUiIntent(UiIntent.SwitchSession(sessionA))
+        harness.waitUntil { harness.chatService.getCurrentSessionId() == sessionA }
+
+        harness.eventHub.publishUiIntent(UiIntent.UpdateDocument(TextFieldValue("run-a-1", TextRange(7))))
+        harness.eventHub.publishUiIntent(UiIntent.SendPrompt)
+        harness.waitUntil { harness.provider.requests.size == 1 }
+        harness.provider.emit("run-a-1", ProviderEvent.ThreadStarted(threadId = "thread-a"))
+        harness.provider.emit("run-a-1", ProviderEvent.TurnStarted(turnId = "turn-a-1", threadId = "thread-a"))
+
+        harness.eventHub.publishUiIntent(UiIntent.UpdateDocument(TextFieldValue("run-a-2", TextRange(7))))
+        harness.eventHub.publishUiIntent(UiIntent.SendPrompt)
+        harness.waitUntil { harness.submissionStore.state.value.pendingSubmissions.size == 1 }
+
+        harness.eventHub.publishUiIntent(UiIntent.SwitchSession(sessionB))
+        harness.waitUntil { harness.chatService.getCurrentSessionId() == sessionB }
+        harness.waitUntil { harness.submissionStore.state.value.pendingSubmissions.isEmpty() }
+
+        harness.eventHub.publishUiIntent(UiIntent.SwitchSession(sessionA))
+        harness.waitUntil { harness.chatService.getCurrentSessionId() == sessionA }
+        harness.waitUntil { harness.submissionStore.state.value.pendingSubmissions.size == 1 }
+
+        assertEquals("run-a-2", harness.submissionStore.state.value.pendingSubmissions.single().prompt)
 
         harness.dispose()
     }
@@ -337,11 +419,11 @@ class ToolWindowCoordinatorMultiSessionTest {
         harness.eventHub.publishUiIntent(UiIntent.UpdateDocument(TextFieldValue("run-a", TextRange(5))))
         harness.eventHub.publishUiIntent(UiIntent.SendPrompt)
         harness.waitUntil { harness.provider.requests.size == 1 }
-        harness.provider.emit("run-a", UnifiedEvent.ThreadStarted(threadId = "thread-a"))
-        harness.provider.emit("run-a", UnifiedEvent.TurnStarted(turnId = "turn-a", threadId = "thread-a"))
-        harness.provider.emit("run-a", UnifiedEvent.ToolUserInputRequested(backgroundPrompt()))
+        harness.provider.emit("run-a", ProviderEvent.ThreadStarted(threadId = "thread-a"))
+        harness.provider.emit("run-a", ProviderEvent.TurnStarted(turnId = "turn-a", threadId = "thread-a"))
+        harness.provider.emit("run-a", ProviderEvent.ToolUserInputRequested(backgroundPrompt()))
         harness.waitUntil {
-            harness.timelineStore.state.value.nodes.filterIsInstance<TimelineNode.UserInputNode>().any {
+            harness.conversationStore.state.value.nodes.filterIsInstance<ConversationActivityItem.UserInputNode>().any {
                 it.status == ItemStatus.RUNNING
             }
         }
@@ -349,16 +431,16 @@ class ToolWindowCoordinatorMultiSessionTest {
         harness.eventHub.publishUiIntent(UiIntent.SwitchSession(sessionB))
         harness.waitUntil {
             harness.chatService.getCurrentSessionId() == sessionB &&
-                harness.timelineStore.state.value.nodes.filterIsInstance<TimelineNode.UserInputNode>().none()
+                harness.conversationStore.state.value.nodes.filterIsInstance<ConversationActivityItem.UserInputNode>().none()
         }
-        assertFalse(harness.timelineStore.state.value.nodes.filterIsInstance<TimelineNode.UserInputNode>().any())
+        assertFalse(harness.conversationStore.state.value.nodes.filterIsInstance<ConversationActivityItem.UserInputNode>().any())
 
-        harness.provider.emit("run-a", UnifiedEvent.ToolUserInputResolved(requestId = "user-input-a"))
+        harness.provider.emit("run-a", ProviderEvent.ToolUserInputResolved(requestId = "user-input-a"))
         Thread.sleep(150)
 
         harness.eventHub.publishUiIntent(UiIntent.SwitchSession(sessionA))
         harness.waitUntil {
-            harness.timelineStore.state.value.nodes.filterIsInstance<TimelineNode.UserInputNode>().any {
+            harness.conversationStore.state.value.nodes.filterIsInstance<ConversationActivityItem.UserInputNode>().any {
                 it.status == ItemStatus.FAILED
             }
         }
@@ -366,14 +448,14 @@ class ToolWindowCoordinatorMultiSessionTest {
         harness.dispose()
     }
 
-    private fun backgroundPrompt(): UnifiedToolUserInputPrompt {
-        return UnifiedToolUserInputPrompt(
+    private fun backgroundPrompt(): ProviderToolUserInputPrompt {
+        return ProviderToolUserInputPrompt(
             requestId = "user-input-a",
             threadId = "thread-a",
             turnId = "turn-a",
             itemId = "call-a",
             questions = listOf(
-                UnifiedToolUserInputQuestion(
+                ProviderToolUserInputQuestion(
                     id = "target",
                     header = "Target",
                     question = "Where should this run?",
@@ -417,18 +499,18 @@ class ToolWindowCoordinatorMultiSessionTest {
             workingDirectoryProvider = { workingDir.toString() },
         )
         val eventHub = ToolWindowEventHub()
-        val timelineStore = TimelineAreaStore()
-        val composerStore = ComposerAreaStore()
+        val conversationStore = ConversationAreaStore()
+        val submissionStore = SubmissionAreaStore()
         val chatService: AgentChatService = service
         private val coordinator = ToolWindowCoordinator(
             chatService = service,
             settingsService = settings,
             eventHub = eventHub,
-            headerStore = HeaderAreaStore(),
-            statusStore = StatusAreaStore(),
-            timelineStore = timelineStore,
-            composerStore = composerStore,
-            rightDrawerStore = RightDrawerAreaStore(),
+            sessionTabsStore = SessionTabsAreaStore(),
+            executionStatusStore = ExecutionStatusAreaStore(),
+            conversationStore = conversationStore,
+            submissionStore = submissionStore,
+            sidePanelStore = SidePanelAreaStore(),
             historyPageSize = 10,
         )
 
@@ -459,7 +541,7 @@ class ToolWindowCoordinatorMultiSessionTest {
         val codexProvider = RecordingMultiSessionProvider()
         val claudeProvider = RecordingMultiSessionProvider()
         val openedSessionIds = CopyOnWriteArrayList<String>()
-        val timelineStore = TimelineAreaStore()
+        val conversationStore = ConversationAreaStore()
         private val settings = AgentSettingsService().apply { loadState(AgentSettingsService.State()) }
         val service = AgentChatService(
             repository = SQLiteChatSessionRepository(workingDir.resolve("chat.db")),
@@ -504,16 +586,16 @@ class ToolWindowCoordinatorMultiSessionTest {
             workingDirectoryProvider = { workingDir.toString() },
         )
         val eventHub = ToolWindowEventHub()
-        val composerStore = ComposerAreaStore()
+        val submissionStore = SubmissionAreaStore()
         private val coordinator = ToolWindowCoordinator(
             chatService = service,
             settingsService = settings,
             eventHub = eventHub,
-            headerStore = HeaderAreaStore(),
-            statusStore = StatusAreaStore(),
-            timelineStore = timelineStore,
-            composerStore = composerStore,
-            rightDrawerStore = RightDrawerAreaStore(),
+            sessionTabsStore = SessionTabsAreaStore(),
+            executionStatusStore = ExecutionStatusAreaStore(),
+            conversationStore = conversationStore,
+            submissionStore = submissionStore,
+            sidePanelStore = SidePanelAreaStore(),
             openSessionInNewTab = { sessionId ->
                 openedSessionIds += sessionId
                 true
@@ -531,6 +613,14 @@ class ToolWindowCoordinatorMultiSessionTest {
             }
         }
 
+        fun settleStartup() {
+            Thread.sleep(150)
+        }
+
+        fun createSession(): String {
+            return service.createSession()
+        }
+
         fun dispose() {
             coordinator.dispose()
             service.dispose()
@@ -539,7 +629,7 @@ class ToolWindowCoordinatorMultiSessionTest {
 
     private class RecordingMultiSessionProvider : AgentProvider {
         val requests = CopyOnWriteArrayList<AgentRequest>()
-        private val sinks = ConcurrentHashMap<String, kotlinx.coroutines.channels.SendChannel<UnifiedEvent>>()
+        private val sinks = ConcurrentHashMap<String, kotlinx.coroutines.channels.SendChannel<com.auracode.assistant.session.kernel.SessionDomainEvent>>()
 
         override fun capabilities(): ConversationCapabilities = ConversationCapabilities(
             supportsStructuredHistory = false,
@@ -552,7 +642,7 @@ class ToolWindowCoordinatorMultiSessionTest {
             supportsImageInputs = true,
         )
 
-        override fun stream(request: AgentRequest): Flow<UnifiedEvent> = callbackFlow {
+        override fun stream(request: AgentRequest): kotlinx.coroutines.flow.Flow<com.auracode.assistant.session.kernel.SessionDomainEvent> = callbackFlow {
             requests += request
             sinks[request.prompt] = channel
             awaitClose {
@@ -560,8 +650,11 @@ class ToolWindowCoordinatorMultiSessionTest {
             }
         }
 
-        fun emit(prompt: String, event: UnifiedEvent) {
-            checkNotNull(sinks[prompt]) { "No active stream for prompt '$prompt'" }.trySend(event)
+        fun emit(prompt: String, event: ProviderEvent) {
+            com.auracode.assistant.test.trySendProviderEvent(
+                checkNotNull(sinks[prompt]) { "No active stream for prompt '$prompt'" },
+                event,
+            )
         }
 
         override fun cancel(requestId: String) = Unit

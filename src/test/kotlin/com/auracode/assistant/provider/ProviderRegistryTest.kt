@@ -1,6 +1,6 @@
 package com.auracode.assistant.provider
 
-import com.auracode.assistant.protocol.UnifiedEvent
+import com.auracode.assistant.protocol.ProviderEvent
 import com.auracode.assistant.settings.AgentSettingsService
 import com.auracode.assistant.provider.claude.ClaudeModelCatalog
 import com.auracode.assistant.provider.codex.CodexModelCatalog
@@ -60,22 +60,22 @@ class ProviderRegistryTest {
     fun `settings persist selected model per engine`() {
         val settings = AgentSettingsService().apply { loadState(AgentSettingsService.State()) }
 
-        settings.setSelectedComposerModel(engineId = "claude", model = "claude-sonnet-4-5")
-        settings.setSelectedComposerModel(engineId = "codex", model = "gpt-5.4")
+        settings.setSelectedSubmissionModel(engineId = "claude", model = "claude-sonnet-4-5")
+        settings.setSelectedSubmissionModel(engineId = "codex", model = "gpt-5.4")
 
-        assertEquals("claude-sonnet-4-6", settings.selectedComposerModel("claude"))
-        assertEquals("gpt-5.4", settings.selectedComposerModel("codex"))
+        assertEquals("claude-sonnet-4-6", settings.selectedSubmissionModel("claude"))
+        assertEquals("gpt-5.4", settings.selectedSubmissionModel("codex"))
     }
 
     @Test
     fun `settings migrate legacy curated claude model ids to current replacements`() {
         val settings = AgentSettingsService().apply { loadState(AgentSettingsService.State()) }
 
-        settings.setSelectedComposerModel(engineId = "claude", model = "claude-opus-4-1")
-        assertEquals("claude-opus-4-6", settings.selectedComposerModel("claude"))
+        settings.setSelectedSubmissionModel(engineId = "claude", model = "claude-opus-4-1")
+        assertEquals("claude-opus-4-6", settings.selectedSubmissionModel("claude"))
 
-        settings.setSelectedComposerModel(engineId = "claude", model = "claude-haiku-4-5")
-        assertEquals("claude-haiku-4-5-20251001", settings.selectedComposerModel("claude"))
+        settings.setSelectedSubmissionModel(engineId = "claude", model = "claude-haiku-4-5")
+        assertEquals("claude-haiku-4-5-20251001", settings.selectedSubmissionModel("claude"))
     }
 
     @Test
@@ -132,7 +132,7 @@ class ProviderRegistryTest {
                     override val engineId: String = "codex"
                     override fun create(): AgentProvider = object : AgentProvider {
                         override fun stream(request: com.auracode.assistant.model.AgentRequest) =
-                            kotlinx.coroutines.flow.emptyFlow<UnifiedEvent>()
+                            com.auracode.assistant.test.emptySessionDomainEventFlow()
 
                         override fun cancel(requestId: String) = Unit
                     }

@@ -7,8 +7,8 @@ import com.auracode.assistant.provider.AgentProviderFactory
 import com.auracode.assistant.provider.EngineCapabilities
 import com.auracode.assistant.provider.EngineDescriptor
 import com.auracode.assistant.provider.ProviderRegistry
-import com.auracode.assistant.protocol.UnifiedEvent
-import com.auracode.assistant.protocol.UnifiedToolUserInputAnswerDraft
+import com.auracode.assistant.protocol.ProviderEvent
+import com.auracode.assistant.protocol.ProviderToolUserInputAnswerDraft
 import com.auracode.assistant.settings.AgentSettingsService
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emptyFlow
@@ -27,7 +27,7 @@ class AgentChatServiceToolUserInputTest {
         val submitted = service.submitToolUserInput(
             requestId = "request-1",
             answers = mapOf(
-                "builder_demo_target" to UnifiedToolUserInputAnswerDraft(
+                "builder_demo_target" to ProviderToolUserInputAnswerDraft(
                     answers = listOf("Reuse existing demo"),
                 ),
             ),
@@ -36,7 +36,7 @@ class AgentChatServiceToolUserInputTest {
         assertTrue(submitted)
         assertEquals(
             "request-1" to mapOf(
-                "builder_demo_target" to UnifiedToolUserInputAnswerDraft(
+                "builder_demo_target" to ProviderToolUserInputAnswerDraft(
                     answers = listOf("Reuse existing demo"),
                 ),
             ),
@@ -79,13 +79,13 @@ class AgentChatServiceToolUserInputTest {
     }
 
     private class RecordingToolUserInputProvider : AgentProvider {
-        val submissions = mutableListOf<Pair<String, Map<String, UnifiedToolUserInputAnswerDraft>>>()
+        val submissions = mutableListOf<Pair<String, Map<String, ProviderToolUserInputAnswerDraft>>>()
 
-        override fun stream(request: AgentRequest): Flow<UnifiedEvent> = emptyFlow()
+        override fun stream(request: AgentRequest): kotlinx.coroutines.flow.Flow<com.auracode.assistant.session.kernel.SessionDomainEvent> = com.auracode.assistant.test.emptySessionDomainEventFlow()
 
         override fun submitToolUserInput(
             requestId: String,
-            answers: Map<String, UnifiedToolUserInputAnswerDraft>,
+            answers: Map<String, ProviderToolUserInputAnswerDraft>,
         ): Boolean {
             submissions += requestId to answers
             return true

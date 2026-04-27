@@ -15,7 +15,7 @@ data class EngineDescriptor(
     val capabilities: EngineCapabilities,
 )
 
-interface AgentProviderFactory {
+internal interface AgentProviderFactory {
     val engineId: String
     fun create(): AgentProvider
 }

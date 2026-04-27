@@ -10,7 +10,7 @@ import androidx.compose.ui.unit.sp
  * stay readable in narrow tool window layouts without scattering hard-coded
  * values across the Compose tree.
  */
-internal data class TurnStatusAppearanceSpec(
+internal data class ExecutionTurnStatusAppearanceSpec(
     val minHeight: Dp,
     val indicatorSize: Dp,
     val labelFontSize: TextUnit,
@@ -19,8 +19,8 @@ internal data class TurnStatusAppearanceSpec(
     val elapsedChipAlpha: Float,
 )
 
-internal fun turnStatusAppearanceSpec(): TurnStatusAppearanceSpec {
-    return TurnStatusAppearanceSpec(
+internal fun executionTurnStatusAppearanceSpec(): ExecutionTurnStatusAppearanceSpec {
+    return ExecutionTurnStatusAppearanceSpec(
         minHeight = 32.dp,
         indicatorSize = 16.dp,
         labelFontSize = 13.sp,

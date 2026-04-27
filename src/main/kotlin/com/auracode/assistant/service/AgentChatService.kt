@@ -19,19 +19,16 @@ import com.auracode.assistant.model.MessageRole
 import com.auracode.assistant.model.TurnUsageSnapshot
 import com.auracode.assistant.persistence.chat.ChatSessionRepository
 import com.auracode.assistant.persistence.chat.PersistedMessageAttachment
-import com.auracode.assistant.persistence.chat.PersistedSessionAsset
 import com.auracode.assistant.persistence.chat.PersistedChatSession
 import com.auracode.assistant.persistence.chat.SQLiteChatSessionRepository
-import com.auracode.assistant.protocol.ItemKind
 import com.auracode.assistant.protocol.ItemStatus
-import com.auracode.assistant.protocol.TurnUsage
-import com.auracode.assistant.protocol.UnifiedEvent
-import com.auracode.assistant.protocol.UnifiedItem
-import com.auracode.assistant.protocol.UnifiedMessageAttachment
-import com.auracode.assistant.protocol.UnifiedToolUserInputAnswerDraft
+import com.auracode.assistant.protocol.ProviderToolUserInputAnswerDraft
 import com.auracode.assistant.provider.CodexProviderFactory
 import com.auracode.assistant.provider.EngineDescriptor
 import com.auracode.assistant.provider.ProviderRegistry
+import com.auracode.assistant.session.kernel.SessionMessageAttachment
+import com.auracode.assistant.session.kernel.SessionDomainEvent
+import com.auracode.assistant.session.kernel.SessionMessageRole
 import com.auracode.assistant.settings.AgentSettingsService
 import com.auracode.assistant.toolwindow.execution.ApprovalAction
 import com.intellij.execution.configurations.GeneralCommandLine
@@ -474,6 +471,15 @@ class AgentChatService private constructor(
         val attachments: List<PersistedMessageAttachment>,
     )
 
+    /**
+     * Stores one history replay page already normalized into session domain events.
+     */
+    internal data class SessionHistoryReplayPage(
+        val events: List<SessionDomainEvent>,
+        val hasOlder: Boolean,
+        val olderCursor: String?,
+    )
+
     internal fun recordUserMessage(
         sessionId: String = getCurrentSessionId(),
         prompt: String,
@@ -502,7 +508,7 @@ class AgentChatService private constructor(
         )
     }
 
-    fun runAgent(
+    internal fun runAgent(
         sessionId: String = getCurrentSessionId(),
         engineId: String,
         model: String,
@@ -516,7 +522,7 @@ class AgentChatService private constructor(
         approvalMode: AgentApprovalMode = AgentApprovalMode.AUTO,
         collaborationMode: AgentCollaborationMode = AgentCollaborationMode.DEFAULT,
         onTurnPersisted: () -> Unit = {},
-        onUnifiedEvent: (UnifiedEvent) -> Unit = {},
+        onSessionDomainEvents: (List<SessionDomainEvent>) -> Unit = {},
         onRunStateChanged: () -> Unit = {},
     ) {
         cancelSessionRun(sessionId)
@@ -557,23 +563,24 @@ class AgentChatService private constructor(
             val countedAssistantItems = mutableSetOf<String>()
             try {
                 runCatching {
-                    provider.stream(request).collect { unified ->
+                    provider.stream(request).collect { event ->
                         if (!shouldAcceptRunEvent(sessionId = sessionId, requestId = request.requestId)) {
                             return@collect
                         }
-                        val normalizedEvent = normalizeUnifiedEvent(engineId, unified)
+                        val normalizedEvent = normalizeDomainEventForPresentation(engineId, event)
                         collectAssistantOutput(normalizedEvent, assistantBuffer)
-                        val persistResult = persistUnifiedEvent(
+                        val persistResult = persistDomainEvent(
                             sessionId = sessionId,
                             activeTurnId = activeTurnId,
                             event = normalizedEvent,
+                            model = resolvedModel ?: model,
+                            engineId = engineId,
                         )
                         activeTurnId = persistResult.turnId
-                        if (normalizedEvent is UnifiedEvent.ItemUpdated &&
-                            normalizedEvent.item.kind == ItemKind.NARRATIVE &&
-                            narrativeRole(normalizedEvent.item) == MessageRole.ASSISTANT &&
+                        if (normalizedEvent is SessionDomainEvent.MessageAppended &&
+                            normalizedEvent.role == SessionMessageRole.ASSISTANT &&
                             assistantBuffer.isNotBlank() &&
-                            countedAssistantItems.add(normalizedEvent.item.id)
+                            countedAssistantItems.add(normalizedEvent.messageId)
                         ) {
                             synchronized(stateLock) {
                                 sessions[sessionId]?.applyMessage(
@@ -586,18 +593,7 @@ class AgentChatService private constructor(
                             }
                             persistSessionSnapshot(sessionId)
                         }
-                        if (normalizedEvent is UnifiedEvent.ThreadTokenUsageUpdated) {
-                            updateCurrentUsageSnapshot(
-                                sessionId = sessionId,
-                                model = resolvedModel ?: model,
-                                contextWindow = normalizedEvent.contextWindow,
-                                inputTokens = normalizedEvent.inputTokens,
-                                cachedInputTokens = normalizedEvent.cachedInputTokens,
-                                outputTokens = normalizedEvent.outputTokens,
-                                engineId = engineId,
-                            )
-                        }
-                        onUnifiedEvent(normalizedEvent)
+                        onSessionDomainEvents(listOf(normalizedEvent))
                     }
                     onTurnPersisted()
                 }.onFailure { error ->
@@ -610,7 +606,7 @@ class AgentChatService private constructor(
                             error,
                         )
                     }
-                    onUnifiedEvent(normalizeThrowableAsUnifiedError(engineId, error))
+                    onSessionDomainEvents(listOf(normalizeThrowableAsSessionError(engineId, error)))
                 }
             } finally {
                 synchronized(stateLock) {
@@ -627,6 +623,30 @@ class AgentChatService private constructor(
             sessionRuns.replaceRun(sessionId, request.requestId, job)
         }
         onRunStateChanged()
+    }
+
+    /**
+     * Loads the current remote conversation history and normalizes it for kernel replay.
+     */
+    internal suspend fun loadCurrentConversationReplay(limit: Int): SessionHistoryReplayPage {
+        val page = loadCurrentConversationHistory(limit)
+        return SessionHistoryReplayPage(
+            events = page.events,
+            hasOlder = page.hasOlder,
+            olderCursor = page.olderCursor,
+        )
+    }
+
+    /**
+     * Loads one older history page and normalizes it for kernel prepend replay.
+     */
+    internal suspend fun loadOlderConversationReplay(cursor: String, limit: Int): SessionHistoryReplayPage {
+        val page = loadOlderConversationHistory(cursor, limit)
+        return SessionHistoryReplayPage(
+            events = page.events,
+            hasOlder = page.hasOlder,
+            olderCursor = page.olderCursor,
+        )
     }
 
     fun cancelCurrent() {
@@ -652,7 +672,7 @@ class AgentChatService private constructor(
 
     fun submitToolUserInput(
         requestId: String,
-        answers: Map<String, UnifiedToolUserInputAnswerDraft>,
+        answers: Map<String, ProviderToolUserInputAnswerDraft>,
     ): Boolean {
         return registry.submitToolUserInput(requestId, answers)
     }
@@ -733,55 +753,51 @@ class AgentChatService private constructor(
     }
 
     private fun collectAssistantOutput(
-        event: UnifiedEvent,
+        event: SessionDomainEvent,
         assistantBuffer: StringBuilder,
     ) {
         when (event) {
-            is UnifiedEvent.ItemUpdated -> {
-                val item = event.item
-                if (item.kind == ItemKind.NARRATIVE &&
-                    narrativeRole(item) == MessageRole.ASSISTANT &&
-                    !item.text.isNullOrBlank()
-                ) {
-                    assistantBuffer.clear()
-                    assistantBuffer.append(item.text)
-                }
+            is SessionDomainEvent.MessageAppended -> if (
+                event.role == SessionMessageRole.ASSISTANT &&
+                event.text.isNotBlank()
+            ) {
+                assistantBuffer.clear()
+                assistantBuffer.append(event.text)
             }
             else -> Unit
         }
     }
 
-    private fun persistUnifiedEvent(
+    private fun persistDomainEvent(
         sessionId: String,
         activeTurnId: String,
-        event: UnifiedEvent,
+        event: SessionDomainEvent,
+        model: String?,
+        engineId: String,
     ): PersistResult {
         var nextTurnId = activeTurnId
         when (event) {
-            is UnifiedEvent.SubagentsUpdated -> Unit
-            is UnifiedEvent.ApprovalRequested -> Unit
-            is UnifiedEvent.ToolUserInputRequested -> Unit
-            is UnifiedEvent.ToolUserInputResolved -> Unit
-            is UnifiedEvent.ThreadStarted -> updateCurrentRemoteConversationId(sessionId, event.threadId)
-            is UnifiedEvent.ThreadTokenUsageUpdated -> Unit
-            is UnifiedEvent.TurnDiffUpdated -> Unit
-            is UnifiedEvent.RunningPlanUpdated -> Unit
-            is UnifiedEvent.TurnStarted -> {
+            is SessionDomainEvent.ThreadStarted -> updateCurrentRemoteConversationId(sessionId, event.threadId)
+            is SessionDomainEvent.UsageUpdated -> {
+                updateCurrentUsageSnapshot(
+                    sessionId = sessionId,
+                    model = event.model ?: model,
+                    contextWindow = event.contextWindow,
+                    inputTokens = event.inputTokens,
+                    cachedInputTokens = event.cachedInputTokens,
+                    outputTokens = event.outputTokens,
+                    engineId = engineId,
+                )
+            }
+            is SessionDomainEvent.TurnStarted -> {
                 val incoming = event.turnId.trim()
                 if (incoming.isNotBlank()) {
                     repository.replaceSessionAssetTurnId(sessionId, nextTurnId, incoming)
                     nextTurnId = incoming
                 }
             }
-
-            is UnifiedEvent.ItemUpdated -> {
-                val item = event.item
-                if (item.kind == ItemKind.NARRATIVE && narrativeRole(item) == MessageRole.USER) {
-                    // user messages are restored from remote history but not duplicated into local persistence
-                }
-            }
-            is UnifiedEvent.TurnCompleted -> if (event.turnId.isNotBlank()) nextTurnId = event.turnId
-            is UnifiedEvent.Error -> Unit
+            is SessionDomainEvent.TurnCompleted -> if (event.turnId.isNotBlank()) nextTurnId = event.turnId
+            else -> Unit
         }
         return PersistResult(
             turnId = nextTurnId,
@@ -852,18 +868,27 @@ class AgentChatService private constructor(
         return if (engineId == "codex") trimmed.ifBlank { null } else trimmed.ifBlank { null }
     }
 
-    private fun normalizeUnifiedEvent(engineId: String, event: UnifiedEvent): UnifiedEvent {
-        if (event is UnifiedEvent.Error) {
-            val normalizedMessage = engineLaunchErrorPresenter.present(engineId, event.message) ?: event.message
-            return event.copy(message = normalizedMessage)
-        }
-        return event
-    }
-
-    private fun normalizeThrowableAsUnifiedError(engineId: String, error: Throwable): UnifiedEvent.Error {
+    private fun normalizeThrowableAsSessionError(engineId: String, error: Throwable): SessionDomainEvent.ErrorAppended {
         val rawMessage = error.message.orEmpty().ifBlank { error::class.java.simpleName }
         val normalizedMessage = engineLaunchErrorPresenter.present(engineId, rawMessage) ?: rawMessage
-        return UnifiedEvent.Error(normalizedMessage)
+        return SessionDomainEvent.ErrorAppended(
+            itemId = "service-error:${UUID.randomUUID()}",
+            turnId = null,
+            message = normalizedMessage,
+            terminal = true,
+        )
+    }
+
+    /** Normalizes provider-emitted runtime launch failures so direct domain ingress preserves existing UX. */
+    private fun normalizeDomainEventForPresentation(
+        engineId: String,
+        event: SessionDomainEvent,
+    ): SessionDomainEvent {
+        if (event !is SessionDomainEvent.ErrorAppended) {
+            return event
+        }
+        val normalizedMessage = engineLaunchErrorPresenter.present(engineId, event.message) ?: return event
+        return event.copy(message = normalizedMessage)
     }
 
     private fun PersistedChatSession.toSessionData(): SessionData {
@@ -920,14 +945,6 @@ class AgentChatService private constructor(
         val turnId: String,
     )
 
-    private fun narrativeRole(item: UnifiedItem): MessageRole {
-        return when (item.name) {
-            "user_message" -> MessageRole.USER
-            "system_message" -> MessageRole.SYSTEM
-            else -> MessageRole.ASSISTANT
-        }
-    }
-
     private fun ConversationHistoryPage.attachLocalAssets(sessionId: String): ConversationHistoryPage {
         if (events.isEmpty()) return this
         val assetsByTurn = repository.loadSessionAssets(sessionId)
@@ -935,7 +952,7 @@ class AgentChatService private constructor(
             .groupBy { it.turnId }
             .mapValues { (_, value) ->
                 value.map { asset ->
-                    UnifiedMessageAttachment(
+                    SessionMessageAttachment(
                         id = asset.attachment.id,
                         kind = asset.attachment.kind.name.lowercase(),
                         displayName = asset.attachment.displayName,
@@ -943,7 +960,7 @@ class AgentChatService private constructor(
                         originalPath = asset.attachment.originalPath,
                         mimeType = asset.attachment.mimeType,
                         sizeBytes = asset.attachment.sizeBytes,
-                        status = asset.attachment.status,
+                        status = asset.attachment.status.toSessionActivityStatus(),
                     )
                 }
             }
@@ -952,20 +969,19 @@ class AgentChatService private constructor(
         return copy(
             events = events.map { event ->
                 when (event) {
-                    is UnifiedEvent.TurnStarted -> {
+                    is SessionDomainEvent.TurnStarted -> {
                         activeTurnId = event.turnId
                         event
                     }
-                    is UnifiedEvent.ItemUpdated -> {
+                    is SessionDomainEvent.MessageAppended -> {
                         val turnId = activeTurnId
                         if (
-                            event.item.kind == ItemKind.NARRATIVE &&
-                            narrativeRole(event.item) == MessageRole.USER &&
+                            event.role == SessionMessageRole.USER &&
                             !turnId.isNullOrBlank()
                         ) {
                             val attachments = assetsByTurn[turnId].orEmpty()
                             if (attachments.isNotEmpty()) {
-                                event.copy(item = event.item.copy(attachments = attachments))
+                                event.copy(attachments = attachments)
                             } else {
                                 event
                             }
@@ -982,5 +998,15 @@ class AgentChatService private constructor(
     private fun ConversationHistoryPage.attachLocalAssetsIfAvailable(sessionId: String?): ConversationHistoryPage {
         if (sessionId.isNullOrBlank()) return this
         return attachLocalAssets(sessionId)
+    }
+
+    /** Maps persisted attachment status into the session-domain activity status enum. */
+    private fun ItemStatus.toSessionActivityStatus(): com.auracode.assistant.session.kernel.SessionActivityStatus {
+        return when (this) {
+            ItemStatus.RUNNING -> com.auracode.assistant.session.kernel.SessionActivityStatus.RUNNING
+            ItemStatus.SUCCESS -> com.auracode.assistant.session.kernel.SessionActivityStatus.SUCCESS
+            ItemStatus.FAILED -> com.auracode.assistant.session.kernel.SessionActivityStatus.FAILED
+            ItemStatus.SKIPPED -> com.auracode.assistant.session.kernel.SessionActivityStatus.SKIPPED
+        }
     }
 }

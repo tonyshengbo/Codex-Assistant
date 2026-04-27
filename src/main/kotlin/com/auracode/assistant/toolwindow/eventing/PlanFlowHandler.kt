@@ -3,98 +3,68 @@ package com.auracode.assistant.toolwindow.eventing
 import com.auracode.assistant.i18n.AuraCodeBundle
 import com.auracode.assistant.model.AgentApprovalMode
 import com.auracode.assistant.model.AgentCollaborationMode
-import com.auracode.assistant.model.MessageRole
 import com.auracode.assistant.protocol.TurnOutcome
-import com.auracode.assistant.protocol.UnifiedEvent
 import com.auracode.assistant.session.kernel.SessionActivityStatus
 import com.auracode.assistant.session.kernel.SessionApprovalDecision
 import com.auracode.assistant.session.kernel.SessionDomainEvent
+import com.auracode.assistant.session.kernel.SessionTurnOutcome
 import com.auracode.assistant.toolwindow.execution.ApprovalAction
-import com.auracode.assistant.toolwindow.submission.ComposerRunningPlanState
-import com.auracode.assistant.toolwindow.submission.ComposerRunningPlanStep
-import com.auracode.assistant.toolwindow.submission.ComposerRunningPlanStepStatus
 import com.auracode.assistant.toolwindow.execution.PlanCompletionPromptUiModel
-import com.auracode.assistant.toolwindow.conversation.TimelineMutation
 import com.auracode.assistant.toolwindow.execution.toSubmissionAnswers
 
 internal class PlanFlowHandler(
     private val context: ToolWindowCoordinatorContext,
     private val executeApprovedPlanPrompt: String,
 ) {
-    fun handleUnifiedEvent(sessionId: String, event: UnifiedEvent) {
-        when (event) {
-            is UnifiedEvent.ThreadStarted -> {
-                context.activePlanRunContexts[sessionId]?.apply {
-                    threadId = event.threadId
+    /** Applies domain-level turn/progress events needed by the plan-mode control flow. */
+    fun handleSessionDomainEvents(sessionId: String, events: List<SessionDomainEvent>) {
+        events.forEach { event ->
+            when (event) {
+                is SessionDomainEvent.ThreadStarted -> {
+                    context.activePlanRunContexts[sessionId]?.threadId = event.threadId
                 }
-            }
 
-            is UnifiedEvent.TurnStarted -> {
-                context.activePlanRunContexts[sessionId]?.apply {
-                    remoteTurnId = event.turnId
-                    threadId = event.threadId ?: threadId
-                }
-            }
-
-            is UnifiedEvent.ThreadTokenUsageUpdated -> {
-                context.publishSessionSnapshot()
-            }
-
-            is UnifiedEvent.TurnDiffUpdated -> {
-                context.dispatchSessionEvent(
-                    sessionId,
-                    AppEvent.TurnDiffUpdated(
-                        threadId = event.threadId,
-                        turnId = event.turnId,
-                        diff = event.diff,
-                    ),
-                )
-            }
-
-            is UnifiedEvent.RunningPlanUpdated -> {
-                context.activePlanRunContexts[sessionId]?.apply {
-                    latestPlanBody = event.body.trim().takeIf { it.isNotBlank() } ?: latestPlanBody
-                    threadId = event.threadId ?: threadId
-                    remoteTurnId = event.turnId.takeIf { it.isNotBlank() } ?: remoteTurnId
-                }
-            }
-
-            is UnifiedEvent.ItemUpdated -> {
-                val planContext = context.activePlanRunContexts[sessionId]
-                if (event.item.kind == com.auracode.assistant.protocol.ItemKind.PLAN_UPDATE) {
-                    // Codex 风格：通过专用 PLAN_UPDATE 类型传递计划内容
-                    planContext?.apply {
-                        latestPlanBody = event.item.text?.trim()?.takeIf { it.isNotBlank() } ?: latestPlanBody
+                is SessionDomainEvent.TurnStarted -> {
+                    context.activePlanRunContexts[sessionId]?.apply {
+                        remoteTurnId = event.turnId
+                        threadId = event.threadId ?: threadId
                     }
                 }
-            }
 
-            is UnifiedEvent.TurnCompleted -> {
-                context.dispatchSessionEvent(sessionId, AppEvent.ClearApprovals)
-                context.dispatchSessionEvent(sessionId, AppEvent.ClearToolUserInputs)
-                notifyBackgroundCompletionIfNeeded(sessionId, event)
-                if (!handlePlanTurnCompleted(sessionId, event)) {
-                    clearRunningPlanIfNeeded(sessionId, event)
+                is SessionDomainEvent.UsageUpdated -> {
+                    context.publishSessionSnapshot()
                 }
-            }
 
-            else -> Unit
-        }
-        when (event) {
-            is UnifiedEvent.TurnCompleted,
-            -> context.publishSessionSnapshot()
-            else -> Unit
+                is SessionDomainEvent.RunningPlanUpdated -> {
+                    context.activePlanRunContexts[sessionId]?.apply {
+                        latestPlanBody = event.plan.body.trim().takeIf { it.isNotBlank() } ?: latestPlanBody
+                        remoteTurnId = event.plan.turnId?.takeIf { it.isNotBlank() } ?: remoteTurnId
+                    }
+                }
+
+                is SessionDomainEvent.TurnCompleted -> {
+                    context.dispatchSessionEvent(sessionId, AppEvent.ClearApprovals)
+                    context.dispatchSessionEvent(sessionId, AppEvent.ClearToolUserInputs)
+                    notifyBackgroundCompletionIfNeeded(sessionId, event)
+                    if (!handlePlanTurnCompleted(sessionId, event)) {
+                        clearRunningPlanIfNeeded(sessionId, event)
+                    }
+                    context.publishSessionSnapshot()
+                }
+
+                else -> Unit
+            }
         }
     }
 
     fun executeApprovedPlan() {
-        val prompt = context.composerStore.state.value.planCompletion ?: return
+        val prompt = context.submissionStore.state.value.planCompletion ?: return
         val sessionId = context.activeSessionId()
         context.activePlanRunContexts.remove(sessionId)
         context.dispatchSessionEvent(sessionId, AppEvent.RunningPlanUpdated(plan = null))
         context.dispatchSessionEvent(sessionId, AppEvent.PlanCompletionPromptUpdated(prompt = null))
         context.eventHub.publishUiIntent(UiIntent.SelectMode(prompt.preferredExecutionMode))
-        if (context.composerStore.state.value.planEnabled) {
+        if (context.submissionStore.state.value.planEnabled) {
             context.eventHub.publishUiIntent(UiIntent.TogglePlanMode)
         }
         startProgrammaticTurn(
@@ -104,10 +74,10 @@ internal class PlanFlowHandler(
     }
 
     fun submitPlanRevision() {
-        val planCompletion = context.composerStore.state.value.planCompletion ?: return
+        val planCompletion = context.submissionStore.state.value.planCompletion ?: return
         val revision = planCompletion.revisionDraft.trim()
         if (revision.isBlank()) return
-        if (!context.composerStore.state.value.planEnabled) {
+        if (!context.submissionStore.state.value.planEnabled) {
             context.eventHub.publishUiIntent(UiIntent.TogglePlanMode)
         }
         context.activePlanRunContexts[context.activeSessionId()] = ActivePlanRunContext(
@@ -188,13 +158,13 @@ internal class PlanFlowHandler(
         }
     }
 
-    /** 处理 plan mode turn 结束逻辑；处理成功时返回 true。 */
-    private fun handlePlanTurnCompleted(sessionId: String, event: UnifiedEvent.TurnCompleted): Boolean {
+    /** Handles one finished plan turn and opens the completion prompt when the plan succeeded. */
+    private fun handlePlanTurnCompleted(sessionId: String, event: SessionDomainEvent.TurnCompleted): Boolean {
         val current = context.activePlanRunContexts[sessionId] ?: return false
         if (current.remoteTurnId != null && current.remoteTurnId != event.turnId) return false
         context.activePlanRunContexts.remove(sessionId)
         context.dispatchSessionEvent(sessionId, AppEvent.RunningPlanUpdated(plan = null))
-        if (event.outcome != TurnOutcome.SUCCESS) return true
+        if (event.outcome != SessionTurnOutcome.SUCCESS) return true
         val body = current.latestPlanBody?.trim().orEmpty()
         if (body.isBlank()) return true
         context.dispatchSessionEvent(
@@ -211,14 +181,15 @@ internal class PlanFlowHandler(
         return true
     }
 
-    /** 清理普通 turn 顶部运行计划，避免 Claude TodoWrite 在完成后残留。 */
-    private fun clearRunningPlanIfNeeded(sessionId: String, event: UnifiedEvent.TurnCompleted) {
-        val runningPlan = context.composerStore.state.value.runningPlan ?: return
+    /** Clears transient running-plan UI after a normal turn completes. */
+    private fun clearRunningPlanIfNeeded(sessionId: String, event: SessionDomainEvent.TurnCompleted) {
+        val runningPlan = context.submissionStore.state.value.runningPlan ?: return
         if (event.turnId.isNotBlank() && runningPlan.turnId != event.turnId) return
         context.dispatchSessionEvent(sessionId, AppEvent.RunningPlanUpdated(plan = null))
     }
 
-    private fun notifyBackgroundCompletionIfNeeded(sessionId: String, event: UnifiedEvent.TurnCompleted) {
+    /** Shows background completion notifications using the existing notification service contract. */
+    private fun notifyBackgroundCompletionIfNeeded(sessionId: String, event: SessionDomainEvent.TurnCompleted) {
         val sessionTitle = context.chatService.listSessions()
             .firstOrNull { it.id == sessionId }
             ?.title
@@ -226,22 +197,18 @@ internal class PlanFlowHandler(
         context.completionNotificationService?.notifyIfNeeded(
             sessionId = sessionId,
             sessionTitle = sessionTitle,
-            outcome = event.outcome,
+            outcome = when (event.outcome) {
+                SessionTurnOutcome.SUCCESS -> TurnOutcome.SUCCESS
+                SessionTurnOutcome.FAILED -> TurnOutcome.FAILED
+                SessionTurnOutcome.CANCELLED -> TurnOutcome.CANCELLED
+            },
         )
     }
 
-    private fun buildResolvedApprovalBody(body: String, action: ApprovalAction): String {
-        val decisionLabel = when (action) {
-            ApprovalAction.ALLOW -> "Allowed"
-            ApprovalAction.REJECT -> "Rejected"
-            ApprovalAction.ALLOW_FOR_SESSION -> "Remembered for session"
-        }
-        return listOf(body.trim().takeIf { it.isNotBlank() }, decisionLabel).joinToString("\n\n")
-    }
-
+    /** Builds the replay summary shown inside the user-input timeline node after submission. */
     private fun buildResolvedToolUserInputBody(
         prompt: com.auracode.assistant.toolwindow.execution.ToolUserInputPromptUiModel,
-        answers: Map<String, com.auracode.assistant.protocol.UnifiedToolUserInputAnswerDraft>,
+        answers: Map<String, com.auracode.assistant.protocol.ProviderToolUserInputAnswerDraft>,
         cancelled: Boolean,
     ): String {
         if (cancelled || answers.isEmpty()) {
@@ -258,21 +225,15 @@ internal class PlanFlowHandler(
         }
     }
 
-    private fun String.toComposerRunningPlanStepStatus(): ComposerRunningPlanStepStatus {
-        return when (trim().lowercase()) {
-            "completed", "complete", "success", "succeeded", "done" -> ComposerRunningPlanStepStatus.COMPLETED
-            "inprogress", "in_progress", "running", "active" -> ComposerRunningPlanStepStatus.IN_PROGRESS
-            else -> ComposerRunningPlanStepStatus.PENDING
-        }
-    }
-
-    private fun ComposerMode.toApprovalMode(): AgentApprovalMode {
+    /** Maps composer execution mode into the provider approval mode. */
+    private fun SubmissionMode.toApprovalMode(): AgentApprovalMode {
         return when (this) {
-            ComposerMode.AUTO -> AgentApprovalMode.AUTO
-            ComposerMode.APPROVAL -> AgentApprovalMode.REQUIRE_CONFIRMATION
+            SubmissionMode.AUTO -> AgentApprovalMode.AUTO
+            SubmissionMode.APPROVAL -> AgentApprovalMode.REQUIRE_CONFIRMATION
         }
     }
 
+    /** Starts one programmatic follow-up turn while keeping the session kernel in sync. */
     private fun startProgrammaticTurn(
         prompt: String,
         approvalMode: AgentApprovalMode,
@@ -299,8 +260,8 @@ internal class PlanFlowHandler(
         context.chatService.runAgent(
             sessionId = sessionId,
             engineId = context.chatService.defaultEngineId(),
-            model = context.composerStore.state.value.selectedModel,
-            reasoningEffort = context.composerStore.state.value.selectedReasoning.effort,
+            model = context.submissionStore.state.value.selectedModel,
+            reasoningEffort = context.submissionStore.state.value.selectedReasoning.effort,
             prompt = prompt,
             systemInstructions = emptyList(),
             localTurnId = localTurnId,
@@ -310,7 +271,7 @@ internal class PlanFlowHandler(
             approvalMode = approvalMode,
             collaborationMode = collaborationMode,
             onTurnPersisted = { context.publishSessionSnapshot() },
-            onUnifiedEvent = { event -> context.publishUnifiedEvent(sessionId, event) },
+            onSessionDomainEvents = { events -> context.applySessionDomainEvents(sessionId, events) },
             onRunStateChanged = { context.publishSessionSnapshot() },
         )
     }

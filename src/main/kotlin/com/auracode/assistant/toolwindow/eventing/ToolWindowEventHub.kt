@@ -1,7 +1,5 @@
 package com.auracode.assistant.toolwindow.eventing
 
-import com.auracode.assistant.model.EngineEvent
-import com.auracode.assistant.protocol.UnifiedEvent
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -18,14 +16,6 @@ internal class ToolWindowEventHub {
 
     fun publishUiIntent(intent: UiIntent) {
         publish(AppEvent.UiIntentPublished(intent))
-    }
-
-    fun publishUnifiedEvent(event: UnifiedEvent) {
-        publish(AppEvent.UnifiedEventPublished(event))
-    }
-
-    fun publishEngineEvent(event: EngineEvent) {
-        publish(AppEvent.EngineEventPublished(event))
     }
 
     fun publish(event: AppEvent) {

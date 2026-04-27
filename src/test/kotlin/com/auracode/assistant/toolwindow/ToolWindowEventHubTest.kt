@@ -1,6 +1,5 @@
 package com.auracode.assistant.toolwindow
 
-import com.auracode.assistant.protocol.UnifiedEvent
 import com.auracode.assistant.toolwindow.eventing.AppEvent
 import com.auracode.assistant.toolwindow.eventing.ToolWindowEventHub
 import com.auracode.assistant.toolwindow.eventing.UiIntent
@@ -22,17 +21,6 @@ class ToolWindowEventHubTest {
         val event = hub.events.value.last()
         val ui = assertIs<AppEvent.UiIntentPublished>(event)
         assertEquals(UiIntent.ToggleHistory, ui.intent)
-    }
-
-    @Test
-    fun `publishes unified events to app event stream`() {
-        val hub = ToolWindowEventHub()
-        val unified = UnifiedEvent.ThreadStarted(threadId = "th_1")
-        hub.publishUnifiedEvent(unified)
-
-        val event = hub.events.value.last()
-        val mapped = assertIs<AppEvent.UnifiedEventPublished>(event)
-        assertEquals(unified, mapped.event)
     }
 
     @Test

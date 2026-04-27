@@ -3,7 +3,7 @@ package com.auracode.assistant.provider.claude
 import com.auracode.assistant.model.AgentRequest
 import com.auracode.assistant.protocol.ItemKind
 import com.auracode.assistant.protocol.TurnOutcome
-import com.auracode.assistant.protocol.UnifiedEvent
+import com.auracode.assistant.protocol.ProviderEvent
 import com.auracode.assistant.provider.diagnostics.ProviderDiagnosticFixture
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -20,7 +20,7 @@ class ClaudeStreamReplayTest {
     fun `replays recorded claude stream fixture into unified events`() {
         val parser = ClaudeStreamEventParser()
         val accumulator = ClaudeStreamAccumulator()
-        val mapper = ClaudeUnifiedEventMapper(
+        val mapper = ClaudeProviderEventMapper(
             request = AgentRequest(
                 engineId = "claude",
                 model = "claude-sonnet-4-6",
@@ -38,29 +38,29 @@ class ClaudeStreamReplayTest {
         }
 
         assertTrue(events.any { event ->
-            event is UnifiedEvent.ItemUpdated &&
+            event is ProviderEvent.ItemUpdated &&
                 event.item.kind == ItemKind.COMMAND_EXEC &&
                 event.item.status == com.auracode.assistant.protocol.ItemStatus.FAILED &&
                 event.item.text?.contains("File does not exist") == true
         })
         assertTrue(events.any { event ->
-            event is UnifiedEvent.ItemUpdated &&
+            event is ProviderEvent.ItemUpdated &&
                 event.item.kind == ItemKind.NARRATIVE &&
                 event.item.name == "reasoning" &&
                 event.item.text == "Inspecting repository structure"
         })
         assertTrue(events.any { event ->
-            event is UnifiedEvent.ItemUpdated &&
+            event is ProviderEvent.ItemUpdated &&
                 event.item.kind == ItemKind.NARRATIVE &&
                 event.item.name == "message" &&
                 event.item.text == "工程已全部创建完毕。"
         })
 
-        val finalUsage = events.filterIsInstance<UnifiedEvent.ThreadTokenUsageUpdated>().last()
+        val finalUsage = events.filterIsInstance<ProviderEvent.ThreadTokenUsageUpdated>().last()
         assertEquals(200000, finalUsage.contextWindow)
         assertEquals(12125, finalUsage.outputTokens)
 
-        val completed = assertIs<UnifiedEvent.TurnCompleted>(events.last())
+        val completed = assertIs<ProviderEvent.TurnCompleted>(events.last())
         assertEquals(TurnOutcome.SUCCESS, completed.outcome)
     }
 
@@ -69,7 +69,7 @@ class ClaudeStreamReplayTest {
     fun `replay keeps assistant messages before and after tool in separate unified items`() {
         val parser = ClaudeStreamEventParser()
         val accumulator = ClaudeStreamAccumulator()
-        val mapper = ClaudeUnifiedEventMapper(
+        val mapper = ClaudeProviderEventMapper(
             request = AgentRequest(
                 engineId = "claude",
                 model = "claude-sonnet-4-6",
@@ -86,7 +86,7 @@ class ClaudeStreamReplayTest {
                 .orEmpty()
         }
 
-        val itemUpdates = events.filterIsInstance<UnifiedEvent.ItemUpdated>()
+        val itemUpdates = events.filterIsInstance<ProviderEvent.ItemUpdated>()
         val messageUpdates = itemUpdates.filter { event ->
             event.item.kind == ItemKind.NARRATIVE && event.item.name == "message"
         }
@@ -113,6 +113,37 @@ class ClaudeStreamReplayTest {
         assertTrue(firstMessageIndex >= 0)
         assertTrue(toolIndex > firstMessageIndex)
         assertTrue(secondMessageIndex > toolIndex)
+    }
+
+    /** Verifies that Claude api_retry system lines surface as non-terminal unified errors. */
+    @Test
+    fun `replay maps api retry into non terminal unified error`() {
+        val parser = ClaudeStreamEventParser()
+        val accumulator = ClaudeStreamAccumulator()
+        val mapper = ClaudeProviderEventMapper(
+            request = AgentRequest(
+                engineId = "claude",
+                model = "claude-sonnet-4-6",
+                prompt = "Replay Claude retry stream",
+                contextFiles = emptyList(),
+                workingDirectory = ".",
+            ),
+        )
+
+        val events = listOf(
+            """{"type":"system","subtype":"init","session_id":"session-123","model":"claude-sonnet-4-6"}""",
+            """{"type":"system","subtype":"api_retry","attempt":3,"max_retries":10,"retry_delay_ms":2436.076846771844,"error_status":null,"error":"unknown","session_id":"session-123","uuid":"retry-1"}""",
+        ).flatMap { line ->
+            parser.parse(line)
+                ?.let(accumulator::accumulate)
+                ?.flatMap(mapper::map)
+                .orEmpty()
+        }
+
+        val error = assertIs<ProviderEvent.Error>(events.last())
+        assertEquals(false, error.terminal)
+        assertTrue(error.message.contains("3/10"))
+        assertTrue(error.message.contains("2.4s"))
     }
 
     /** Loads the shared Claude diagnostic fixture through the classpath fixture loader. */

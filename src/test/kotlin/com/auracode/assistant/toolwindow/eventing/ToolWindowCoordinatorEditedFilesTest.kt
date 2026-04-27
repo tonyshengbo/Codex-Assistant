@@ -1,6 +1,6 @@
 package com.auracode.assistant.toolwindow.eventing
 
-import com.auracode.assistant.toolwindow.conversation.TimelineFileChangePreview
+import com.auracode.assistant.toolwindow.conversation.ConversationFileChangePreview
 import java.nio.file.Files
 import kotlin.io.path.createTempDirectory
 import kotlin.test.Test
@@ -14,7 +14,7 @@ class ToolWindowCoordinatorEditedFilesTest {
         val workingDir = createTempDirectory("edited-file-revert-update")
         val file = workingDir.resolve("Foo.kt")
         Files.writeString(file, "fun a() = 2\nfun b() = 3\n")
-        val parsed = TimelineFileChangePreview.parseTurnDiff(
+        val parsed = ConversationFileChangePreview.parseTurnDiff(
             """
                 diff --git a/${file} b/${file}
                 --- a/${file}
@@ -26,7 +26,7 @@ class ToolWindowCoordinatorEditedFilesTest {
             """.trimIndent(),
         ).getValue(file.toString())
 
-        val result = TimelineFileChangePreview.revertParsedDiff(parsed)
+        val result = ConversationFileChangePreview.revertParsedDiff(parsed)
 
         assertTrue(result.isSuccess)
         assertEquals("fun a() = 1\n", Files.readString(file))
@@ -37,7 +37,7 @@ class ToolWindowCoordinatorEditedFilesTest {
         val workingDir = createTempDirectory("edited-file-revert-create")
         val file = workingDir.resolve("Created.kt")
         Files.writeString(file, "class Created\n")
-        val parsed = TimelineFileChangePreview.parseTurnDiff(
+        val parsed = ConversationFileChangePreview.parseTurnDiff(
             """
                 diff --git a/${file} b/${file}
                 new file mode 100644
@@ -48,7 +48,7 @@ class ToolWindowCoordinatorEditedFilesTest {
             """.trimIndent(),
         ).getValue(file.toString())
 
-        val result = TimelineFileChangePreview.revertParsedDiff(parsed)
+        val result = ConversationFileChangePreview.revertParsedDiff(parsed)
 
         assertTrue(result.isSuccess)
         assertFalse(Files.exists(file))

@@ -1,7 +1,7 @@
 package com.auracode.assistant.toolwindow.execution
 
-import com.auracode.assistant.protocol.UnifiedApprovalRequest
-import com.auracode.assistant.protocol.UnifiedApprovalRequestKind
+import com.auracode.assistant.protocol.ProviderApprovalRequest
+import com.auracode.assistant.protocol.ProviderApprovalRequestKind
 
 enum class ApprovalAction {
     ALLOW,
@@ -13,7 +13,7 @@ internal data class PendingApprovalRequestUiModel(
     val requestId: String,
     val turnId: String?,
     val itemId: String,
-    val kind: UnifiedApprovalRequestKind,
+    val kind: ProviderApprovalRequestKind,
     val title: String,
     val body: String,
     val command: String? = null,
@@ -31,7 +31,7 @@ internal data class ApprovalAreaState(
     val visible: Boolean = false,
 )
 
-internal fun UnifiedApprovalRequest.toUiModel(
+internal fun ProviderApprovalRequest.toUiModel(
     queuePosition: Int = 1,
     queueSize: Int = 1,
 ): PendingApprovalRequestUiModel {

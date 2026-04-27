@@ -10,13 +10,13 @@ internal class ConversationHistoryHandler(
     private val onResetPlanFlowState: () -> Unit,
 ) {
     fun loadHistoryConversations(reset: Boolean) {
-        val drawerState = context.rightDrawerStore.state.value
-        if (drawerState.historyLoading) return
-        if (!reset && drawerState.historyNextCursor == null) return
+        val sidePanelState = context.sidePanelStore.state.value
+        if (sidePanelState.historyLoading) return
+        if (!reset && sidePanelState.historyNextCursor == null) return
         context.eventHub.publish(
             AppEvent.HistoryConversationsUpdated(
-                conversations = if (reset) emptyList() else drawerState.historyConversations,
-                nextCursor = drawerState.historyNextCursor,
+                conversations = if (reset) emptyList() else sidePanelState.historyConversations,
+                nextCursor = sidePanelState.historyNextCursor,
                 isLoading = true,
                 append = !reset,
             ),
@@ -24,8 +24,8 @@ internal class ConversationHistoryHandler(
         context.coroutineLauncher.launch("loadHistoryConversations(reset=$reset)") {
             val page = context.chatService.loadRemoteConversationSummaries(
                 limit = context.historyPageSize,
-                cursor = if (reset) null else drawerState.historyNextCursor,
-                searchTerm = drawerState.historyQuery.trim().takeIf { it.isNotBlank() },
+                cursor = if (reset) null else sidePanelState.historyNextCursor,
+                searchTerm = sidePanelState.historyQuery.trim().takeIf { it.isNotBlank() },
             )
             context.eventHub.publish(
                 AppEvent.HistoryConversationsUpdated(
@@ -45,7 +45,7 @@ internal class ConversationHistoryHandler(
         ) ?: return
         context.publishSessionSnapshot()
         restoreCurrentSessionHistory()
-        context.eventHub.publishUiIntent(UiIntent.CloseRightDrawer)
+        context.eventHub.publishUiIntent(UiIntent.CloseSidePanel)
         context.onSessionSnapshotPublished()
     }
 
@@ -61,7 +61,7 @@ internal class ConversationHistoryHandler(
                     remoteConversationId = normalizedRemoteId,
                     pageSize = context.historyPageSize.coerceAtLeast(1),
                 )
-                val summary = context.rightDrawerStore.state.value.historyConversations.firstOrNull {
+                val summary = context.sidePanelStore.state.value.historyConversations.firstOrNull {
                     it.remoteConversationId == normalizedRemoteId
                 } ?: ConversationSummary(
                     remoteConversationId = normalizedRemoteId,
@@ -86,23 +86,23 @@ internal class ConversationHistoryHandler(
         onResetPlanFlowState()
         context.dispatchSessionEvent(sessionId, AppEvent.ConversationReset)
         context.coroutineLauncher.launch("restoreCurrentSessionHistory") {
-            val page = context.chatService.loadCurrentConversationHistory(limit = context.historyPageSize)
-            context.restoreSessionHistory(sessionId, page.events, page.olderCursor, page.hasOlder, false)
+            val page = context.chatService.loadCurrentConversationReplay(limit = context.historyPageSize)
+            context.restoreSessionHistory(sessionId, page, false)
         }
     }
 
     fun loadOlderMessages() {
         val sessionId = context.activeSessionId()
-        val state = context.timelineStore.state.value
+        val state = context.conversationStore.state.value
         if (!state.hasOlder || state.isLoadingOlder) return
         val beforeCursor = state.oldestCursor ?: return
-        context.dispatchSessionEvent(sessionId, AppEvent.TimelineOlderLoadingChanged(loading = true))
+        context.dispatchSessionEvent(sessionId, AppEvent.ConversationOlderLoadingChanged(loading = true))
         context.coroutineLauncher.launch("loadOlderMessages(cursor=$beforeCursor)") {
-            val page = context.chatService.loadOlderConversationHistory(
+            val page = context.chatService.loadOlderConversationReplay(
                 cursor = beforeCursor,
                 limit = context.historyPageSize,
             )
-            context.restoreSessionHistory(sessionId, page.events, page.olderCursor, page.hasOlder, true)
+            context.restoreSessionHistory(sessionId, page, true)
         }
     }
 }

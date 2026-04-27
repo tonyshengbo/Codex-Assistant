@@ -8,7 +8,9 @@ import com.auracode.assistant.model.AgentCollaborationMode
 import com.auracode.assistant.model.FileAttachment
 import com.auracode.assistant.model.ImageAttachment
 import com.auracode.assistant.persistence.chat.PersistedAttachmentKind
-import com.auracode.assistant.toolwindow.submission.PendingComposerSubmission
+import com.auracode.assistant.session.kernel.SessionDomainEvent
+import com.auracode.assistant.session.kernel.SessionTurnOutcome
+import com.auracode.assistant.toolwindow.submission.PendingSubmission
 import com.auracode.assistant.toolwindow.shared.UiText
 
 internal class ConversationFlowHandler(
@@ -42,9 +44,9 @@ internal class ConversationFlowHandler(
     }
 
     fun submitPromptIfAllowed() {
-        val composerState = context.composerStore.state.value
-        val submission = buildPendingSubmission(composerState) ?: return
-        if (composerState.sessionIsRunning || context.timelineStore.state.value.isRunning) {
+        val submissionState = context.submissionStore.state.value
+        val submission = buildPendingSubmission(submissionState) ?: return
+        if (submissionState.sessionIsRunning || context.conversationStore.state.value.isRunning) {
             enqueuePendingSubmission(submission)
         } else {
             dispatchSubmission(submission)
@@ -53,13 +55,13 @@ internal class ConversationFlowHandler(
 
     /** Routes IDE-originated requests through the same submission pipeline as composer prompts. */
     fun submitExternalRequest(request: IdeExternalRequest) {
-        context.composerStore.onEvent(
+        context.submissionStore.onEvent(
             AppEvent.UiIntentPublished(
                 UiIntent.UpdateDocument(TextFieldValue(request.prompt, TextRange(request.prompt.length))),
             ),
         )
         val submission = buildExternalSubmission(request)
-        if (context.composerStore.state.value.sessionIsRunning || context.timelineStore.state.value.isRunning) {
+        if (context.submissionStore.state.value.sessionIsRunning || context.conversationStore.state.value.isRunning) {
             enqueuePendingSubmission(submission)
         } else {
             dispatchSubmission(submission)
@@ -70,12 +72,13 @@ internal class ConversationFlowHandler(
         context.chatService.cancelCurrent()
         onResetPlanFlowState()
         context.eventHub.publish(AppEvent.ActiveRunCancelled)
-        context.publishUnifiedEvent(
+        context.applySessionDomainEvents(
             context.activeSessionId(),
-            com.auracode.assistant.protocol.UnifiedEvent.TurnCompleted(
-                turnId = "",
-                outcome = com.auracode.assistant.protocol.TurnOutcome.CANCELLED,
-                usage = null,
+            listOf(
+                SessionDomainEvent.TurnCompleted(
+                    turnId = "",
+                    outcome = SessionTurnOutcome.CANCELLED,
+                ),
             ),
         )
     }
@@ -109,12 +112,12 @@ internal class ConversationFlowHandler(
     }
 
     private fun buildPendingSubmission(
-        composerState: com.auracode.assistant.toolwindow.submission.ComposerAreaState,
-    ): PendingComposerSubmission? {
+        submissionState: com.auracode.assistant.toolwindow.submission.SubmissionAreaState,
+    ): PendingSubmission? {
         val disabledSkills = context.skillsRuntimeService.findDisabledSkillMentions(
-            engineId = composerState.selectedEngineId,
+            engineId = submissionState.selectedEngineId,
             cwd = context.chatService.currentWorkingDirectory(),
-            text = composerState.inputText,
+            text = submissionState.inputText,
         )
         if (disabledSkills.isNotEmpty()) {
             context.eventHub.publish(
@@ -122,20 +125,20 @@ internal class ConversationFlowHandler(
             )
             return null
         }
-        val prompt = composerState.serializedPrompt()
-        val systemInstructions = composerState.serializedSystemInstructions()
+        val prompt = submissionState.serializedPrompt()
+        val systemInstructions = submissionState.serializedSystemInstructions()
         if (prompt.isBlank() && systemInstructions.isEmpty()) return null
         val stagedAttachments = workspaceHandler.stageAttachments(
             sessionId = context.chatService.getCurrentSessionId(),
-            attachments = composerState.attachments,
+            attachments = submissionState.attachments,
         )
-        return PendingComposerSubmission(
-            id = ToolWindowCoordinatorIds.newPendingSubmissionId(composerState),
-            engineId = composerState.selectedEngineId,
+        return PendingSubmission(
+            id = ToolWindowCoordinatorIds.newPendingSubmissionId(submissionState),
+            engineId = submissionState.selectedEngineId,
             prompt = prompt,
             systemInstructions = systemInstructions,
             contextFiles = workspaceHandler.buildContextFiles(
-                contextEntries = composerState.contextEntries,
+                contextEntries = submissionState.contextEntries,
                 attachments = stagedAttachments,
             ),
             imageAttachments = stagedAttachments.filter { it.kind == PersistedAttachmentKind.IMAGE }.map {
@@ -145,50 +148,50 @@ internal class ConversationFlowHandler(
                 FileAttachment(path = it.assetPath, name = it.displayName, mimeType = it.mimeType.ifBlank { "application/octet-stream" })
             },
             stagedAttachments = stagedAttachments,
-            selectedModel = composerState.selectedModel,
-            selectedReasoning = composerState.selectedReasoning,
-            executionMode = composerState.executionMode,
-            planEnabled = composerState.planEnabled,
+            selectedModel = submissionState.selectedModel,
+            selectedReasoning = submissionState.selectedReasoning,
+            executionMode = submissionState.executionMode,
+            planEnabled = submissionState.planEnabled,
         )
     }
 
     /** IDE entrypoints may supply their own explicit context files while reusing the active composer settings. */
-    private fun buildExternalSubmission(request: IdeExternalRequest): PendingComposerSubmission {
-        val composerState = context.composerStore.state.value
-        return PendingComposerSubmission(
+    private fun buildExternalSubmission(request: IdeExternalRequest): PendingSubmission {
+        val submissionState = context.submissionStore.state.value
+        return PendingSubmission(
             id = ToolWindowCoordinatorIds.newExternalSubmissionId(context.pendingSubmissionQueue(context.activeSessionId())),
-            engineId = composerState.selectedEngineId,
+            engineId = submissionState.selectedEngineId,
             prompt = request.prompt,
-            systemInstructions = composerState.serializedSystemInstructions(),
+            systemInstructions = submissionState.serializedSystemInstructions(),
             contextFiles = request.contextFiles,
             imageAttachments = emptyList(),
             fileAttachments = emptyList(),
             stagedAttachments = emptyList(),
-            selectedModel = composerState.selectedModel,
-            selectedReasoning = composerState.selectedReasoning,
-            executionMode = composerState.executionMode,
+            selectedModel = submissionState.selectedModel,
+            selectedReasoning = submissionState.selectedReasoning,
+            executionMode = submissionState.executionMode,
             planEnabled = false,
         )
     }
 
-    private fun enqueuePendingSubmission(submission: PendingComposerSubmission) {
+    private fun enqueuePendingSubmission(submission: PendingSubmission) {
         val sessionId = context.activeSessionId()
         context.pendingSubmissionQueue(sessionId).addLast(submission)
-        publishPendingSubmissions(sessionId = sessionId, clearComposerDraft = true)
+        publishPendingSubmissions(sessionId = sessionId, clearSubmissionDraft = true)
     }
 
-    private fun publishPendingSubmissions(sessionId: String, clearComposerDraft: Boolean = false) {
+    private fun publishPendingSubmissions(sessionId: String, clearSubmissionDraft: Boolean = false) {
         context.dispatchSessionEvent(
             sessionId,
             AppEvent.PendingSubmissionsUpdated(
                 submissions = context.pendingSubmissionQueue(sessionId).toList(),
-                clearComposerDraft = clearComposerDraft,
+                clearSubmissionDraft = clearSubmissionDraft,
             ),
         )
     }
 
     private fun dispatchSubmission(
-        submission: PendingComposerSubmission,
+        submission: PendingSubmission,
         sessionId: String = context.activeSessionId(),
     ) {
         val localTurnId = ToolWindowCoordinatorIds.newLocalTurnId()
@@ -241,15 +244,15 @@ internal class ConversationFlowHandler(
             approvalMode = submission.executionMode.toApprovalMode(),
             collaborationMode = if (submission.planEnabled) AgentCollaborationMode.PLAN else AgentCollaborationMode.DEFAULT,
             onTurnPersisted = { context.publishSessionSnapshot() },
-            onUnifiedEvent = { event -> context.publishUnifiedEvent(sessionId, event) },
+            onSessionDomainEvents = { events -> context.applySessionDomainEvents(sessionId, events) },
             onRunStateChanged = { context.publishSessionSnapshot() },
         )
     }
 
-    private fun ComposerMode.toApprovalMode(): AgentApprovalMode {
+    private fun SubmissionMode.toApprovalMode(): AgentApprovalMode {
         return when (this) {
-            ComposerMode.AUTO -> AgentApprovalMode.AUTO
-            ComposerMode.APPROVAL -> AgentApprovalMode.REQUIRE_CONFIRMATION
+            SubmissionMode.AUTO -> AgentApprovalMode.AUTO
+            SubmissionMode.APPROVAL -> AgentApprovalMode.REQUIRE_CONFIRMATION
         }
     }
 }

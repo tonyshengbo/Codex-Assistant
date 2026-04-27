@@ -26,27 +26,29 @@ import com.auracode.assistant.provider.codex.CodexCliVersionSnapshot
 import com.auracode.assistant.provider.claude.ClaudeCliVersionCheckStatus
 import com.auracode.assistant.provider.claude.ClaudeCliVersionSnapshot
 import com.auracode.assistant.conversation.ConversationCapabilities
-import com.auracode.assistant.toolwindow.submission.ComposerAreaStore
+import com.auracode.assistant.toolwindow.submission.SubmissionAreaStore
 import com.auracode.assistant.toolwindow.submission.ContextEntry
 import com.auracode.assistant.toolwindow.submission.FocusedContextSnapshot
 import com.auracode.assistant.toolwindow.submission.MentionSuggestion
-import com.auracode.assistant.toolwindow.shell.RightDrawerAreaStore
+import com.auracode.assistant.toolwindow.shell.SidePanelAreaStore
 import com.auracode.assistant.toolwindow.shell.AgentSettingsPage
 import com.auracode.assistant.toolwindow.shell.McpSettingsPage
-import com.auracode.assistant.toolwindow.shell.RightDrawerKind
+import com.auracode.assistant.toolwindow.shell.SidePanelKind
 import com.auracode.assistant.toolwindow.settings.RuntimeSettingsTab
 import com.auracode.assistant.toolwindow.settings.SettingsSection
 import com.auracode.assistant.toolwindow.eventing.AppEvent
-import com.auracode.assistant.toolwindow.eventing.ComposerMode
-import com.auracode.assistant.toolwindow.eventing.ComposerReasoning
+import com.auracode.assistant.toolwindow.eventing.SubmissionMode
+import com.auracode.assistant.toolwindow.eventing.SubmissionReasoning
 import com.auracode.assistant.toolwindow.eventing.UiIntent
-import com.auracode.assistant.toolwindow.sessions.HeaderAreaStore
-import com.auracode.assistant.toolwindow.execution.StatusAreaStore
-import com.auracode.assistant.toolwindow.conversation.TimelineAreaStore
-import com.auracode.assistant.toolwindow.conversation.TimelineFileChange
-import com.auracode.assistant.toolwindow.conversation.TimelineFileChangeKind
-import com.auracode.assistant.toolwindow.conversation.TimelineMutation
-import com.auracode.assistant.toolwindow.conversation.TimelineNode
+import com.auracode.assistant.toolwindow.sessions.SessionTabsAreaStore
+import com.auracode.assistant.toolwindow.execution.ExecutionStatusAreaStore
+import com.auracode.assistant.toolwindow.conversation.ConversationAreaStore
+import com.auracode.assistant.toolwindow.conversation.ConversationFileChange
+import com.auracode.assistant.toolwindow.conversation.ConversationFileChangeKind
+import com.auracode.assistant.toolwindow.conversation.ConversationActivityItem
+import com.auracode.assistant.toolwindow.conversation.ConversationRenderCause
+import com.auracode.assistant.toolwindow.execution.ExecutionTurnStatusUiState
+import com.auracode.assistant.toolwindow.shared.UiText
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -57,7 +59,7 @@ import kotlin.test.assertTrue
 class AreaStoresTest {
     @Test
     fun `composer store syncs usage snapshot for the active session`() {
-        val store = ComposerAreaStore()
+        val store = SubmissionAreaStore()
         val activeUsage = TurnUsageSnapshot(
             model = "gpt-5.4",
             contextWindow = 100,
@@ -101,7 +103,7 @@ class AreaStoresTest {
 
     @Test
     fun `composer store clears usage snapshot when active session has no usage`() {
-        val store = ComposerAreaStore()
+        val store = SubmissionAreaStore()
 
         store.onEvent(
             AppEvent.SessionSnapshotUpdated(
@@ -146,7 +148,7 @@ class AreaStoresTest {
 
     @Test
     fun `composer store switches usage snapshot with active session`() {
-        val store = ComposerAreaStore()
+        val store = SubmissionAreaStore()
         val firstUsage = TurnUsageSnapshot(
             model = "gpt-5.4",
             contextWindow = 100,
@@ -216,7 +218,7 @@ class AreaStoresTest {
 
     @Test
     fun `header store keeps blank title raw so ui can localize fallback at render time`() {
-        val store = HeaderAreaStore()
+        val store = SessionTabsAreaStore()
 
         store.onEvent(
             AppEvent.SessionSnapshotUpdated(
@@ -240,7 +242,7 @@ class AreaStoresTest {
 
     @Test
     fun `header store exposes active session engine label`() {
-        val store = HeaderAreaStore()
+        val store = SessionTabsAreaStore()
 
         store.onEvent(
             AppEvent.SessionSnapshotUpdated(
@@ -263,18 +265,18 @@ class AreaStoresTest {
 
     @Test
     fun `right drawer closes when close intent is published`() {
-        val store = RightDrawerAreaStore()
+        val store = SidePanelAreaStore()
         store.onEvent(AppEvent.UiIntentPublished(UiIntent.ToggleHistory))
-        assertEquals(RightDrawerKind.HISTORY, store.state.value.kind)
+        assertEquals(SidePanelKind.HISTORY, store.state.value.kind)
 
-        store.onEvent(AppEvent.UiIntentPublished(UiIntent.CloseRightDrawer))
+        store.onEvent(AppEvent.UiIntentPublished(UiIntent.CloseSidePanel))
 
-        assertEquals(RightDrawerKind.NONE, store.state.value.kind)
+        assertEquals(SidePanelKind.NONE, store.state.value.kind)
     }
 
     @Test
     fun `settings snapshot exposes claude cli configuration and save visibility`() {
-        val store = RightDrawerAreaStore()
+        val store = SidePanelAreaStore()
 
         store.onEvent(
             AppEvent.SettingsSnapshotUpdated(
@@ -298,7 +300,7 @@ class AreaStoresTest {
 
     @Test
     fun `settings save visibility ignores claude composer model changes`() {
-        val store = RightDrawerAreaStore()
+        val store = SidePanelAreaStore()
 
         store.onEvent(
             AppEvent.SettingsSnapshotUpdated(
@@ -318,9 +320,9 @@ class AreaStoresTest {
 
     @Test
     fun `session snapshot keeps right drawer kind unchanged`() {
-        val store = RightDrawerAreaStore()
+        val store = SidePanelAreaStore()
         store.onEvent(AppEvent.UiIntentPublished(UiIntent.ToggleHistory))
-        assertEquals(RightDrawerKind.HISTORY, store.state.value.kind)
+        assertEquals(SidePanelKind.HISTORY, store.state.value.kind)
 
         store.onEvent(
             AppEvent.SessionSnapshotUpdated(
@@ -338,12 +340,12 @@ class AreaStoresTest {
             ),
         )
 
-        assertEquals(RightDrawerKind.HISTORY, store.state.value.kind)
+        assertEquals(SidePanelKind.HISTORY, store.state.value.kind)
     }
 
     @Test
     fun `history drawer tracks search query and paged remote conversations`() {
-        val store = RightDrawerAreaStore()
+        val store = SidePanelAreaStore()
 
         store.onEvent(AppEvent.UiIntentPublished(UiIntent.EditHistorySearchQuery("fix")))
         store.onEvent(
@@ -370,21 +372,21 @@ class AreaStoresTest {
 
     @Test
     fun `settings drawer defaults to basic section and switches sections explicitly`() {
-        val store = RightDrawerAreaStore()
+        val store = SidePanelAreaStore()
 
         store.onEvent(AppEvent.UiIntentPublished(UiIntent.ToggleSettings))
-        assertEquals(RightDrawerKind.SETTINGS, store.state.value.kind)
+        assertEquals(SidePanelKind.SETTINGS, store.state.value.kind)
         assertEquals(SettingsSection.BASIC, store.state.value.settingsSection)
 
         store.onEvent(AppEvent.UiIntentPublished(UiIntent.SelectSettingsSection(SettingsSection.MCP)))
 
-        assertEquals(RightDrawerKind.SETTINGS, store.state.value.kind)
+        assertEquals(SidePanelKind.SETTINGS, store.state.value.kind)
         assertEquals(SettingsSection.MCP, store.state.value.settingsSection)
     }
 
     @Test
     fun `runtime tab selection is preserved inside runtime settings`() {
-        val store = RightDrawerAreaStore()
+        val store = SidePanelAreaStore()
 
         store.onEvent(AppEvent.UiIntentPublished(UiIntent.SelectSettingsSection(SettingsSection.RUNTIME)))
         store.onEvent(AppEvent.UiIntentPublished(UiIntent.SelectRuntimeSettingsTab(RuntimeSettingsTab.CLAUDE)))
@@ -395,18 +397,18 @@ class AreaStoresTest {
 
     @Test
     fun `settings drawer switches to skills section explicitly`() {
-        val store = RightDrawerAreaStore()
+        val store = SidePanelAreaStore()
 
         store.onEvent(AppEvent.UiIntentPublished(UiIntent.ToggleSettings))
         store.onEvent(AppEvent.UiIntentPublished(UiIntent.SelectSettingsSection(SettingsSection.SKILLS)))
 
-        assertEquals(RightDrawerKind.SETTINGS, store.state.value.kind)
+        assertEquals(SidePanelKind.SETTINGS, store.state.value.kind)
         assertEquals(SettingsSection.SKILLS, store.state.value.settingsSection)
     }
 
     @Test
     fun `skills loading keeps cached list stable and scopes busy state to one row`() {
-        val store = RightDrawerAreaStore()
+        val store = SidePanelAreaStore()
         val skill = SkillRuntimeEntry(
             engineId = "codex",
             cwd = ".",
@@ -437,7 +439,7 @@ class AreaStoresTest {
 
     @Test
     fun `settings snapshot updates theme mode and draft changes are stored`() {
-        val store = RightDrawerAreaStore()
+        val store = SidePanelAreaStore()
 
         store.onEvent(
             AppEvent.SettingsSnapshotUpdated(
@@ -473,7 +475,7 @@ class AreaStoresTest {
 
     @Test
     fun `agent settings switch between list and editor pages`() {
-        val store = RightDrawerAreaStore()
+        val store = SidePanelAreaStore()
 
         store.onEvent(
             AppEvent.SettingsSnapshotUpdated(
@@ -514,7 +516,7 @@ class AreaStoresTest {
 
     @Test
     fun `environment detection updates draft paths when requested`() {
-        val store = RightDrawerAreaStore()
+        val store = SidePanelAreaStore()
 
         store.onEvent(
             AppEvent.CodexEnvironmentCheckUpdated(
@@ -537,7 +539,7 @@ class AreaStoresTest {
 
     @Test
     fun `environment detection keeps manual draft edits and still updates untouched fields`() {
-        val store = RightDrawerAreaStore()
+        val store = SidePanelAreaStore()
 
         store.onEvent(
             AppEvent.SettingsSnapshotUpdated(
@@ -572,7 +574,7 @@ class AreaStoresTest {
 
     @Test
     fun `environment save visibility follows draft dirtiness`() {
-        val store = RightDrawerAreaStore()
+        val store = SidePanelAreaStore()
 
         store.onEvent(
             AppEvent.SettingsSnapshotUpdated(
@@ -606,7 +608,7 @@ class AreaStoresTest {
 
     @Test
     fun `settings snapshot carries codex cli version state`() {
-        val store = RightDrawerAreaStore()
+        val store = SidePanelAreaStore()
         val snapshot = CodexCliVersionSnapshot(
             checkStatus = CodexCliVersionCheckStatus.UPDATE_AVAILABLE,
             currentVersion = "0.34.0",
@@ -635,7 +637,7 @@ class AreaStoresTest {
 
     @Test
     fun `settings snapshot carries claude cli version state`() {
-        val store = RightDrawerAreaStore()
+        val store = SidePanelAreaStore()
         val snapshot = ClaudeCliVersionSnapshot(
             checkStatus = ClaudeCliVersionCheckStatus.UPDATE_AVAILABLE,
             currentVersion = "2.1.74",
@@ -663,7 +665,7 @@ class AreaStoresTest {
 
     @Test
     fun `version update event replaces codex cli version state without touching environment draft`() {
-        val store = RightDrawerAreaStore()
+        val store = SidePanelAreaStore()
         store.onEvent(
             AppEvent.SettingsSnapshotUpdated(
                 codexCliPath = "codex",
@@ -693,7 +695,7 @@ class AreaStoresTest {
 
     @Test
     fun `mcp settings switch between list and editor pages and keep batch draft state`() {
-        val store = RightDrawerAreaStore()
+        val store = SidePanelAreaStore()
 
         store.onEvent(AppEvent.UiIntentPublished(UiIntent.SelectSettingsSection(SettingsSection.MCP)))
         assertEquals(McpSettingsPage.LIST, store.state.value.mcpSettingsPage)
@@ -815,37 +817,50 @@ class AreaStoresTest {
 
     @Test
     fun `timeline store auto expands running process node and lets user keep it collapsed`() {
-        val store = TimelineAreaStore()
+        val store = ConversationAreaStore()
         store.onEvent(
-            AppEvent.TimelineMutationApplied(
-                TimelineMutation.TurnStarted(turnId = "turn_1", threadId = "th"),
-            ),
-        )
-        store.onEvent(
-            AppEvent.TimelineMutationApplied(
-                TimelineMutation.UpsertCommand(
-                    sourceId = "cmd_1",
-                    title = "Exec Command",
-                    body = "ls",
-                    status = ItemStatus.RUNNING,
+            AppEvent.ConversationUiProjectionUpdated(
+                nodes = listOf(
+                    ConversationActivityItem.CommandNode(
+                        id = "command:turn_1:cmd_1",
+                        sourceId = "cmd_1",
+                        title = "Exec Command",
+                        body = "ls",
+                        collapsedSummary = "Working",
+                        status = ItemStatus.RUNNING,
+                        turnId = "turn_1",
+                    ),
                 ),
+                oldestCursor = null,
+                hasOlder = false,
+                isRunning = true,
+                latestError = null,
             ),
         )
 
-        val node = assertIs<TimelineNode.CommandNode>(store.state.value.nodes.single())
+        val node = assertIs<ConversationActivityItem.CommandNode>(store.state.value.nodes.single())
         assertTrue(store.state.value.expandedNodeIds.contains(node.id))
 
         store.onEvent(AppEvent.UiIntentPublished(UiIntent.ToggleNodeExpanded(node.id)))
         assertFalse(store.state.value.expandedNodeIds.contains(node.id))
 
         store.onEvent(
-            AppEvent.TimelineMutationApplied(
-                TimelineMutation.UpsertCommand(
-                    sourceId = "cmd_1",
-                    title = "Exec Command",
-                    body = "ls\npwd",
-                    status = ItemStatus.RUNNING,
+            AppEvent.ConversationUiProjectionUpdated(
+                nodes = listOf(
+                    ConversationActivityItem.CommandNode(
+                        id = "command:turn_1:cmd_1",
+                        sourceId = "cmd_1",
+                        title = "Exec Command",
+                        body = "ls\npwd",
+                        collapsedSummary = "Working",
+                        status = ItemStatus.RUNNING,
+                        turnId = "turn_1",
+                    ),
                 ),
+                oldestCursor = null,
+                hasOlder = false,
+                isRunning = true,
+                latestError = null,
             ),
         )
 
@@ -856,34 +871,49 @@ class AreaStoresTest {
     }
 
     @Test
-    fun `timeline store auto collapses process node when it reaches terminal status`() {
-        val store = TimelineAreaStore()
+    fun `timeline store auto collapses process node when projected status becomes terminal`() {
+        val store = ConversationAreaStore()
 
         store.onEvent(
-            AppEvent.TimelineMutationApplied(
-                TimelineMutation.TurnStarted(turnId = "turn_1", threadId = "th"),
-            ),
-        )
-        store.onEvent(
-            AppEvent.TimelineMutationApplied(
-                TimelineMutation.UpsertCommand(
-                    sourceId = "cmd_1",
-                    title = "Exec Command",
-                    body = "ls",
-                    status = ItemStatus.RUNNING,
+            AppEvent.ConversationUiProjectionUpdated(
+                nodes = listOf(
+                    ConversationActivityItem.CommandNode(
+                        id = "command:turn_1:cmd_1",
+                        sourceId = "cmd_1",
+                        title = "Exec Command",
+                        body = "ls",
+                        collapsedSummary = "Working",
+                        status = ItemStatus.RUNNING,
+                        turnId = "turn_1",
+                    ),
                 ),
+                oldestCursor = null,
+                hasOlder = false,
+                isRunning = true,
+                latestError = null,
             ),
         )
 
-        val node = assertIs<TimelineNode.CommandNode>(store.state.value.nodes.single())
+        val node = assertIs<ConversationActivityItem.CommandNode>(store.state.value.nodes.single())
         assertTrue(store.state.value.expandedNodeIds.contains(node.id))
 
         store.onEvent(
-            AppEvent.TimelineMutationApplied(
-                TimelineMutation.TurnCompleted(
-                    turnId = "turn_1",
-                    outcome = com.auracode.assistant.protocol.TurnOutcome.SUCCESS,
+            AppEvent.ConversationUiProjectionUpdated(
+                nodes = listOf(
+                    ConversationActivityItem.CommandNode(
+                        id = "command:turn_1:cmd_1",
+                        sourceId = "cmd_1",
+                        title = "Exec Command",
+                        body = "ls",
+                        collapsedSummary = null,
+                        status = ItemStatus.SUCCESS,
+                        turnId = "turn_1",
+                    ),
                 ),
+                oldestCursor = null,
+                hasOlder = false,
+                isRunning = false,
+                latestError = null,
             ),
         )
 
@@ -891,9 +921,9 @@ class AreaStoresTest {
     }
 
     @Test
-    fun `timeline store expands running process nodes restored from history`() {
-        val store = TimelineAreaStore()
-        val restored = TimelineNode.CommandNode(
+    fun `timeline store treats first projection as history reset and expands running process nodes`() {
+        val store = ConversationAreaStore()
+        val restored = ConversationActivityItem.CommandNode(
             id = "command:turn_1:cmd_1",
             sourceId = "cmd_1",
             title = "Exec Command",
@@ -904,49 +934,60 @@ class AreaStoresTest {
         )
 
         store.onEvent(
-            AppEvent.TimelineHistoryLoaded(
+            AppEvent.ConversationUiProjectionUpdated(
                 nodes = listOf(restored),
                 oldestCursor = null,
                 hasOlder = false,
-                prepend = false,
+                isRunning = true,
+                latestError = null,
             ),
         )
 
         assertTrue(store.state.value.expandedNodeIds.contains(restored.id))
+        assertEquals(ConversationRenderCause.HISTORY_RESET, store.state.value.renderCause)
     }
 
     @Test
     fun `timeline store keeps empty running tool collapsed until detail arrives`() {
-        val store = TimelineAreaStore()
+        val store = ConversationAreaStore()
         store.onEvent(
-            AppEvent.TimelineMutationApplied(
-                TimelineMutation.TurnStarted(turnId = "turn_1", threadId = "th"),
-            ),
-        )
-        store.onEvent(
-            AppEvent.TimelineMutationApplied(
-                TimelineMutation.UpsertToolCall(
-                    sourceId = "web_1",
-                    title = "Searching the web",
-                    body = "",
-                    status = ItemStatus.RUNNING,
-                    turnId = "turn_1",
+            AppEvent.ConversationUiProjectionUpdated(
+                nodes = listOf(
+                    ConversationActivityItem.ToolCallNode(
+                        id = "tool:turn_1:web_1",
+                        sourceId = "web_1",
+                        title = "Searching the web",
+                        body = "",
+                        status = ItemStatus.RUNNING,
+                        turnId = "turn_1",
+                    ),
                 ),
+                oldestCursor = null,
+                hasOlder = false,
+                isRunning = true,
+                latestError = null,
             ),
         )
 
-        val node = assertIs<TimelineNode.ToolCallNode>(store.state.value.nodes.single())
+        val node = assertIs<ConversationActivityItem.ToolCallNode>(store.state.value.nodes.single())
         assertFalse(store.state.value.expandedNodeIds.contains(node.id))
 
         store.onEvent(
-            AppEvent.TimelineMutationApplied(
-                TimelineMutation.UpsertToolCall(
-                    sourceId = "web_1",
-                    title = "Searching the web",
-                    body = "Opened openai.com",
-                    status = ItemStatus.RUNNING,
-                    turnId = "turn_1",
+            AppEvent.ConversationUiProjectionUpdated(
+                nodes = listOf(
+                    ConversationActivityItem.ToolCallNode(
+                        id = "tool:turn_1:web_1",
+                        sourceId = "web_1",
+                        title = "Searching the web",
+                        body = "Opened openai.com",
+                        status = ItemStatus.RUNNING,
+                        turnId = "turn_1",
+                    ),
                 ),
+                oldestCursor = null,
+                hasOlder = false,
+                isRunning = true,
+                latestError = null,
             ),
         )
 
@@ -955,32 +996,34 @@ class AreaStoresTest {
 
     @Test
     fun `timeline store keeps edited node collapsed by default and lets user expand it`() {
-        val store = TimelineAreaStore()
+        val store = ConversationAreaStore()
         store.onEvent(
-            AppEvent.TimelineMutationApplied(
-                TimelineMutation.TurnStarted(turnId = "turn_1", threadId = "th"),
-            ),
-        )
-        store.onEvent(
-            AppEvent.TimelineMutationApplied(
-                TimelineMutation.UpsertFileChange(
-                    sourceId = "diff_1",
-                    title = "Edited Main.kt",
-                    changes = listOf(
-                        TimelineFileChange(
-                            sourceScopedId = "diff_1:file_1",
-                            path = "src/Main.kt",
-                            displayName = "Main.kt",
-                            kind = TimelineFileChangeKind.UPDATE,
+            AppEvent.ConversationUiProjectionUpdated(
+                nodes = listOf(
+                    ConversationActivityItem.FileChangeNode(
+                        id = "diff:turn_1:diff_1",
+                        sourceId = "diff_1",
+                        title = "Edited Main.kt",
+                        changes = listOf(
+                            ConversationFileChange(
+                                sourceScopedId = "diff_1:file_1",
+                                path = "src/Main.kt",
+                                displayName = "Main.kt",
+                                kind = ConversationFileChangeKind.UPDATE,
+                            ),
                         ),
+                        status = ItemStatus.RUNNING,
+                        turnId = "turn_1",
                     ),
-                    status = ItemStatus.RUNNING,
-                    turnId = "turn_1",
                 ),
+                oldestCursor = null,
+                hasOlder = false,
+                isRunning = true,
+                latestError = null,
             ),
         )
 
-        val node = assertIs<TimelineNode.FileChangeNode>(store.state.value.nodes.single())
+        val node = assertIs<ConversationActivityItem.FileChangeNode>(store.state.value.nodes.single())
         assertFalse(store.state.value.expandedNodeIds.contains(node.id))
 
         store.onEvent(AppEvent.UiIntentPublished(UiIntent.ToggleNodeExpanded(node.id)))
@@ -992,25 +1035,27 @@ class AreaStoresTest {
 
     @Test
     fun `timeline store expands plan node by default and lets user collapse it`() {
-        val store = TimelineAreaStore()
+        val store = ConversationAreaStore()
         store.onEvent(
-            AppEvent.TimelineMutationApplied(
-                TimelineMutation.TurnStarted(turnId = "turn_1", threadId = "th"),
-            ),
-        )
-        store.onEvent(
-            AppEvent.TimelineMutationApplied(
-                TimelineMutation.UpsertPlan(
-                    sourceId = "plan_1",
-                    title = "Plan",
-                    body = "1. Inspect\n2. Fix\n3. Verify",
-                    status = ItemStatus.RUNNING,
-                    turnId = "turn_1",
+            AppEvent.ConversationUiProjectionUpdated(
+                nodes = listOf(
+                    ConversationActivityItem.PlanNode(
+                        id = "plan:turn_1:plan_1",
+                        sourceId = "plan_1",
+                        title = "Plan",
+                        body = "1. Inspect\n2. Fix\n3. Verify",
+                        status = ItemStatus.RUNNING,
+                        turnId = "turn_1",
+                    ),
                 ),
+                oldestCursor = null,
+                hasOlder = false,
+                isRunning = true,
+                latestError = null,
             ),
         )
 
-        val node = assertIs<TimelineNode.PlanNode>(store.state.value.nodes.single())
+        val node = assertIs<ConversationActivityItem.PlanNode>(store.state.value.nodes.single())
         assertTrue(store.state.value.expandedNodeIds.contains(node.id))
 
         store.onEvent(AppEvent.UiIntentPublished(UiIntent.ToggleNodeExpanded(node.id)))
@@ -1018,32 +1063,53 @@ class AreaStoresTest {
     }
 
     @Test
-    fun `timeline store enters running state immediately after prompt accepted and clears on turn completed`() {
-        val store = TimelineAreaStore()
+    fun `timeline store enters running state immediately after prompt accepted and clears on projection completion`() {
+        val store = ConversationAreaStore()
 
         store.onEvent(AppEvent.PromptAccepted(prompt = "hello", localTurnId = "local-turn-1"))
         assertTrue(store.state.value.isRunning)
         assertEquals(1L, store.state.value.promptScrollRequestVersion)
 
         store.onEvent(
-            AppEvent.TimelineMutationApplied(
-                TimelineMutation.UpsertMessage(
-                    sourceId = "local-user",
-                    role = com.auracode.assistant.model.MessageRole.USER,
-                    text = "hello",
-                    status = ItemStatus.SUCCESS,
-                    turnId = "local-turn-1",
+            AppEvent.ConversationUiProjectionUpdated(
+                nodes = listOf(
+                    ConversationActivityItem.MessageNode(
+                        id = "message:local-turn-1:local-user",
+                        sourceId = "local-user",
+                        role = com.auracode.assistant.model.MessageRole.USER,
+                        text = "hello",
+                        status = ItemStatus.SUCCESS,
+                        timestamp = null,
+                        turnId = "local-turn-1",
+                        cursor = null,
+                    ),
                 ),
+                oldestCursor = null,
+                hasOlder = false,
+                isRunning = true,
+                latestError = null,
             ),
         )
         assertTrue(store.state.value.isRunning)
 
         store.onEvent(
-            AppEvent.TimelineMutationApplied(
-                TimelineMutation.TurnCompleted(
-                    turnId = "local-turn-1",
-                    outcome = com.auracode.assistant.protocol.TurnOutcome.SUCCESS,
+            AppEvent.ConversationUiProjectionUpdated(
+                nodes = listOf(
+                    ConversationActivityItem.MessageNode(
+                        id = "message:local-turn-1:local-user",
+                        sourceId = "local-user",
+                        role = com.auracode.assistant.model.MessageRole.USER,
+                        text = "hello",
+                        status = ItemStatus.SUCCESS,
+                        timestamp = null,
+                        turnId = "local-turn-1",
+                        cursor = null,
+                    ),
                 ),
+                oldestCursor = null,
+                hasOlder = false,
+                isRunning = false,
+                latestError = null,
             ),
         )
 
@@ -1051,112 +1117,97 @@ class AreaStoresTest {
     }
 
     @Test
-    fun `timeline store ignores stale completion from previous turn after next prompt is accepted`() {
-        val store = TimelineAreaStore()
-
-        store.onEvent(AppEvent.PromptAccepted(prompt = "first", localTurnId = "local-turn-1"))
+    fun `timeline store marks older-message projection updates as history prepend`() {
+        val store = ConversationAreaStore()
         store.onEvent(
-            AppEvent.TimelineMutationApplied(
-                TimelineMutation.TurnStarted(turnId = "remote-turn-1", threadId = "thread-1"),
-            ),
-        )
-        store.onEvent(
-            AppEvent.TimelineMutationApplied(
-                TimelineMutation.TurnCompleted(
-                    turnId = "remote-turn-1",
-                    outcome = com.auracode.assistant.protocol.TurnOutcome.SUCCESS,
+            AppEvent.ConversationUiProjectionUpdated(
+                nodes = listOf(
+                    ConversationActivityItem.MessageNode(
+                        id = "message:turn_1:assistant_1",
+                        sourceId = "assistant_1",
+                        role = com.auracode.assistant.model.MessageRole.ASSISTANT,
+                        text = "newest",
+                        status = ItemStatus.SUCCESS,
+                        timestamp = null,
+                        turnId = "turn_1",
+                        cursor = null,
+                    ),
                 ),
+                oldestCursor = "cursor-1",
+                hasOlder = true,
+                isRunning = false,
+                latestError = null,
             ),
         )
-        assertFalse(store.state.value.isRunning)
-
-        store.onEvent(AppEvent.PromptAccepted(prompt = "second", localTurnId = "local-turn-2"))
-        assertTrue(store.state.value.isRunning)
-        assertEquals(2L, store.state.value.promptScrollRequestVersion)
-
+        store.onEvent(AppEvent.ConversationOlderLoadingChanged(loading = true))
         store.onEvent(
-            AppEvent.TimelineMutationApplied(
-                TimelineMutation.TurnCompleted(
-                    turnId = "remote-turn-1",
-                    outcome = com.auracode.assistant.protocol.TurnOutcome.SUCCESS,
+            AppEvent.ConversationUiProjectionUpdated(
+                nodes = listOf(
+                    ConversationActivityItem.MessageNode(
+                        id = "message:turn_0:assistant_0",
+                        sourceId = "assistant_0",
+                        role = com.auracode.assistant.model.MessageRole.ASSISTANT,
+                        text = "older",
+                        status = ItemStatus.SUCCESS,
+                        timestamp = null,
+                        turnId = "turn_0",
+                        cursor = null,
+                    ),
+                    ConversationActivityItem.MessageNode(
+                        id = "message:turn_1:assistant_1",
+                        sourceId = "assistant_1",
+                        role = com.auracode.assistant.model.MessageRole.ASSISTANT,
+                        text = "newest",
+                        status = ItemStatus.SUCCESS,
+                        timestamp = null,
+                        turnId = "turn_1",
+                        cursor = null,
+                    ),
                 ),
+                oldestCursor = "cursor-0",
+                hasOlder = false,
+                isRunning = false,
+                latestError = null,
             ),
         )
 
-        assertTrue(store.state.value.isRunning)
+        assertEquals(ConversationRenderCause.HISTORY_PREPEND, store.state.value.renderCause)
+        assertEquals(1, store.state.value.prependedCount)
+        assertFalse(store.state.value.isLoadingOlder)
     }
 
     @Test
-    fun `status store shows turn status only while a turn is active`() {
-        val store = StatusAreaStore()
+    fun `status store shows turn status only while execution projection reports an active turn`() {
+        val store = ExecutionStatusAreaStore()
 
         store.onEvent(AppEvent.PromptAccepted(prompt = "hello", localTurnId = "local-turn-1"))
-        assertEquals("status.running", (store.state.value.turnStatus?.label as com.auracode.assistant.toolwindow.shared.UiText.Bundle).key)
+        assertEquals("status.running", (store.state.value.turnStatus?.label as UiText.Bundle).key)
         store.onEvent(
-            AppEvent.UnifiedEventPublished(
-                com.auracode.assistant.protocol.UnifiedEvent.TurnStarted(
+            AppEvent.ExecutionUiProjectionUpdated(
+                approvals = emptyList(),
+                toolUserInputs = emptyList(),
+                turnStatus = ExecutionTurnStatusUiState(
+                    label = UiText.Bundle("status.running"),
+                    startedAtMs = 1L,
                     turnId = "turn_1",
-                    threadId = "thread_1",
                 ),
             ),
         )
 
         store.onEvent(
-            AppEvent.UnifiedEventPublished(
-                com.auracode.assistant.protocol.UnifiedEvent.TurnCompleted(
-                    turnId = "turn_1",
-                    outcome = com.auracode.assistant.protocol.TurnOutcome.SUCCESS,
-                    usage = null,
-                ),
+            AppEvent.ExecutionUiProjectionUpdated(
+                approvals = emptyList(),
+                toolUserInputs = emptyList(),
+                turnStatus = null,
             ),
         )
 
         assertEquals(null, store.state.value.turnStatus)
-    }
-
-    @Test
-    fun `status store ignores stale completion from previous turn after next prompt starts`() {
-        val store = StatusAreaStore()
-
-        store.onEvent(AppEvent.PromptAccepted(prompt = "first", localTurnId = "local-turn-1"))
-        store.onEvent(
-            AppEvent.UnifiedEventPublished(
-                com.auracode.assistant.protocol.UnifiedEvent.TurnStarted(
-                    turnId = "remote-turn-1",
-                    threadId = "thread-1",
-                ),
-            ),
-        )
-        store.onEvent(
-            AppEvent.UnifiedEventPublished(
-                com.auracode.assistant.protocol.UnifiedEvent.TurnCompleted(
-                    turnId = "remote-turn-1",
-                    outcome = com.auracode.assistant.protocol.TurnOutcome.SUCCESS,
-                    usage = null,
-                ),
-            ),
-        )
-        assertEquals(null, store.state.value.turnStatus)
-
-        store.onEvent(AppEvent.PromptAccepted(prompt = "second", localTurnId = "local-turn-2"))
-        assertEquals("status.running", (store.state.value.turnStatus?.label as com.auracode.assistant.toolwindow.shared.UiText.Bundle).key)
-
-        store.onEvent(
-            AppEvent.UnifiedEventPublished(
-                com.auracode.assistant.protocol.UnifiedEvent.TurnCompleted(
-                    turnId = "remote-turn-1",
-                    outcome = com.auracode.assistant.protocol.TurnOutcome.SUCCESS,
-                    usage = null,
-                ),
-            ),
-        )
-
-        assertEquals("status.running", (store.state.value.turnStatus?.label as com.auracode.assistant.toolwindow.shared.UiText.Bundle).key)
     }
 
     @Test
     fun `status store routes global messages into toast`() {
-        val store = StatusAreaStore()
+        val store = ExecutionStatusAreaStore()
 
         store.onEvent(AppEvent.StatusTextUpdated(com.auracode.assistant.toolwindow.shared.UiText.raw("Cannot switch tabs while running.")))
 
@@ -1166,7 +1217,7 @@ class AreaStoresTest {
 
     @Test
     fun `composer store clears input when prompt accepted`() {
-        val store = ComposerAreaStore()
+        val store = SubmissionAreaStore()
         store.onEvent(AppEvent.UiIntentPublished(UiIntent.InputChanged("hello")))
         store.onEvent(AppEvent.UiIntentPublished(UiIntent.SelectMentionFile(path = "/project/src/App.kt")))
         store.onEvent(AppEvent.UiIntentPublished(UiIntent.AddAttachments(listOf("/tmp/screenshot.png"))))
@@ -1182,35 +1233,35 @@ class AreaStoresTest {
 
     @Test
     fun `composer store updates popup selections`() {
-        val store = ComposerAreaStore()
+        val store = SubmissionAreaStore()
 
         store.onEvent(AppEvent.UiIntentPublished(UiIntent.ToggleReasoningMenu))
         assertTrue(store.state.value.reasoningMenuExpanded)
 
-        store.onEvent(AppEvent.UiIntentPublished(UiIntent.SelectReasoning(ComposerReasoning.HIGH)))
-        assertEquals(ComposerReasoning.HIGH, store.state.value.selectedReasoning)
+        store.onEvent(AppEvent.UiIntentPublished(UiIntent.SelectReasoning(SubmissionReasoning.HIGH)))
+        assertEquals(SubmissionReasoning.HIGH, store.state.value.selectedReasoning)
         assertFalse(store.state.value.reasoningMenuExpanded)
     }
 
     @Test
     fun `composer mode options include auto and approval labels`() {
-        assertEquals(listOf(ComposerMode.AUTO, ComposerMode.APPROVAL), ComposerMode.entries.toList())
+        assertEquals(listOf(SubmissionMode.AUTO, SubmissionMode.APPROVAL), SubmissionMode.entries.toList())
     }
 
     @Test
     fun `composer store toggles plan independently from execution mode`() {
-        val store = ComposerAreaStore()
+        val store = SubmissionAreaStore()
 
-        store.onEvent(AppEvent.UiIntentPublished(UiIntent.SelectMode(ComposerMode.APPROVAL)))
+        store.onEvent(AppEvent.UiIntentPublished(UiIntent.SelectMode(SubmissionMode.APPROVAL)))
         store.onEvent(AppEvent.UiIntentPublished(UiIntent.TogglePlanMode))
 
-        assertEquals(ComposerMode.APPROVAL, store.state.value.executionMode)
+        assertEquals(SubmissionMode.APPROVAL, store.state.value.executionMode)
         assertTrue(store.state.value.planEnabled)
     }
 
     @Test
     fun `composer store disables plan when plan support is unavailable`() {
-        val store = ComposerAreaStore()
+        val store = SubmissionAreaStore()
 
         store.onEvent(AppEvent.ConversationCapabilitiesUpdated(ConversationCapabilities(
             supportsStructuredHistory = true,
@@ -1222,7 +1273,7 @@ class AreaStoresTest {
             supportsAttachments = true,
             supportsImageInputs = true,
         )))
-        store.onEvent(AppEvent.UiIntentPublished(UiIntent.SelectMode(ComposerMode.APPROVAL)))
+        store.onEvent(AppEvent.UiIntentPublished(UiIntent.SelectMode(SubmissionMode.APPROVAL)))
         store.onEvent(AppEvent.UiIntentPublished(UiIntent.TogglePlanMode))
         store.onEvent(AppEvent.ConversationCapabilitiesUpdated(ConversationCapabilities(
             supportsStructuredHistory = true,
@@ -1235,20 +1286,20 @@ class AreaStoresTest {
             supportsImageInputs = true,
         )))
 
-        assertEquals(ComposerMode.APPROVAL, store.state.value.executionMode)
+        assertEquals(SubmissionMode.APPROVAL, store.state.value.executionMode)
         assertFalse(store.state.value.planEnabled)
         assertFalse(store.state.value.planModeAvailable)
     }
 
     @Test
     fun `composer store toggles execution mode independently from plan and other menus`() {
-        val store = ComposerAreaStore()
+        val store = SubmissionAreaStore()
 
         store.onEvent(AppEvent.UiIntentPublished(UiIntent.ToggleModelMenu))
         assertTrue(store.state.value.modelMenuExpanded)
 
         store.onEvent(AppEvent.UiIntentPublished(UiIntent.ToggleExecutionMode))
-        assertEquals(ComposerMode.APPROVAL, store.state.value.executionMode)
+        assertEquals(SubmissionMode.APPROVAL, store.state.value.executionMode)
         assertTrue(store.state.value.modelMenuExpanded)
 
         store.onEvent(AppEvent.UiIntentPublished(UiIntent.ToggleReasoningMenu))
@@ -1256,12 +1307,12 @@ class AreaStoresTest {
         assertFalse(store.state.value.modelMenuExpanded)
 
         store.onEvent(AppEvent.UiIntentPublished(UiIntent.ToggleExecutionMode))
-        assertEquals(ComposerMode.AUTO, store.state.value.executionMode)
+        assertEquals(SubmissionMode.AUTO, store.state.value.executionMode)
     }
 
     @Test
     fun `composer context entries are deduplicated and capped at ten`() {
-        val store = ComposerAreaStore()
+        val store = SubmissionAreaStore()
         val files = (1..10).map { "/tmp/f$it.kt" }
 
         store.onEvent(AppEvent.UiIntentPublished(UiIntent.AddContextFiles(files)))
@@ -1275,7 +1326,7 @@ class AreaStoresTest {
 
     @Test
     fun `composer attachments stay in attachment strip and do not leak into context entries`() {
-        val store = ComposerAreaStore()
+        val store = SubmissionAreaStore()
 
         store.onEvent(AppEvent.UiIntentPublished(UiIntent.AddAttachments(listOf("/tmp/design-spec.md"))))
 
@@ -1286,7 +1337,7 @@ class AreaStoresTest {
 
     @Test
     fun `focused file updates replace previous focused context entry`() {
-        val store = ComposerAreaStore()
+        val store = SubmissionAreaStore()
         store.onEvent(
             AppEvent.UiIntentPublished(
                 UiIntent.UpdateFocusedContextFile(FocusedContextSnapshot(path = "/tmp/A.kt")),
@@ -1304,7 +1355,7 @@ class AreaStoresTest {
 
     @Test
     fun `focused file stays ahead of manual entries and can be cleared`() {
-        val store = ComposerAreaStore()
+        val store = SubmissionAreaStore()
         store.onEvent(AppEvent.UiIntentPublished(UiIntent.AddContextFiles(listOf("/tmp/manual.kt"))))
         store.onEvent(
             AppEvent.UiIntentPublished(
@@ -1319,7 +1370,7 @@ class AreaStoresTest {
 
     @Test
     fun `selecting mention file stores inline mention and hides mention popup`() {
-        val store = ComposerAreaStore()
+        val store = SubmissionAreaStore()
         val candidate = ContextEntry(path = "/project/src/App.kt", displayName = "App.kt", tailPath = "src")
 
         store.onEvent(AppEvent.UiIntentPublished(UiIntent.InputChanged("@App")))
@@ -1343,7 +1394,7 @@ class AreaStoresTest {
 
     @Test
     fun `serialized prompt includes mention paths before user text`() {
-        val store = ComposerAreaStore()
+        val store = SubmissionAreaStore()
         val candidate = ContextEntry(path = "/project/src/App.kt", displayName = "App.kt", tailPath = "src")
 
         store.onEvent(AppEvent.UiIntentPublished(UiIntent.InputChanged("@App")))
@@ -1368,7 +1419,7 @@ class AreaStoresTest {
 
     @Test
     fun `mention keyboard navigation updates active index and closes with escape`() {
-        val store = ComposerAreaStore()
+        val store = SubmissionAreaStore()
         val items = listOf(
             ContextEntry(path = "/project/src/A.kt", displayName = "A.kt", tailPath = "src"),
             ContextEntry(path = "/project/src/B.kt", displayName = "B.kt", tailPath = "src"),
@@ -1397,7 +1448,7 @@ class AreaStoresTest {
 
     @Test
     fun `document updates clear mention popup when cursor leaves mention mode`() {
-        val store = ComposerAreaStore()
+        val store = SubmissionAreaStore()
         val candidate = ContextEntry(path = "/project/src/App.kt", displayName = "App.kt", tailPath = "src")
 
         store.onEvent(
@@ -1426,7 +1477,7 @@ class AreaStoresTest {
 
     @Test
     fun `slash popup opens at input start and lists commands plus skills`() {
-        val store = ComposerAreaStore(
+        val store = SubmissionAreaStore(
             availableSkillsProvider = {
                 listOf(
                     com.auracode.assistant.toolwindow.submission.SlashSkillDescriptor(
@@ -1460,7 +1511,7 @@ class AreaStoresTest {
 
     @Test
     fun `slash popup filters plan command by query`() {
-        val store = ComposerAreaStore()
+        val store = SubmissionAreaStore()
 
         store.onEvent(
             AppEvent.UiIntentPublished(
@@ -1480,7 +1531,7 @@ class AreaStoresTest {
 
     @Test
     fun `slash popup filters auto command by query`() {
-        val store = ComposerAreaStore()
+        val store = SubmissionAreaStore()
 
         store.onEvent(
             AppEvent.UiIntentPublished(
@@ -1500,7 +1551,7 @@ class AreaStoresTest {
 
     @Test
     fun `slash popup stays closed when slash is not at input start`() {
-        val store = ComposerAreaStore()
+        val store = SubmissionAreaStore()
 
         store.onEvent(
             AppEvent.UiIntentPublished(
@@ -1514,7 +1565,7 @@ class AreaStoresTest {
 
     @Test
     fun `selecting slash plan enables plan mode and clears trigger text`() {
-        val store = ComposerAreaStore()
+        val store = SubmissionAreaStore()
         store.onEvent(
             AppEvent.UiIntentPublished(
                 UiIntent.UpdateDocument(TextFieldValue("/plan", TextRange(5))),
@@ -1530,7 +1581,7 @@ class AreaStoresTest {
 
     @Test
     fun `selecting slash plan toggles plan mode off when already enabled`() {
-        val store = ComposerAreaStore()
+        val store = SubmissionAreaStore()
         store.onEvent(AppEvent.UiIntentPublished(UiIntent.TogglePlanMode))
         store.onEvent(
             AppEvent.UiIntentPublished(
@@ -1547,7 +1598,7 @@ class AreaStoresTest {
 
     @Test
     fun `selecting slash auto toggles execution mode and clears trigger text`() {
-        val store = ComposerAreaStore()
+        val store = SubmissionAreaStore()
         store.onEvent(
             AppEvent.UiIntentPublished(
                 UiIntent.UpdateDocument(TextFieldValue("/auto", TextRange(5))),
@@ -1556,7 +1607,7 @@ class AreaStoresTest {
 
         store.onEvent(AppEvent.UiIntentPublished(UiIntent.SelectSlashCommand("auto")))
 
-        assertEquals(ComposerMode.APPROVAL, store.state.value.executionMode)
+        assertEquals(SubmissionMode.APPROVAL, store.state.value.executionMode)
         assertEquals("", store.state.value.document.text)
         assertFalse(store.state.value.slashPopupVisible)
 
@@ -1567,12 +1618,12 @@ class AreaStoresTest {
         )
         store.onEvent(AppEvent.UiIntentPublished(UiIntent.SelectSlashCommand("auto")))
 
-        assertEquals(ComposerMode.AUTO, store.state.value.executionMode)
+        assertEquals(SubmissionMode.AUTO, store.state.value.executionMode)
     }
 
     @Test
     fun `slash command descriptions reflect current toggle state`() {
-        val store = ComposerAreaStore()
+        val store = SubmissionAreaStore()
 
         store.onEvent(
             AppEvent.UiIntentPublished(
@@ -1610,7 +1661,7 @@ class AreaStoresTest {
 
     @Test
     fun `selecting slash new clears trigger text without changing local mode state`() {
-        val store = ComposerAreaStore()
+        val store = SubmissionAreaStore()
         store.onEvent(AppEvent.UiIntentPublished(UiIntent.TogglePlanMode))
         store.onEvent(AppEvent.UiIntentPublished(UiIntent.ToggleExecutionMode))
         store.onEvent(
@@ -1622,14 +1673,14 @@ class AreaStoresTest {
         store.onEvent(AppEvent.UiIntentPublished(UiIntent.SelectSlashCommand("new")))
 
         assertTrue(store.state.value.planEnabled)
-        assertEquals(ComposerMode.APPROVAL, store.state.value.executionMode)
+        assertEquals(SubmissionMode.APPROVAL, store.state.value.executionMode)
         assertEquals("", store.state.value.document.text)
         assertFalse(store.state.value.slashPopupVisible)
     }
 
     @Test
     fun `slash popup supports keyboard selection state`() {
-        val store = ComposerAreaStore(
+        val store = SubmissionAreaStore(
             availableSkillsProvider = {
                 listOf(
                     com.auracode.assistant.toolwindow.submission.SlashSkillDescriptor(
@@ -1657,7 +1708,7 @@ class AreaStoresTest {
 
     @Test
     fun `stale mention suggestions are ignored after document query changes`() {
-        val store = ComposerAreaStore()
+        val store = SubmissionAreaStore()
         val oldCandidate = ContextEntry(path = "/project/src/App.kt", displayName = "App.kt", tailPath = "src")
 
         store.onEvent(

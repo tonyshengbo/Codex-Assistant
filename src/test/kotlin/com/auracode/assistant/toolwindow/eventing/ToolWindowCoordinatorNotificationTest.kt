@@ -14,15 +14,15 @@ import com.auracode.assistant.provider.EngineCapabilities
 import com.auracode.assistant.provider.EngineDescriptor
 import com.auracode.assistant.provider.ProviderRegistry
 import com.auracode.assistant.protocol.TurnOutcome
-import com.auracode.assistant.protocol.UnifiedEvent
+import com.auracode.assistant.protocol.ProviderEvent
 import com.auracode.assistant.service.AgentChatService
 import com.auracode.assistant.settings.AgentSettingsService
-import com.auracode.assistant.toolwindow.submission.ComposerAreaStore
-import com.auracode.assistant.toolwindow.shell.RightDrawerAreaStore
-import com.auracode.assistant.toolwindow.sessions.HeaderAreaStore
+import com.auracode.assistant.toolwindow.submission.SubmissionAreaStore
+import com.auracode.assistant.toolwindow.shell.SidePanelAreaStore
+import com.auracode.assistant.toolwindow.sessions.SessionTabsAreaStore
 import com.auracode.assistant.toolwindow.sessions.SessionAttentionStore
-import com.auracode.assistant.toolwindow.execution.StatusAreaStore
-import com.auracode.assistant.toolwindow.conversation.TimelineAreaStore
+import com.auracode.assistant.toolwindow.execution.ExecutionStatusAreaStore
+import com.auracode.assistant.toolwindow.conversation.ConversationAreaStore
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
@@ -55,7 +55,7 @@ class ToolWindowCoordinatorNotificationTest {
         harness.eventHub.publishUiIntent(UiIntent.SwitchSession(sessionB))
         harness.waitUntil { harness.service.getCurrentSessionId() == sessionB }
 
-        harness.provider.emit("run-a", UnifiedEvent.TurnCompleted(turnId = "turn-a", outcome = TurnOutcome.SUCCESS))
+        harness.provider.emit("run-a", ProviderEvent.TurnCompleted(turnId = "turn-a", outcome = TurnOutcome.SUCCESS))
 
         harness.waitUntil { harness.publisher.signals.isNotEmpty() }
         assertTrue(harness.attentionStore.snapshot(sessionA).hasUnreadCompletion)
@@ -78,7 +78,7 @@ class ToolWindowCoordinatorNotificationTest {
         harness.eventHub.publishUiIntent(UiIntent.SendPrompt)
         harness.waitUntil { harness.provider.requests.size == 1 }
 
-        harness.provider.emit("run-a", UnifiedEvent.TurnCompleted(turnId = "turn-a", outcome = TurnOutcome.SUCCESS))
+        harness.provider.emit("run-a", ProviderEvent.TurnCompleted(turnId = "turn-a", outcome = TurnOutcome.SUCCESS))
         Thread.sleep(100)
 
         assertTrue(harness.publisher.signals.isEmpty())
@@ -110,7 +110,7 @@ class ToolWindowCoordinatorNotificationTest {
         harness.eventHub.publishUiIntent(UiIntent.SwitchSession(sessionB))
         harness.waitUntil { harness.service.getCurrentSessionId() == sessionB }
 
-        harness.provider.emit("run-a", UnifiedEvent.TurnCompleted(turnId = "turn-a", outcome = TurnOutcome.SUCCESS))
+        harness.provider.emit("run-a", ProviderEvent.TurnCompleted(turnId = "turn-a", outcome = TurnOutcome.SUCCESS))
         Thread.sleep(100)
 
         assertTrue(harness.publisher.signals.isEmpty())
@@ -172,11 +172,11 @@ class ToolWindowCoordinatorNotificationTest {
             chatService = service,
             settingsService = settings,
             eventHub = eventHub,
-            headerStore = HeaderAreaStore(),
-            statusStore = StatusAreaStore(),
-            timelineStore = TimelineAreaStore(),
-            composerStore = ComposerAreaStore(),
-            rightDrawerStore = RightDrawerAreaStore(),
+            sessionTabsStore = SessionTabsAreaStore(),
+            executionStatusStore = ExecutionStatusAreaStore(),
+            conversationStore = ConversationAreaStore(),
+            submissionStore = SubmissionAreaStore(),
+            sidePanelStore = SidePanelAreaStore(),
             completionNotificationService = completionService,
             sessionAttentionStore = attentionStore,
         )
@@ -205,7 +205,7 @@ class ToolWindowCoordinatorNotificationTest {
 
     private class RecordingProvider : AgentProvider {
         val requests = CopyOnWriteArrayList<AgentRequest>()
-        private val sinks = ConcurrentHashMap<String, kotlinx.coroutines.channels.SendChannel<UnifiedEvent>>()
+        private val sinks = ConcurrentHashMap<String, kotlinx.coroutines.channels.SendChannel<com.auracode.assistant.session.kernel.SessionDomainEvent>>()
 
         override fun capabilities(): ConversationCapabilities = ConversationCapabilities(
             supportsStructuredHistory = false,
@@ -218,14 +218,17 @@ class ToolWindowCoordinatorNotificationTest {
             supportsImageInputs = true,
         )
 
-        override fun stream(request: AgentRequest): Flow<UnifiedEvent> = callbackFlow {
+        override fun stream(request: AgentRequest): kotlinx.coroutines.flow.Flow<com.auracode.assistant.session.kernel.SessionDomainEvent> = callbackFlow {
             requests += request
             sinks[request.prompt] = channel
             awaitClose { sinks.remove(request.prompt) }
         }
 
-        fun emit(prompt: String, event: UnifiedEvent) {
-            checkNotNull(sinks[prompt]) { "No active stream for prompt '$prompt'" }.trySend(event)
+        fun emit(prompt: String, event: ProviderEvent) {
+            com.auracode.assistant.test.trySendProviderEvent(
+                checkNotNull(sinks[prompt]) { "No active stream for prompt '$prompt'" },
+                event,
+            )
         }
 
         override fun cancel(requestId: String) = Unit

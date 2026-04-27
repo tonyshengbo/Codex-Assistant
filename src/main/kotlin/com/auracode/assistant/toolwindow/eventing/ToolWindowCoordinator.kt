@@ -9,33 +9,32 @@ import com.auracode.assistant.persistence.chat.PersistedMessageAttachment
 import com.auracode.assistant.provider.claude.ClaudeCliVersionService
 import com.auracode.assistant.provider.codex.CodexCliVersionService
 import com.auracode.assistant.provider.codex.CodexEnvironmentDetector
-import com.auracode.assistant.protocol.UnifiedEvent
+import com.auracode.assistant.service.AgentChatService.SessionHistoryReplayPage
 import com.auracode.assistant.service.AgentChatService
 import com.auracode.assistant.session.kernel.SessionDomainEvent
+import com.auracode.assistant.session.kernel.SessionTurnOutcome
 import com.auracode.assistant.session.kernel.SessionKernelManager
 import com.auracode.assistant.session.kernel.SessionMessageAttachment
 import com.auracode.assistant.session.kernel.SessionMessageRole
-import com.auracode.assistant.session.projection.SessionProjectionBuilder
-import com.auracode.assistant.session.projection.execution.ExecutionProjection
-import com.auracode.assistant.session.normalizer.UnifiedEventSessionEventMapper
+import com.auracode.assistant.session.projection.SessionUiProjectionBuilder
+import com.auracode.assistant.session.projection.execution.ExecutionUiProjection
 import com.auracode.assistant.settings.AgentSettingsService
 import com.auracode.assistant.settings.skills.LocalSkillInstallPolicy
 import com.auracode.assistant.settings.skills.SkillsRuntimeService
 import com.auracode.assistant.settings.mcp.McpManagementAdapterRegistry
 import com.auracode.assistant.provider.runtime.RuntimeExecutableCheckService
 import com.auracode.assistant.toolwindow.execution.ApprovalAreaStore
-import com.auracode.assistant.toolwindow.submission.ComposerAreaStore
-import com.auracode.assistant.toolwindow.shell.RightDrawerAreaStore
-import com.auracode.assistant.toolwindow.shell.RightDrawerKind
+import com.auracode.assistant.toolwindow.submission.SubmissionAreaStore
+import com.auracode.assistant.toolwindow.shell.SidePanelAreaStore
+import com.auracode.assistant.toolwindow.shell.SidePanelKind
 import com.auracode.assistant.toolwindow.shared.UiText
 import com.auracode.assistant.toolwindow.sessions.SessionAttentionStore
-import com.auracode.assistant.toolwindow.sessions.SessionComposerViewStateRegistry
-import com.auracode.assistant.toolwindow.sessions.SessionTimelineUiStateRegistry
-import com.auracode.assistant.toolwindow.sessions.HeaderAreaStore
-import com.auracode.assistant.toolwindow.execution.StatusAreaStore
-import com.auracode.assistant.toolwindow.conversation.TimelineAreaStore
-import com.auracode.assistant.toolwindow.conversation.TimelineFileChange
-import com.auracode.assistant.toolwindow.conversation.TimelineMutation
+import com.auracode.assistant.toolwindow.sessions.SessionSubmissionViewStateRegistry
+import com.auracode.assistant.toolwindow.sessions.SessionConversationUiStateRegistry
+import com.auracode.assistant.toolwindow.sessions.SessionTabsAreaStore
+import com.auracode.assistant.toolwindow.execution.ExecutionStatusAreaStore
+import com.auracode.assistant.toolwindow.conversation.ConversationAreaStore
+import com.auracode.assistant.toolwindow.conversation.ConversationFileChange
 import com.auracode.assistant.toolwindow.execution.ToolUserInputPromptStore
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.diagnostic.Logger
@@ -53,11 +52,11 @@ internal class ToolWindowCoordinator(
     private val chatService: AgentChatService,
     private val settingsService: AgentSettingsService,
     private val eventHub: ToolWindowEventHub,
-    private val headerStore: HeaderAreaStore,
-    private val statusStore: StatusAreaStore,
-    private val timelineStore: TimelineAreaStore,
-    private val composerStore: ComposerAreaStore,
-    private val rightDrawerStore: RightDrawerAreaStore,
+    private val sessionTabsStore: SessionTabsAreaStore,
+    private val executionStatusStore: ExecutionStatusAreaStore,
+    private val conversationStore: ConversationAreaStore,
+    private val submissionStore: SubmissionAreaStore,
+    private val sidePanelStore: SidePanelAreaStore,
     private val approvalStore: ApprovalAreaStore = ApprovalAreaStore(),
     private val toolUserInputPromptStore: ToolUserInputPromptStore = ToolUserInputPromptStore(),
     private val completionNotificationService: ChatCompletionNotificationService? = null,
@@ -75,8 +74,8 @@ internal class ToolWindowCoordinator(
     private val searchProjectFiles: (String, Int) -> List<String> = { _, _ -> emptyList() },
     private val isMentionCandidateFile: (String) -> Boolean = { path -> MentionFileWhitelist.allowPath(path) },
     private val readFileContent: (String) -> String? = { path -> readFileContentDefault(path) },
-    private val openTimelineFileChange: (TimelineFileChange) -> Unit = {},
-    private val openTimelineFilePath: (String) -> Unit = {},
+    private val openConversationFileChange: (ConversationFileChange) -> Unit = {},
+    private val openConversationFilePath: (String) -> Unit = {},
     private val revealPathInFileManager: (String) -> Boolean = { false },
     private val openSessionInNewTab: (String) -> Boolean = { true },
     private val localSkillInstallPolicy: LocalSkillInstallPolicy = LocalSkillInstallPolicy(),
@@ -112,7 +111,7 @@ internal class ToolWindowCoordinator(
     }
 
     /** Stores per-session paging metadata that is not part of the kernel event log. */
-    private data class SessionTimelinePaging(
+    private data class SessionConversationPaging(
         val oldestCursor: String? = null,
         val hasOlder: Boolean = false,
     )
@@ -126,12 +125,11 @@ internal class ToolWindowCoordinator(
     )
     private val recentFocusedFiles = ArrayDeque<String>()
     private val sessionKernelManager = SessionKernelManager()
-    private val sessionProjectionBuilder = SessionProjectionBuilder()
-    private val unifiedEventMappersBySessionId = linkedMapOf<String, UnifiedEventSessionEventMapper>()
-    private val sessionTimelinePagingBySessionId = linkedMapOf<String, SessionTimelinePaging>()
-    private val sessionComposerViewStateRegistry = SessionComposerViewStateRegistry()
-    private val sessionTimelineUiStateRegistry = SessionTimelineUiStateRegistry()
-    private val pendingSubmissionsBySessionId = linkedMapOf<String, ArrayDeque<com.auracode.assistant.toolwindow.submission.PendingComposerSubmission>>()
+    private val sessionProjectionBuilder = SessionUiProjectionBuilder()
+    private val sessionConversationPagingBySessionId = linkedMapOf<String, SessionConversationPaging>()
+    private val sessionSubmissionViewStateRegistry = SessionSubmissionViewStateRegistry()
+    private val sessionConversationUiStateRegistry = SessionConversationUiStateRegistry()
+    private val pendingSubmissionsBySessionId = linkedMapOf<String, ArrayDeque<com.auracode.assistant.toolwindow.submission.PendingSubmission>>()
     private val activePlanRunContexts = linkedMapOf<String, ActivePlanRunContext>()
     private val coroutineLauncher = CoordinatorCoroutineLauncher(
         scope = scope,
@@ -147,11 +145,11 @@ internal class ToolWindowCoordinator(
         chatService = chatService,
         settingsService = settingsService,
         eventHub = eventHub,
-        headerStore = headerStore,
-        statusStore = statusStore,
-        timelineStore = timelineStore,
-        composerStore = composerStore,
-        rightDrawerStore = rightDrawerStore,
+        sessionTabsStore = sessionTabsStore,
+        executionStatusStore = executionStatusStore,
+        conversationStore = conversationStore,
+        submissionStore = submissionStore,
+        sidePanelStore = sidePanelStore,
         approvalStore = approvalStore,
         toolUserInputPromptStore = toolUserInputPromptStore,
         completionNotificationService = completionNotificationService,
@@ -167,8 +165,8 @@ internal class ToolWindowCoordinator(
         searchProjectFiles = searchProjectFiles,
         isMentionCandidateFile = isMentionCandidateFile,
         readFileContent = readFileContent,
-        openTimelineFileChange = openTimelineFileChange,
-        openTimelineFilePath = openTimelineFilePath,
+        openConversationFileChange = openConversationFileChange,
+        openConversationFilePath = openConversationFilePath,
         revealPathInFileManager = revealPathInFileManager,
         localSkillInstallPolicy = localSkillInstallPolicy,
         writeExportFile = writeExportFile,
@@ -187,7 +185,6 @@ internal class ToolWindowCoordinator(
         publishSessionSnapshot = { publishSessionSnapshot() },
         publishSettingsSnapshot = { publishSettingsSnapshot() },
         publishConversationCapabilities = { publishConversationCapabilities() },
-        publishUnifiedEvent = { sessionId: String, event: UnifiedEvent -> publishUnifiedEvent(sessionId, event) },
         publishLocalUserMessage = { sessionId, sourceId, text, timestamp, turnId, attachments ->
             publishLocalUserMessage(
                 sessionId = sessionId,
@@ -198,12 +195,10 @@ internal class ToolWindowCoordinator(
                 attachments = attachments,
             )
         },
-        restoreSessionHistory = { sessionId, events, oldestCursor, hasOlder, prepend ->
+        restoreSessionHistory = { sessionId, page, prepend ->
             restoreSessionHistory(
                 sessionId = sessionId,
-                events = events,
-                oldestCursor = oldestCursor,
-                hasOlder = hasOlder,
+                page = page,
                 prepend = prepend,
             )
         },
@@ -230,21 +225,15 @@ internal class ToolWindowCoordinator(
                     )
                 }
                 runCatching {
-                    headerStore.onEvent(event)
-                    statusStore.onEvent(event)
-                    timelineStore.onEvent(event)
-                    composerStore.onEvent(event)
-                    rightDrawerStore.onEvent(event)
+                    sessionTabsStore.onEvent(event)
+                    executionStatusStore.onEvent(event)
+                    conversationStore.onEvent(event)
+                    submissionStore.onEvent(event)
+                    sidePanelStore.onEvent(event)
                     approvalStore.onEvent(event)
                     toolUserInputPromptStore.onEvent(event)
                     when (event) {
                         is AppEvent.UiIntentPublished -> handleUiIntent(event.intent)
-                        is AppEvent.UnifiedEventPublished -> handleUnifiedEvent(activeSessionId(), event.event)
-                        is AppEvent.TimelineMutationApplied -> {
-                            if (event.mutation is TimelineMutation.TurnCompleted) {
-                                conversationHandler.dispatchNextPendingSubmissionIfIdle(chatService.getCurrentSessionId())
-                            }
-                        }
                         else -> Unit
                     }
                 }.onFailure { error ->
@@ -274,12 +263,12 @@ internal class ToolWindowCoordinator(
     private fun handleUiIntent(intent: UiIntent) {
         when (intent) {
             UiIntent.ToggleSettings -> {
-                if (rightDrawerStore.state.value.kind == RightDrawerKind.SETTINGS) {
+                if (sidePanelStore.state.value.kind == SidePanelKind.SETTINGS) {
                     settingsHandler.onSettingsDrawerOpened()
                 }
             }
             UiIntent.ToggleHistory -> {
-                if (rightDrawerStore.state.value.kind == RightDrawerKind.HISTORY) {
+                if (sidePanelStore.state.value.kind == SidePanelKind.HISTORY) {
                     historyHandler.loadHistoryConversations(reset = true)
                 }
             }
@@ -304,13 +293,13 @@ internal class ToolWindowCoordinator(
             is UiIntent.EditHistorySearchQuery -> historyHandler.loadHistoryConversations(reset = true)
             is UiIntent.OpenRemoteConversation -> historyHandler.openRemoteConversation(intent.remoteConversationId, intent.title)
             is UiIntent.ExportRemoteConversation -> historyHandler.exportRemoteConversation(intent.remoteConversationId, intent.title)
-            is UiIntent.OpenTimelineFileChange -> openTimelineFileChange(intent.change)
-            is UiIntent.OpenTimelineFilePath -> openTimelineFilePath(intent.path)
+            is UiIntent.OpenConversationFileChange -> openConversationFileChange(intent.change)
+            is UiIntent.OpenConversationFilePath -> openConversationFilePath(intent.path)
             UiIntent.LoadOlderMessages -> historyHandler.loadOlderMessages()
             is UiIntent.SelectSettingsSection -> settingsHandler.onSettingsSectionSelected(intent.section)
             is UiIntent.SelectRuntimeSettingsTab -> settingsHandler.onRuntimeSettingsTabSelected(intent.tab)
             UiIntent.DiscardRuntimeSettingsChanges -> {
-                settingsHandler.onRuntimeSettingsTabSelected(rightDrawerStore.state.value.runtimeSettingsTab)
+                settingsHandler.onRuntimeSettingsTabSelected(sidePanelStore.state.value.runtimeSettingsTab)
             }
             UiIntent.OpenAttachmentPicker -> {
                 val selected = pickAttachments()
@@ -362,11 +351,11 @@ internal class ToolWindowCoordinator(
             is UiIntent.SelectEngine -> handleEngineSelection(intent.engineId)
             UiIntent.DismissEngineSwitchDialog -> Unit
             is UiIntent.SelectModel -> {
-                settingsService.setSelectedComposerModel(chatService.defaultEngineId(), intent.model)
+                settingsService.setSelectedSubmissionModel(chatService.defaultEngineId(), intent.model)
                 publishSettingsSnapshot()
             }
             is UiIntent.SelectReasoning -> {
-                settingsService.setSelectedComposerReasoning(intent.reasoning.effort)
+                settingsService.setSelectedSubmissionReasoning(intent.reasoning.effort)
                 publishSettingsSnapshot()
             }
             UiIntent.SaveCustomModel -> settingsHandler.saveCustomModel()
@@ -396,19 +385,6 @@ internal class ToolWindowCoordinator(
             is UiIntent.IgnoreCodexCliVersion -> settingsHandler.ignoreCodexCliVersion(intent.version)
             UiIntent.SaveSettings -> settingsHandler.saveSettings()
             else -> Unit
-        }
-    }
-
-    private fun handleUnifiedEvent(sessionId: String, event: UnifiedEvent) {
-        planHandler.handleUnifiedEvent(sessionId, event)
-    }
-
-    private fun publishUnifiedEvent(sessionId: String, event: UnifiedEvent) {
-        dispatchSessionEvent(sessionId, AppEvent.UnifiedEventPublished(event))
-        applyUnifiedEventToKernel(sessionId = sessionId, event = event)
-        handleUnifiedEvent(sessionId, event)
-        if (event is UnifiedEvent.TurnCompleted) {
-            conversationHandler.dispatchNextPendingSubmissionIfIdle(sessionId, allowTurnCompletedBypass = true)
         }
     }
 
@@ -470,59 +446,23 @@ internal class ToolWindowCoordinator(
     /** Restores or prepends persisted history through the same kernel and projection pipeline as live events. */
     private fun restoreSessionHistory(
         sessionId: String,
-        events: List<UnifiedEvent>,
-        oldestCursor: String?,
-        hasOlder: Boolean,
+        page: SessionHistoryReplayPage,
         prepend: Boolean,
     ) {
-        val mapper = mapperForSession(sessionId)
-        val domainEvents = if (prepend) {
-            val prependMapper = UnifiedEventSessionEventMapper()
-            events.flatMap(prependMapper::map)
-        } else {
-            mapper.reset()
-            events.flatMap(mapper::map)
-        }
         val kernel = kernelForSession(sessionId)
         if (prepend) {
-            kernel.prependHistory(domainEvents)
+            kernel.prependHistory(page.events)
         } else {
-            kernel.restoreHistory(domainEvents)
+            kernel.restoreHistory(page.events)
         }
-        sessionTimelinePagingBySessionId[sessionId] = SessionTimelinePaging(
-            oldestCursor = oldestCursor,
-            hasOlder = hasOlder,
+        sessionConversationPagingBySessionId[sessionId] = SessionConversationPaging(
+            oldestCursor = page.olderCursor,
+            hasOlder = page.hasOlder,
         )
-        events.filterIsInstance<UnifiedEvent.SubagentsUpdated>()
-            .lastOrNull()
-            ?.let { subagentsEvent ->
-                dispatchSessionEvent(
-                    sessionId,
-                    AppEvent.UnifiedEventPublished(subagentsEvent),
-                )
-            }
-        syncSessionProjection(sessionId)
+        syncSessionUiProjection(sessionId)
         if (sessionId == activeSessionId()) {
-            sessionTimelineUiStateRegistry.restore(sessionId, timelineStore)
+            sessionConversationUiStateRegistry.restore(sessionId, conversationStore)
         }
-    }
-
-    /** Applies one live unified event to the session kernel. */
-    private fun applyUnifiedEventToKernel(
-        sessionId: String,
-        event: UnifiedEvent,
-    ) {
-        val mappedEvents = mapperForSession(sessionId).map(event)
-        if (mappedEvents.isEmpty()) {
-            if (event is UnifiedEvent.ThreadStarted || event is UnifiedEvent.TurnCompleted || event is UnifiedEvent.Error) {
-                syncSessionProjection(sessionId)
-            }
-            return
-        }
-        applySessionDomainEvents(
-            sessionId = sessionId,
-            events = mappedEvents,
-        )
     }
 
     /** Applies one or more kernel domain events and republishes the read-only session projection. */
@@ -534,16 +474,33 @@ internal class ToolWindowCoordinator(
             return
         }
         kernelForSession(sessionId).applyLiveEvents(events)
-        syncSessionProjection(sessionId)
+        planHandler.handleSessionDomainEvents(sessionId, events)
+        events.filterIsInstance<SessionDomainEvent.ErrorAppended>()
+            .filter { error -> !error.terminal }
+            .forEach { error ->
+                dispatchSessionEvent(sessionId, AppEvent.StatusTextUpdated(UiText.raw(error.message)))
+            }
+        syncSessionUiProjection(sessionId)
+        if (events.any { event ->
+                event is SessionDomainEvent.TurnCompleted &&
+                    event.outcome in setOf(
+                        SessionTurnOutcome.SUCCESS,
+                        SessionTurnOutcome.FAILED,
+                        SessionTurnOutcome.CANCELLED,
+                    )
+            }
+        ) {
+            conversationHandler.dispatchNextPendingSubmissionIfIdle(sessionId, allowTurnCompletedBypass = true)
+        }
     }
 
     /** Rebuilds the read-only projection for one session and pushes it into scoped UI stores. */
-    private fun syncSessionProjection(sessionId: String) {
+    private fun syncSessionUiProjection(sessionId: String) {
         val projection = sessionProjectionBuilder.project(kernelForSession(sessionId).currentState)
-        val paging = sessionTimelinePagingBySessionId[sessionId] ?: SessionTimelinePaging()
+        val paging = sessionConversationPagingBySessionId[sessionId] ?: SessionConversationPaging()
         dispatchSessionEvent(
             sessionId,
-            AppEvent.ConversationProjectionUpdated(
+            AppEvent.ConversationUiProjectionUpdated(
                 nodes = projection.conversation.nodes,
                 oldestCursor = paging.oldestCursor,
                 hasOlder = paging.hasOlder,
@@ -551,20 +508,32 @@ internal class ToolWindowCoordinator(
                 latestError = projection.conversation.latestError,
             ),
         )
-        syncExecutionProjection(sessionId = sessionId, projection = projection.execution)
+        dispatchSessionEvent(
+            sessionId,
+            AppEvent.SubmissionUiProjectionUpdated(
+                isRunning = projection.submission.isRunning,
+                editedFiles = projection.submission.editedFiles,
+            ),
+        )
+        dispatchSessionEvent(
+            sessionId,
+            AppEvent.SessionNavigationUiProjectionUpdated(
+                subagents = projection.navigation.subagents,
+            ),
+        )
+        syncExecutionUiProjection(sessionId = sessionId, projection = projection.execution)
     }
 
     /** Pushes the execution slice of the current projection into approval, tool-input, plan, and status stores. */
-    private fun syncExecutionProjection(
+    private fun syncExecutionUiProjection(
         sessionId: String,
-        projection: ExecutionProjection,
+        projection: ExecutionUiProjection,
     ) {
         dispatchSessionEvent(
             sessionId,
-            AppEvent.ExecutionProjectionUpdated(
+            AppEvent.ExecutionUiProjectionUpdated(
                 approvals = projection.approvals,
                 toolUserInputs = projection.toolUserInputs,
-                runningPlan = projection.runningPlan,
                 turnStatus = projection.turnStatus,
             ),
         )
@@ -575,11 +544,6 @@ internal class ToolWindowCoordinator(
         sessionId = sessionId,
         engineId = chatService.sessionProviderId(sessionId),
     )
-
-    /** Returns or creates the stateful unified-event mapper bound to one session. */
-    private fun mapperForSession(sessionId: String): UnifiedEventSessionEventMapper {
-        return unifiedEventMappersBySessionId.getOrPut(sessionId) { UnifiedEventSessionEventMapper() }
-    }
 
     private fun publishSessionSnapshot() {
         eventHub.publish(
@@ -610,8 +574,8 @@ internal class ToolWindowCoordinator(
                 savedAgents = state.savedAgents.toList(),
                 selectedAgentIds = settingsService.selectedAgentIds(),
                 customModelIds = settingsService.customModelIds(),
-                selectedModel = settingsService.selectedComposerModel(selectedEngineId),
-                selectedReasoning = settingsService.selectedComposerReasoning(),
+                selectedModel = settingsService.selectedSubmissionModel(selectedEngineId),
+                selectedReasoning = settingsService.selectedSubmissionReasoning(),
                 codexCliVersionSnapshot = codexCliVersionService.snapshot(),
                 claudeCliVersionSnapshot = claudeCliVersionService.snapshot(),
             ),
@@ -658,27 +622,26 @@ internal class ToolWindowCoordinator(
 
         if (switchedInPlace) {
             sessionKernelManager.remove(currentSessionId)
-            unifiedEventMappersBySessionId.remove(currentSessionId)
-            sessionTimelinePagingBySessionId.remove(currentSessionId)
-            sessionComposerViewStateRegistry.drop(currentSessionId)
-            sessionTimelineUiStateRegistry.drop(currentSessionId)
-            // Rebuild an empty projection immediately so the reused session no longer carries stale running UI state.
-            syncSessionProjection(currentSessionId)
-        }
-
-        if (switchedInPlace && !switchedEmptySession) {
-            val targetEngineLabel = chatService.engineDescriptor(normalizedEngineId)?.displayName ?: normalizedEngineId
-            dispatchSessionEvent(
-                currentSessionId,
-                AppEvent.TimelineMutationApplied(
-                    TimelineMutation.AppendEngineSwitched(
-                        sourceId = "engine-switch-${System.currentTimeMillis()}",
-                        targetEngineLabel = targetEngineLabel,
-                        body = AuraCodeBundle.message("timeline.system.engineSwitched", targetEngineLabel),
-                        timestamp = System.currentTimeMillis(),
+            sessionConversationPagingBySessionId.remove(currentSessionId)
+            sessionSubmissionViewStateRegistry.drop(currentSessionId)
+            sessionConversationUiStateRegistry.drop(currentSessionId)
+            if (switchedEmptySession) {
+                // Rebuild an empty projection immediately so the reused session no longer carries stale running UI state.
+                syncSessionUiProjection(currentSessionId)
+            } else {
+                val timestamp = System.currentTimeMillis()
+                val targetEngineLabel = chatService.engineDescriptor(normalizedEngineId)?.displayName ?: normalizedEngineId
+                applySessionDomainEvents(
+                    sessionId = currentSessionId,
+                    events = listOf(
+                        SessionDomainEvent.EngineSwitched(
+                            itemId = "engine-switch-$timestamp",
+                            targetEngineLabel = targetEngineLabel,
+                            timestamp = timestamp,
+                        ),
                     ),
-                ),
-            )
+                )
+            }
         }
 
         publishSettingsSnapshot()
@@ -689,9 +652,9 @@ internal class ToolWindowCoordinator(
     /**
      * Resolves the remembered model for an engine while falling back to that engine's default.
      */
-    private fun resolveComposerModelForEngine(engineId: String): String {
+    private fun resolveSubmissionModelForEngine(engineId: String): String {
         val availableModels = chatService.engineDescriptor(engineId)?.models.orEmpty().toSet()
-        val selectedModel = settingsService.selectedComposerModel(engineId)
+        val selectedModel = settingsService.selectedSubmissionModel(engineId)
         return selectedModel.takeIf { it in availableModels }
             ?: settingsService.state.defaultModelFor(engineId)
     }
@@ -719,34 +682,34 @@ internal class ToolWindowCoordinator(
         event: AppEvent,
     ) {
         if (sessionId == activeSessionId()) {
-            statusStore.onEvent(event)
-            timelineStore.onEvent(event)
-            composerStore.onEvent(event)
+            executionStatusStore.onEvent(event)
+            conversationStore.onEvent(event)
+            submissionStore.onEvent(event)
             approvalStore.onEvent(event)
             toolUserInputPromptStore.onEvent(event)
             return
         }
-        sessionComposerViewStateRegistry.applyEvent(sessionId, event)
+        sessionSubmissionViewStateRegistry.applyEvent(sessionId, event)
     }
 
     /** Captures the visible session-scoped draft and expansion state before the UI switches tabs. */
     private fun captureSessionViewState(sessionId: String) {
         if (sessionId.isBlank()) return
-        sessionComposerViewStateRegistry.capture(sessionId, composerStore.state.value)
-        sessionTimelineUiStateRegistry.capture(sessionId, timelineStore.state.value)
+        sessionSubmissionViewStateRegistry.capture(sessionId, submissionStore.state.value)
+        sessionConversationUiStateRegistry.capture(sessionId, conversationStore.state.value)
     }
 
     /** Restores session-local draft UI while rebuilding projection-backed state from the kernel when available. */
     private fun restoreSessionViewState(sessionId: String): Boolean {
         val hasKernel = sessionKernelManager.get(sessionId) != null
         if (hasKernel) {
-            syncSessionProjection(sessionId)
-            sessionTimelineUiStateRegistry.restore(sessionId, timelineStore)
+            syncSessionUiProjection(sessionId)
+            sessionConversationUiStateRegistry.restore(sessionId, conversationStore)
         }
-        composerStore.restoreState(
-            sessionComposerViewStateRegistry.restore(
+        submissionStore.restoreState(
+            sessionSubmissionViewStateRegistry.restore(
                 sessionId = sessionId,
-                baseState = composerStore.state.value,
+                baseState = submissionStore.state.value,
             ),
         )
         return hasKernel

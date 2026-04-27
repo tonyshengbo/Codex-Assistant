@@ -18,7 +18,7 @@ internal class ToolUserInputPromptStore {
         when (event) {
             is AppEvent.ToolUserInputRequested -> enqueue(event.prompt)
             is AppEvent.ToolUserInputResolved -> resolve(event.requestId)
-            is AppEvent.ExecutionProjectionUpdated -> replaceQueue(event.toolUserInputs)
+            is AppEvent.ExecutionUiProjectionUpdated -> replaceQueue(event.toolUserInputs)
             AppEvent.ClearToolUserInputs,
             is AppEvent.PromptAccepted,
             AppEvent.ConversationReset,

@@ -1,12 +1,12 @@
 package com.auracode.assistant.toolwindow.execution
 
-import com.auracode.assistant.toolwindow.eventing.ComposerMode
+import com.auracode.assistant.toolwindow.eventing.SubmissionMode
 
 internal data class PlanCompletionPromptUiModel(
     val turnId: String,
     val threadId: String?,
     val body: String,
-    val preferredExecutionMode: ComposerMode,
+    val preferredExecutionMode: SubmissionMode,
 )
 
 internal data class PlanCompletionPromptState(

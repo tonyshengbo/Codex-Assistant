@@ -91,6 +91,38 @@ internal sealed interface SessionDomainEvent {
         val plan: SessionRunningPlan,
     ) : SessionDomainEvent
 
+    /** Tracks the latest edited-file snapshot for submission-facing UI without creating timeline entries. */
+    data class EditedFilesTracked(
+        val threadId: String,
+        val turnId: String,
+        val changes: List<SessionFileChange>,
+    ) : SessionDomainEvent
+
+    /** Updates the latest usage counters captured for the active session thread. */
+    data class UsageUpdated(
+        val threadId: String?,
+        val turnId: String?,
+        val model: String?,
+        val contextWindow: Int,
+        val inputTokens: Int,
+        val cachedInputTokens: Int,
+        val outputTokens: Int,
+    ) : SessionDomainEvent
+
+    /** Replaces the visible session subagent snapshot list. */
+    data class SubagentsUpdated(
+        val threadId: String?,
+        val turnId: String?,
+        val agents: List<SessionSubagentSnapshot>,
+    ) : SessionDomainEvent
+
+    /** Appends a local system boundary when the current session switches to a different engine. */
+    data class EngineSwitched(
+        val itemId: String,
+        val targetEngineLabel: String,
+        val timestamp: Long,
+    ) : SessionDomainEvent
+
     /** Appends one terminal provider error to the conversation stream. */
     data class ErrorAppended(
         val itemId: String,
@@ -225,6 +257,38 @@ internal data class SessionFileChange(
     val path: String,
     val kind: String,
     val summary: String,
+    val displayName: String = path.substringAfterLast('/').substringAfterLast('\\').ifBlank { path },
+    val updatedAtMs: Long? = null,
+    val addedLines: Int? = null,
+    val deletedLines: Int? = null,
+    val unifiedDiff: String? = null,
+    val oldContent: String? = null,
+    val newContent: String? = null,
+)
+
+/**
+ * Describes the normalized runtime status of one session subagent.
+ */
+internal enum class SessionSubagentStatus {
+    ACTIVE,
+    IDLE,
+    PENDING,
+    FAILED,
+    COMPLETED,
+    UNKNOWN,
+}
+
+/**
+ * Stores one normalized subagent snapshot in the session domain.
+ */
+internal data class SessionSubagentSnapshot(
+    val threadId: String,
+    val displayName: String,
+    val mentionSlug: String,
+    val status: SessionSubagentStatus,
+    val statusText: String,
+    val summary: String? = null,
+    val updatedAt: Long = 0L,
 )
 
 /**

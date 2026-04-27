@@ -14,7 +14,7 @@ internal class SessionTabCoordinator(
     private val onSessionActivated: () -> Unit,
 ) {
     private val openSessionTabs = linkedSetOf<String>()
-    private val headerActionCache = ToolWindowHeaderActionCache(
+    private val headerActionCache = SessionTabsActionCache(
         onSelect = { sessionId -> switchToSession(sessionId) },
         onClose = { sessionId -> closeSessionTab(sessionId) },
     )
@@ -43,7 +43,7 @@ internal class SessionTabCoordinator(
             }
         }
         activeSessionTabId = chatService.getCurrentSessionId()
-        syncToolWindowHeaderTabs(sessionsById.values.toList())
+        syncSessionTabs(sessionsById.values.toList())
     }
 
     fun startNewSession() {
@@ -139,14 +139,14 @@ internal class SessionTabCoordinator(
         return chatService.listSessions().firstOrNull { it.id == sessionId }?.isRunning == true
     }
 
-    private fun syncToolWindowHeaderTabs(sessions: List<AgentChatService.SessionSummary>) {
+    private fun syncSessionTabs(sessions: List<AgentChatService.SessionSummary>) {
         val app = ApplicationManager.getApplication()
         if (!app.isDispatchThread) {
-            app.invokeLater { syncToolWindowHeaderTabs(sessions) }
+            app.invokeLater { syncSessionTabs(sessions) }
             return
         }
         val toolWindowEx = toolWindowProvider() ?: return
-        val layout = ToolWindowHeaderTabsModel.buildTabs(
+        val layout = SessionTabsModel.buildTabs(
             openSessionIds = openSessionTabs.toList(),
             activeSessionId = activeSessionTabId,
             sessions = sessions,

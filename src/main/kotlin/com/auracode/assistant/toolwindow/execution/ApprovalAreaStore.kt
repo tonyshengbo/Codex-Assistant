@@ -18,7 +18,7 @@ internal class ApprovalAreaStore {
         when (event) {
             is AppEvent.ApprovalRequested -> enqueue(event.request)
             is AppEvent.ApprovalResolved -> resolve(event.requestId)
-            is AppEvent.ExecutionProjectionUpdated -> replaceQueue(event.approvals)
+            is AppEvent.ExecutionUiProjectionUpdated -> replaceQueue(event.approvals)
             AppEvent.ClearApprovals -> _state.value = ApprovalAreaState()
             is AppEvent.UiIntentPublished -> handleUiIntent(event.intent)
             else -> Unit

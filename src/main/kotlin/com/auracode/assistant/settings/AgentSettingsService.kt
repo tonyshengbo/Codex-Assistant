@@ -2,7 +2,7 @@ package com.auracode.assistant.settings
 
 import com.auracode.assistant.provider.claude.ClaudeModelCatalog
 import com.auracode.assistant.provider.codex.CodexModelCatalog
-import com.auracode.assistant.toolwindow.eventing.ComposerReasoning
+import com.auracode.assistant.toolwindow.eventing.SubmissionReasoning
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.components.PersistentStateComponent
 import com.intellij.openapi.components.Service
@@ -66,9 +66,9 @@ class AgentSettingsService : PersistentStateComponent<AgentSettingsService.State
         var selectedAgentIds: LinkedHashSet<String> = linkedSetOf(),
         var disabledSkillNames: MutableSet<String> = linkedSetOf(),
         var customModelIds: MutableList<String> = mutableListOf(),
-        var selectedComposerModelsByEngine: MutableMap<String, String> = mutableMapOf(),
-        var selectedComposerModel: String = CodexModelCatalog.defaultModel,
-        var selectedComposerReasoning: String = ComposerReasoning.MEDIUM.effort,
+        var selectedSubmissionModelsByEngine: MutableMap<String, String> = mutableMapOf(),
+        var selectedSubmissionModel: String = CodexModelCatalog.defaultModel,
+        var selectedSubmissionReasoning: String = SubmissionReasoning.MEDIUM.effort,
     ) {
         fun executablePathFor(engineId: String): String {
             val fromMap = engineExecutablePaths[engineId]?.trim().orEmpty()
@@ -275,54 +275,54 @@ class AgentSettingsService : PersistentStateComponent<AgentSettingsService.State
         state.customModelIds = values.toMutableList()
     }
 
-    fun selectedComposerModel(): String = selectedComposerModel(defaultEngineId())
+    fun selectedSubmissionModel(): String = selectedSubmissionModel(defaultEngineId())
 
-    fun selectedComposerModel(engineId: String): String {
+    fun selectedSubmissionModel(engineId: String): String {
         val normalizedEngineId = engineId.trim().ifBlank { defaultEngineId() }
-        val fromMap = state.selectedComposerModelsByEngine[normalizedEngineId]?.trim().orEmpty()
-        if (fromMap.isNotBlank()) return normalizeComposerModel(normalizedEngineId, fromMap)
+        val fromMap = state.selectedSubmissionModelsByEngine[normalizedEngineId]?.trim().orEmpty()
+        if (fromMap.isNotBlank()) return normalizeSubmissionModel(normalizedEngineId, fromMap)
         return when (normalizedEngineId) {
-            "codex" -> state.selectedComposerModel.trim().ifBlank { CodexModelCatalog.defaultModel }
+            "codex" -> state.selectedSubmissionModel.trim().ifBlank { CodexModelCatalog.defaultModel }
             else -> state.defaultModelFor(normalizedEngineId)
         }
     }
 
-    fun setSelectedComposerModel(model: String) {
-        setSelectedComposerModel(defaultEngineId(), model)
+    fun setSelectedSubmissionModel(model: String) {
+        setSelectedSubmissionModel(defaultEngineId(), model)
     }
 
-    fun setSelectedComposerModel(engineId: String, model: String) {
+    fun setSelectedSubmissionModel(engineId: String, model: String) {
         val normalizedEngineId = engineId.trim().ifBlank { defaultEngineId() }
-        val normalizedModel = normalizeComposerModel(
+        val normalizedModel = normalizeSubmissionModel(
             engineId = normalizedEngineId,
             model = model.trim().ifBlank { state.defaultModelFor(normalizedEngineId) },
         )
         if (normalizedEngineId == "codex") {
-            state.selectedComposerModel = normalizedModel
+            state.selectedSubmissionModel = normalizedModel
         }
-        state.selectedComposerModelsByEngine[normalizedEngineId] = normalizedModel
+        state.selectedSubmissionModelsByEngine[normalizedEngineId] = normalizedModel
     }
 
     /** 对持久化状态执行轻量迁移，避免旧模型值持续污染运行时。 */
     private fun normalizePersistedState() {
-        state.selectedComposerModelsByEngine = state.selectedComposerModelsByEngine
+        state.selectedSubmissionModelsByEngine = state.selectedSubmissionModelsByEngine
             .mapValuesTo(linkedMapOf()) { (engineId, model) ->
-                normalizeComposerModel(engineId = engineId, model = model)
+                normalizeSubmissionModel(engineId = engineId, model = model)
             }
     }
 
     /** 根据引擎类型归一化当前选中的模型值。 */
-    private fun normalizeComposerModel(engineId: String, model: String): String {
+    private fun normalizeSubmissionModel(engineId: String, model: String): String {
         return when (engineId.trim()) {
             "claude" -> ClaudeModelCatalog.normalize(model)
             else -> model.trim()
         }
     }
 
-    fun selectedComposerReasoning(): String = state.selectedComposerReasoning.trim().ifBlank { ComposerReasoning.MEDIUM.effort }
+    fun selectedSubmissionReasoning(): String = state.selectedSubmissionReasoning.trim().ifBlank { SubmissionReasoning.MEDIUM.effort }
 
-    fun setSelectedComposerReasoning(reasoning: String) {
-        state.selectedComposerReasoning = reasoning.trim().ifBlank { ComposerReasoning.MEDIUM.effort }
+    fun setSelectedSubmissionReasoning(reasoning: String) {
+        state.selectedSubmissionReasoning = reasoning.trim().ifBlank { SubmissionReasoning.MEDIUM.effort }
     }
 
     fun disableSkill(name: String) {

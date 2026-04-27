@@ -4,8 +4,9 @@ import com.auracode.assistant.conversation.ConversationHistoryPage
 import com.auracode.assistant.protocol.ItemKind
 import com.auracode.assistant.protocol.ItemStatus
 import com.auracode.assistant.protocol.TurnOutcome
-import com.auracode.assistant.protocol.UnifiedEvent
-import com.auracode.assistant.protocol.UnifiedItem
+import com.auracode.assistant.protocol.ProviderEvent
+import com.auracode.assistant.protocol.ProviderItem
+import com.auracode.assistant.provider.session.ProviderProtocolDomainMapper
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.booleanOrNull
@@ -28,7 +29,7 @@ internal class ClaudeLocalHistoryReader(
     private val claudeProjectsDir: Path = Path.of(System.getProperty("user.home"), ".claude", "projects"),
 ) {
     private val parser: ClaudeStreamEventParser = ClaudeStreamEventParser(json = json)
-    private val toolCallItemMapper: ClaudeToolCallItemMapper = ClaudeToolCallItemMapper(json = json)
+    private val toolCallItemMapper: ClaudeToolCallProtocolMapper = ClaudeToolCallProtocolMapper(json = json)
 
     /**
      * 根据 sessionId 在所有项目目录中查找对应的 JSONL 文件。
@@ -46,14 +47,14 @@ internal class ClaudeLocalHistoryReader(
     }
 
     /**
-     * 读取并解析 JSONL 文件，将 user/assistant 条目转换为 UnifiedEvent 列表。
+     * 读取并解析 JSONL 文件，将 user/assistant 条目转换为 ProviderEvent 列表。
      * 每对 user+assistant 构成一个 turn：TurnStarted → ItemUpdated(user) → ItemUpdated(assistant) → TurnCompleted。
      */
     fun readHistory(sessionId: String): ConversationHistoryPage {
         val file = findSessionFile(sessionId)
             ?: return ConversationHistoryPage(events = emptyList(), hasOlder = false, olderCursor = null)
 
-        val events = mutableListOf<UnifiedEvent>()
+        val events = mutableListOf<ProviderEvent>()
         var pendingTurnId: String? = null
         val toolStates = linkedMapOf<String, HistoryToolState>()
 
@@ -101,7 +102,12 @@ internal class ClaudeLocalHistoryReader(
             }
         }
 
-        return ConversationHistoryPage(events = events, hasOlder = false, olderCursor = null)
+        val mapper = ProviderProtocolDomainMapper()
+        return ConversationHistoryPage(
+            events = events.flatMap(mapper::map),
+            hasOlder = false,
+            olderCursor = null,
+        )
     }
 
     /**
@@ -114,12 +120,12 @@ internal class ClaudeLocalHistoryReader(
         rawLine: String,
         toolStates: MutableMap<String, HistoryToolState>,
         pendingTurnId: String?,
-        events: MutableList<UnifiedEvent>,
+        events: MutableList<ProviderEvent>,
     ): String? {
         val nextPendingTurnId = extractPlainMessageText(payload)?.let { text ->
-            events += UnifiedEvent.TurnStarted(turnId = uuid, threadId = sessionId)
-            events += UnifiedEvent.ItemUpdated(
-                item = UnifiedItem(
+            events += ProviderEvent.TurnStarted(turnId = uuid, threadId = sessionId)
+            events += ProviderEvent.ItemUpdated(
+                item = ProviderItem(
                     id = uuid,
                     kind = ItemKind.NARRATIVE,
                     status = ItemStatus.SUCCESS,
@@ -146,7 +152,7 @@ internal class ClaudeLocalHistoryReader(
         )
         toolStates[rawEvent.toolUseId] = current.copy(event = updated)
         if (!updated.toolName.equals("TodoWrite", ignoreCase = true)) {
-            events += UnifiedEvent.ItemUpdated(
+            events += ProviderEvent.ItemUpdated(
                 toolCallItemMapper.map(ownerId = current.ownerId, event = updated),
             )
         }
@@ -163,14 +169,14 @@ internal class ClaudeLocalHistoryReader(
         rawLine: String,
         toolStates: MutableMap<String, HistoryToolState>,
         pendingTurnId: String?,
-        events: MutableList<UnifiedEvent>,
+        events: MutableList<ProviderEvent>,
     ): String? {
         val snapshot = parser.parse(rawLine) as? ClaudeStreamEvent.AssistantSnapshot
         if (snapshot == null) {
             val rawText = extractPlainMessageText(payload) ?: return pendingTurnId
             val text = stripThinkingTags(rawText).takeIf { it.isNotBlank() } ?: return pendingTurnId
-            events += UnifiedEvent.ItemUpdated(
-                item = UnifiedItem(
+            events += ProviderEvent.ItemUpdated(
+                item = ProviderItem(
                     id = payload.messageIdOrUuid(uuid),
                     kind = ItemKind.NARRATIVE,
                     status = ItemStatus.SUCCESS,
@@ -178,7 +184,7 @@ internal class ClaudeLocalHistoryReader(
                     text = text,
                 ),
             )
-            events += UnifiedEvent.TurnCompleted(
+            events += ProviderEvent.TurnCompleted(
                 turnId = pendingTurnId ?: uuid,
                 outcome = TurnOutcome.SUCCESS,
             )
@@ -194,7 +200,7 @@ internal class ClaudeLocalHistoryReader(
             )
             toolStates[content.toolUseId] = HistoryToolState(ownerId = uuid, event = toolEvent)
             if (!content.name.equals("TodoWrite", ignoreCase = true)) {
-                events += UnifiedEvent.ItemUpdated(
+                events += ProviderEvent.ItemUpdated(
                     toolCallItemMapper.map(ownerId = uuid, event = toolEvent),
                 )
             }
@@ -202,8 +208,8 @@ internal class ClaudeLocalHistoryReader(
 
         snapshot.content.filterIsInstance<ClaudeMessageContent.Thinking>().forEachIndexed { index, content ->
             if (content.text.isBlank()) return@forEachIndexed
-            events += UnifiedEvent.ItemUpdated(
-                item = UnifiedItem(
+            events += ProviderEvent.ItemUpdated(
+                item = ProviderItem(
                     id = "${payload.messageIdOrUuid(uuid)}:reasoning:$index",
                     kind = ItemKind.NARRATIVE,
                     status = ItemStatus.SUCCESS,
@@ -218,8 +224,8 @@ internal class ClaudeLocalHistoryReader(
             .joinToString(separator = "") { it.text }
         val text = stripThinkingTags(rawText).takeIf { it.isNotBlank() }
         if (text != null) {
-            events += UnifiedEvent.ItemUpdated(
-                item = UnifiedItem(
+            events += ProviderEvent.ItemUpdated(
+                item = ProviderItem(
                     id = payload.messageIdOrUuid(uuid),
                     kind = ItemKind.NARRATIVE,
                     status = ItemStatus.SUCCESS,
@@ -231,7 +237,7 @@ internal class ClaudeLocalHistoryReader(
 
         val hasToolUse = snapshot.content.any { it is ClaudeMessageContent.ToolUse }
         if (text != null && !hasToolUse) {
-            events += UnifiedEvent.TurnCompleted(
+            events += ProviderEvent.TurnCompleted(
                 turnId = pendingTurnId ?: uuid,
                 outcome = TurnOutcome.SUCCESS,
             )

@@ -7,9 +7,9 @@ import com.auracode.assistant.model.AgentApprovalMode
 import com.auracode.assistant.model.AgentRequest
 import com.auracode.assistant.model.ContextFile
 import com.auracode.assistant.notification.AuraNotificationGroup
-import com.auracode.assistant.protocol.ItemKind
-import com.auracode.assistant.protocol.UnifiedEvent
 import com.auracode.assistant.provider.ProviderRegistry
+import com.auracode.assistant.session.kernel.SessionDomainEvent
+import com.auracode.assistant.session.kernel.SessionMessageRole
 import com.auracode.assistant.settings.AgentSettingsService
 import com.intellij.notification.NotificationType
 import com.intellij.openapi.Disposable
@@ -28,7 +28,7 @@ internal class CommitMessageGenerationService private constructor(
     private val settings: AgentSettingsService,
     private val contextService: CommitMessageContextService?,
     private val applyService: CommitMessageApplyService,
-    private val streamProvider: suspend (AgentRequest) -> Flow<UnifiedEvent>,
+    private val streamProvider: suspend (AgentRequest) -> Flow<SessionDomainEvent>,
     private val workingDirectoryProvider: () -> String,
     private val failureNotifier: (String) -> Unit,
 ) : Disposable {
@@ -54,7 +54,7 @@ internal class CommitMessageGenerationService private constructor(
     )
 
     internal constructor(
-        streamProvider: suspend (AgentRequest) -> Flow<UnifiedEvent>,
+        streamProvider: suspend (AgentRequest) -> Flow<SessionDomainEvent>,
     ) : this(
         project = null,
         settings = AgentSettingsService(),
@@ -122,8 +122,8 @@ internal class CommitMessageGenerationService private constructor(
         val assistantBuffer = StringBuilder()
         val request = AgentRequest(
             engineId = engineId,
-            model = settings.selectedComposerModel(),
-            reasoningEffort = settings.selectedComposerReasoning(),
+            model = settings.selectedSubmissionModel(),
+            reasoningEffort = settings.selectedSubmissionReasoning(),
             prompt = CommitMessagePromptFactory.create(context),
             contextFiles = buildContextFiles(context),
             workingDirectory = workingDirectoryProvider(),
@@ -131,17 +131,13 @@ internal class CommitMessageGenerationService private constructor(
         )
         streamProvider(request).collect { event ->
             when (event) {
-                is UnifiedEvent.Error -> throw IllegalArgumentException(event.message)
-                is UnifiedEvent.ItemUpdated -> {
-                    val item = event.item
-                    if (item.kind == ItemKind.NARRATIVE &&
-                        item.name != "user_message" &&
-                        item.name != "system_message" &&
-                        !item.text.isNullOrBlank()
-                    ) {
-                        assistantBuffer.clear()
-                        assistantBuffer.append(item.text)
-                    }
+                is SessionDomainEvent.ErrorAppended -> throw IllegalArgumentException(event.message)
+                is SessionDomainEvent.MessageAppended -> if (
+                    event.role == SessionMessageRole.ASSISTANT &&
+                    event.text.isNotBlank()
+                ) {
+                    assistantBuffer.clear()
+                    assistantBuffer.append(event.text)
                 }
                 else -> Unit
             }

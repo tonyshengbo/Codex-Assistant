@@ -1,6 +1,6 @@
 package com.auracode.assistant.conversation
 
-import com.auracode.assistant.protocol.UnifiedEvent
+import com.auracode.assistant.session.kernel.SessionDomainEvent
 
 data class ConversationRef(
     val providerId: String,
@@ -32,8 +32,8 @@ data class ConversationCapabilities(
     val supportsSubagents: Boolean = false,
 )
 
-data class ConversationHistoryPage(
-    val events: List<UnifiedEvent>,
+internal data class ConversationHistoryPage(
+    val events: List<SessionDomainEvent>,
     val hasOlder: Boolean,
     val olderCursor: String?,
 )

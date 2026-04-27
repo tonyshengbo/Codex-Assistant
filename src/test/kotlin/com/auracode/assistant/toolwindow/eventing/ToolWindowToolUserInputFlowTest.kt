@@ -7,12 +7,12 @@ import com.auracode.assistant.conversation.ConversationCapabilities
 import com.auracode.assistant.protocol.ItemKind
 import com.auracode.assistant.protocol.ItemStatus
 import com.auracode.assistant.protocol.TurnOutcome
-import com.auracode.assistant.protocol.UnifiedEvent
-import com.auracode.assistant.protocol.UnifiedItem
-import com.auracode.assistant.protocol.UnifiedToolUserInputAnswerDraft
-import com.auracode.assistant.protocol.UnifiedToolUserInputOption
-import com.auracode.assistant.protocol.UnifiedToolUserInputPrompt
-import com.auracode.assistant.protocol.UnifiedToolUserInputQuestion
+import com.auracode.assistant.protocol.ProviderEvent
+import com.auracode.assistant.protocol.ProviderItem
+import com.auracode.assistant.protocol.ProviderToolUserInputAnswerDraft
+import com.auracode.assistant.protocol.ProviderToolUserInputOption
+import com.auracode.assistant.protocol.ProviderToolUserInputPrompt
+import com.auracode.assistant.protocol.ProviderToolUserInputQuestion
 import com.auracode.assistant.provider.AgentProvider
 import com.auracode.assistant.provider.AgentProviderFactory
 import com.auracode.assistant.provider.EngineCapabilities
@@ -20,13 +20,13 @@ import com.auracode.assistant.provider.EngineDescriptor
 import com.auracode.assistant.provider.ProviderRegistry
 import com.auracode.assistant.service.AgentChatService
 import com.auracode.assistant.settings.AgentSettingsService
-import com.auracode.assistant.toolwindow.submission.ComposerAreaStore
-import com.auracode.assistant.toolwindow.shell.RightDrawerAreaStore
-import com.auracode.assistant.toolwindow.sessions.HeaderAreaStore
+import com.auracode.assistant.toolwindow.submission.SubmissionAreaStore
+import com.auracode.assistant.toolwindow.shell.SidePanelAreaStore
+import com.auracode.assistant.toolwindow.sessions.SessionTabsAreaStore
 import com.auracode.assistant.toolwindow.shared.UiText
-import com.auracode.assistant.toolwindow.execution.StatusAreaStore
-import com.auracode.assistant.toolwindow.conversation.TimelineAreaStore
-import com.auracode.assistant.toolwindow.conversation.TimelineNode
+import com.auracode.assistant.toolwindow.execution.ExecutionStatusAreaStore
+import com.auracode.assistant.toolwindow.conversation.ConversationAreaStore
+import com.auracode.assistant.toolwindow.conversation.ConversationActivityItem
 import com.auracode.assistant.toolwindow.execution.ToolUserInputPromptStore
 import com.auracode.assistant.persistence.chat.SQLiteChatSessionRepository
 import kotlinx.coroutines.Dispatchers
@@ -55,8 +55,8 @@ class ToolWindowToolUserInputFlowTest {
         harness.provider.emitToolUserInput(prompt())
 
         harness.waitUntil { harness.toolUserInputStore.state.value.current?.requestId == "user-input-1" }
-        harness.waitUntil { harness.composerStore.state.value.toolUserInputPrompt?.requestId == "user-input-1" }
-        assertEquals(UiText.Bundle("status.waitingInput"), harness.statusStore.state.value.turnStatus?.label)
+        harness.waitUntil { harness.submissionStore.state.value.toolUserInputPrompt?.requestId == "user-input-1" }
+        assertEquals(UiText.Bundle("status.waitingInput"), harness.executionStatusStore.state.value.turnStatus?.label)
 
         harness.eventHub.publishUiIntent(
             UiIntent.SelectToolUserInputOption(
@@ -69,23 +69,23 @@ class ToolWindowToolUserInputFlowTest {
         harness.waitUntil { harness.provider.submissions.isNotEmpty() }
         assertEquals(
             "user-input-1" to mapOf(
-                "builder_demo_target" to UnifiedToolUserInputAnswerDraft(
+                "builder_demo_target" to ProviderToolUserInputAnswerDraft(
                     answers = listOf("Reuse existing demo"),
                 ),
             ),
             harness.provider.submissions.single(),
         )
         harness.waitUntil { !harness.toolUserInputStore.state.value.visible }
-        assertEquals(null, harness.composerStore.state.value.toolUserInputPrompt)
-        assertEquals(UiText.Bundle("status.running"), harness.statusStore.state.value.turnStatus?.label)
+        assertEquals(null, harness.submissionStore.state.value.toolUserInputPrompt)
+        assertEquals(UiText.Bundle("status.running"), harness.executionStatusStore.state.value.turnStatus?.label)
         harness.waitUntil {
-            harness.timelineStore.state.value.nodes
-                .filterIsInstance<TimelineNode.UserInputNode>()
+            harness.conversationStore.state.value.nodes
+                .filterIsInstance<ConversationActivityItem.UserInputNode>()
                 .singleOrNull()
                 ?.status == ItemStatus.SUCCESS
         }
 
-        val node = harness.timelineStore.state.value.nodes.filterIsInstance<TimelineNode.UserInputNode>().single()
+        val node = harness.conversationStore.state.value.nodes.filterIsInstance<ConversationActivityItem.UserInputNode>().single()
         assertEquals(ItemStatus.SUCCESS, node.status)
         assertTrue(node.body.contains("Reuse existing demo"))
         assertTrue(node.collapsedSummary.orEmpty().contains("Reuse existing demo"))
@@ -106,7 +106,7 @@ class ToolWindowToolUserInputFlowTest {
 
         harness.provider.emitToolUserInput(prompt())
         harness.waitUntil { harness.toolUserInputStore.state.value.visible }
-        harness.waitUntil { harness.composerStore.state.value.toolUserInputPrompt != null }
+        harness.waitUntil { harness.submissionStore.state.value.toolUserInputPrompt != null }
         harness.eventHub.publishUiIntent(
             UiIntent.SelectToolUserInputOption(
                 questionId = "builder_demo_target",
@@ -118,9 +118,9 @@ class ToolWindowToolUserInputFlowTest {
 
         harness.provider.emitPlanUpdateAndCompleteTurn()
 
-        harness.waitUntil { harness.composerStore.state.value.planCompletion != null }
+        harness.waitUntil { harness.submissionStore.state.value.planCompletion != null }
         assertFalse(harness.toolUserInputStore.state.value.visible)
-        assertTrue(harness.composerStore.state.value.planCompletion?.planTitle?.contains("Ship plan mode") == true)
+        assertTrue(harness.submissionStore.state.value.planCompletion?.planTitle?.contains("Ship plan mode") == true)
 
         harness.dispose()
     }
@@ -151,7 +151,7 @@ class ToolWindowToolUserInputFlowTest {
         harness.waitUntil { harness.provider.submissions.isNotEmpty() }
         assertEquals(
             "user-input-2" to mapOf(
-                "token_type" to UnifiedToolUserInputAnswerDraft(
+                "token_type" to ProviderToolUserInputAnswerDraft(
                     answers = listOf("积分代币"),
                 ),
             ),
@@ -171,7 +171,7 @@ class ToolWindowToolUserInputFlowTest {
 
         harness.provider.emitToolUserInput(prompt())
         harness.waitUntil { harness.toolUserInputStore.state.value.current?.requestId == "user-input-1" }
-        assertEquals(UiText.Bundle("status.waitingInput"), harness.statusStore.state.value.turnStatus?.label)
+        assertEquals(UiText.Bundle("status.waitingInput"), harness.executionStatusStore.state.value.turnStatus?.label)
 
         harness.eventHub.publishUiIntent(UiIntent.CancelToolUserInputPrompt)
 
@@ -181,8 +181,8 @@ class ToolWindowToolUserInputFlowTest {
             harness.provider.submissions.single(),
         )
         harness.waitUntil { harness.provider.cancelledRequestIds.isNotEmpty() }
-        harness.waitUntil { harness.statusStore.state.value.turnStatus == null }
-        assertEquals(null, harness.composerStore.state.value.toolUserInputPrompt)
+        harness.waitUntil { harness.executionStatusStore.state.value.turnStatus == null }
+        assertEquals(null, harness.submissionStore.state.value.toolUserInputPrompt)
 
         harness.dispose()
     }
@@ -205,25 +205,89 @@ class ToolWindowToolUserInputFlowTest {
         harness.provider.emitPlanUpdateAndCompleteTurn()
         Thread.sleep(100)
 
-        assertEquals(null, harness.composerStore.state.value.planCompletion)
-        assertEquals(null, harness.statusStore.state.value.turnStatus)
+        assertEquals(null, harness.submissionStore.state.value.planCompletion)
+        assertEquals(null, harness.executionStatusStore.state.value.turnStatus)
 
         harness.dispose()
     }
 
-    private fun prompt(): UnifiedToolUserInputPrompt {
-        return UnifiedToolUserInputPrompt(
+    @Test
+    fun `same raw request id with different item ids keeps separate timeline user input nodes`() {
+        val harness = CoordinatorHarness()
+
+        harness.eventHub.publishUiIntent(UiIntent.InputChanged("Plan this change"))
+        harness.eventHub.publishUiIntent(UiIntent.SendPrompt)
+        harness.waitUntil { harness.provider.requests.isNotEmpty() }
+
+        harness.provider.emitToolUserInput(
+            ProviderToolUserInputPrompt(
+                requestId = "0",
+                threadId = "thread-1",
+                turnId = "turn-1",
+                itemId = "call-1",
+                questions = prompt().questions,
+            ),
+        )
+        harness.waitUntil { harness.toolUserInputStore.state.value.current?.requestId == "0" }
+        harness.eventHub.publishUiIntent(
+            UiIntent.SelectToolUserInputOption(
+                questionId = "builder_demo_target",
+                optionLabel = "Reuse existing demo",
+            ),
+        )
+        harness.eventHub.publishUiIntent(UiIntent.SubmitToolUserInputPrompt)
+        harness.waitUntil {
+            harness.conversationStore.state.value.nodes
+                .filterIsInstance<ConversationActivityItem.UserInputNode>()
+                .singleOrNull()
+                ?.status == ItemStatus.SUCCESS
+        }
+
+        harness.provider.emitToolUserInput(
+            ProviderToolUserInputPrompt(
+                requestId = "0",
+                threadId = "thread-1",
+                turnId = "turn-1",
+                itemId = "call-2",
+                questions = prompt().questions,
+            ),
+        )
+        harness.waitUntil { harness.toolUserInputStore.state.value.current?.requestId == "0" }
+        harness.eventHub.publishUiIntent(
+            UiIntent.SelectToolUserInputOption(
+                questionId = "builder_demo_target",
+                optionLabel = "Reuse existing demo",
+            ),
+        )
+        harness.eventHub.publishUiIntent(UiIntent.SubmitToolUserInputPrompt)
+        harness.waitUntil {
+            harness.conversationStore.state.value.nodes
+                .filterIsInstance<ConversationActivityItem.UserInputNode>()
+                .size == 2
+        }
+
+        val nodes = harness.conversationStore.state.value.nodes.filterIsInstance<ConversationActivityItem.UserInputNode>()
+        assertEquals(2, nodes.size)
+        assertEquals("turn-1", nodes[0].turnId)
+        assertEquals("turn-1", nodes[1].turnId)
+        assertTrue(nodes[0].sourceId != nodes[1].sourceId)
+
+        harness.dispose()
+    }
+
+    private fun prompt(): ProviderToolUserInputPrompt {
+        return ProviderToolUserInputPrompt(
             requestId = "user-input-1",
             threadId = "thread-1",
             turnId = "turn-1",
             itemId = "call-1",
             questions = listOf(
-                UnifiedToolUserInputQuestion(
+                ProviderToolUserInputQuestion(
                     id = "builder_demo_target",
                     header = "Target",
                     question = "How should I handle the builder demo?",
                     options = listOf(
-                        UnifiedToolUserInputOption(
+                        ProviderToolUserInputOption(
                             label = "Reuse existing demo",
                             description = "Keep the current file and refine it",
                         ),
@@ -235,27 +299,27 @@ class ToolWindowToolUserInputFlowTest {
         )
     }
 
-    private fun otherLikePrompt(): UnifiedToolUserInputPrompt {
-        return UnifiedToolUserInputPrompt(
+    private fun otherLikePrompt(): ProviderToolUserInputPrompt {
+        return ProviderToolUserInputPrompt(
             requestId = "user-input-2",
             threadId = "thread-1",
             turnId = "turn-1",
             itemId = "call-2",
             questions = listOf(
-                UnifiedToolUserInputQuestion(
+                ProviderToolUserInputQuestion(
                     id = "token_type",
                     header = "代币类型",
                     question = "你说的“代币系统”是哪种？",
                     options = listOf(
-                        UnifiedToolUserInputOption(
+                        ProviderToolUserInputOption(
                             label = "应用积分代币 (Recommended)",
                             description = "中心化账户余额系统，支持发放/转账/消费",
                         ),
-                        UnifiedToolUserInputOption(
+                        ProviderToolUserInputOption(
                             label = "区块链代币",
                             description = "智能合约风格（如 ERC-20）模型",
                         ),
-                        UnifiedToolUserInputOption(
+                        ProviderToolUserInputOption(
                             label = "Other",
                             description = "Provide a custom answer.",
                         ),
@@ -301,19 +365,19 @@ class ToolWindowToolUserInputFlowTest {
             scopeDispatcher = testDispatcher,
         )
         val eventHub = ToolWindowEventHub()
-        val timelineStore = TimelineAreaStore()
-        val composerStore = ComposerAreaStore()
-        val statusStore = StatusAreaStore()
+        val conversationStore = ConversationAreaStore()
+        val submissionStore = SubmissionAreaStore()
+        val executionStatusStore = ExecutionStatusAreaStore()
         val toolUserInputStore = ToolUserInputPromptStore()
         private val coordinator = ToolWindowCoordinator(
             chatService = service,
             settingsService = settings,
             eventHub = eventHub,
-            headerStore = HeaderAreaStore(),
-            statusStore = statusStore,
-            timelineStore = timelineStore,
-            composerStore = composerStore,
-            rightDrawerStore = RightDrawerAreaStore(),
+            sessionTabsStore = SessionTabsAreaStore(),
+            executionStatusStore = executionStatusStore,
+            conversationStore = conversationStore,
+            submissionStore = submissionStore,
+            sidePanelStore = SidePanelAreaStore(),
             toolUserInputPromptStore = toolUserInputStore,
             runStartupWarmups = false,
             scopeDispatcher = testDispatcher,
@@ -338,9 +402,9 @@ class ToolWindowToolUserInputFlowTest {
 
     private class RecordingToolUserInputProvider : AgentProvider {
         val requests = CopyOnWriteArrayList<AgentRequest>()
-        val submissions = CopyOnWriteArrayList<Pair<String, Map<String, UnifiedToolUserInputAnswerDraft>>>()
+        val submissions = CopyOnWriteArrayList<Pair<String, Map<String, ProviderToolUserInputAnswerDraft>>>()
         val cancelledRequestIds = CopyOnWriteArrayList<String>()
-        private var sink: (UnifiedEvent) -> Unit = {}
+        private var sink: (ProviderEvent) -> Unit = {}
 
         override fun capabilities(): ConversationCapabilities = ConversationCapabilities(
             supportsStructuredHistory = false,
@@ -353,22 +417,22 @@ class ToolWindowToolUserInputFlowTest {
             supportsImageInputs = true,
         )
 
-        override fun stream(request: AgentRequest): Flow<UnifiedEvent> = callbackFlow {
+        override fun stream(request: AgentRequest): kotlinx.coroutines.flow.Flow<com.auracode.assistant.session.kernel.SessionDomainEvent> = callbackFlow {
             requests += request
-            sink = { event -> trySend(event); Unit }
-            trySend(UnifiedEvent.ThreadStarted("thread-1"))
-            trySend(UnifiedEvent.TurnStarted("turn-1", "thread-1"))
+            sink = { event -> com.auracode.assistant.test.trySendProviderEvent(this, event); Unit }
+            com.auracode.assistant.test.trySendProviderEvent(this, ProviderEvent.ThreadStarted("thread-1"))
+            com.auracode.assistant.test.trySendProviderEvent(this, ProviderEvent.TurnStarted("turn-1", "thread-1"))
             awaitClose { sink = {} }
         }
 
-        fun emitToolUserInput(prompt: UnifiedToolUserInputPrompt) {
-            sink(UnifiedEvent.ToolUserInputRequested(prompt))
+        fun emitToolUserInput(prompt: ProviderToolUserInputPrompt) {
+            sink(ProviderEvent.ToolUserInputRequested(prompt))
         }
 
         fun emitPlanUpdateAndCompleteTurn() {
             sink(
-                UnifiedEvent.ItemUpdated(
-                    UnifiedItem(
+                ProviderEvent.ItemUpdated(
+                    ProviderItem(
                         id = "req-1:plan:turn-1",
                         kind = ItemKind.PLAN_UPDATE,
                         status = ItemStatus.SUCCESS,
@@ -377,15 +441,15 @@ class ToolWindowToolUserInputFlowTest {
                     ),
                 ),
             )
-            sink(UnifiedEvent.TurnCompleted("turn-1", TurnOutcome.SUCCESS))
+            sink(ProviderEvent.TurnCompleted("turn-1", TurnOutcome.SUCCESS))
         }
 
         override fun submitToolUserInput(
             requestId: String,
-            answers: Map<String, UnifiedToolUserInputAnswerDraft>,
+            answers: Map<String, ProviderToolUserInputAnswerDraft>,
         ): Boolean {
             submissions += requestId to answers
-            sink(UnifiedEvent.ToolUserInputResolved(requestId))
+            sink(ProviderEvent.ToolUserInputResolved(requestId))
             return true
         }
 

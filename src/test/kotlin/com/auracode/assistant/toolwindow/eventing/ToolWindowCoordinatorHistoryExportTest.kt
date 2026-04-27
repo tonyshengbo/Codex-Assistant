@@ -13,17 +13,17 @@ import com.auracode.assistant.provider.ProviderRegistry
 import com.auracode.assistant.protocol.ItemKind
 import com.auracode.assistant.protocol.ItemStatus
 import com.auracode.assistant.protocol.TurnOutcome
-import com.auracode.assistant.protocol.UnifiedEvent
-import com.auracode.assistant.protocol.UnifiedItem
+import com.auracode.assistant.protocol.ProviderEvent
+import com.auracode.assistant.protocol.ProviderItem
 import com.auracode.assistant.settings.AgentSettingsService
 import com.auracode.assistant.service.AgentChatService
-import com.auracode.assistant.toolwindow.submission.ComposerAreaStore
-import com.auracode.assistant.toolwindow.shell.RightDrawerAreaStore
-import com.auracode.assistant.toolwindow.sessions.HeaderAreaStore
+import com.auracode.assistant.toolwindow.submission.SubmissionAreaStore
+import com.auracode.assistant.toolwindow.shell.SidePanelAreaStore
+import com.auracode.assistant.toolwindow.sessions.SessionTabsAreaStore
 import com.auracode.assistant.toolwindow.shared.UiText
 import com.auracode.assistant.toolwindow.shared.resolve
-import com.auracode.assistant.toolwindow.execution.StatusAreaStore
-import com.auracode.assistant.toolwindow.conversation.TimelineAreaStore
+import com.auracode.assistant.toolwindow.execution.ExecutionStatusAreaStore
+import com.auracode.assistant.toolwindow.conversation.ConversationAreaStore
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emptyFlow
 import kotlin.io.path.createTempDirectory
@@ -63,7 +63,7 @@ class ToolWindowCoordinatorHistoryExportTest {
             settings = settings,
         )
         val eventHub = ToolWindowEventHub()
-        val statusStore = StatusAreaStore()
+        val executionStatusStore = ExecutionStatusAreaStore()
         var suggestedName: String? = null
         var exportPath: String? = null
         var exportContent: String? = null
@@ -71,11 +71,11 @@ class ToolWindowCoordinatorHistoryExportTest {
             chatService = service,
             settingsService = settings,
             eventHub = eventHub,
-            headerStore = HeaderAreaStore(),
-            statusStore = statusStore,
-            timelineStore = TimelineAreaStore(),
-            composerStore = ComposerAreaStore(),
-            rightDrawerStore = RightDrawerAreaStore(),
+            sessionTabsStore = SessionTabsAreaStore(),
+            executionStatusStore = executionStatusStore,
+            conversationStore = ConversationAreaStore(),
+            submissionStore = SubmissionAreaStore(),
+            sidePanelStore = SidePanelAreaStore(),
             pickExportPath = { suggested ->
                 suggestedName = suggested
                 workingDir.resolve(suggested).toString()
@@ -101,7 +101,7 @@ class ToolWindowCoordinatorHistoryExportTest {
         assertContains(assertNotNull(exportContent), "# Refine timeline")
         assertContains(assertNotNull(exportContent), "First question")
         assertContains(assertNotNull(exportContent), "Second answer")
-        val toast = assertNotNull(statusStore.state.value.toast)
+        val toast = assertNotNull(executionStatusStore.state.value.toast)
         assertContains((toast.text as UiText.Raw).resolve(), "Exported conversation")
 
         coordinator.dispose()
@@ -144,13 +144,13 @@ class ToolWindowCoordinatorHistoryExportTest {
     }
 
     private class ExportHistoryProvider(
-        private val historyTurns: List<List<UnifiedEvent>>,
+        private val historyTurns: List<List<ProviderEvent>>,
     ) : AgentProvider {
-        override fun stream(request: AgentRequest): Flow<UnifiedEvent> = emptyFlow()
+        override fun stream(request: AgentRequest): kotlinx.coroutines.flow.Flow<com.auracode.assistant.session.kernel.SessionDomainEvent> = com.auracode.assistant.test.emptySessionDomainEventFlow()
 
         override suspend fun loadInitialHistory(ref: ConversationRef, pageSize: Int): ConversationHistoryPage {
             val pageTurns = historyTurns.takeLast(pageSize)
-            return ConversationHistoryPage(
+            return com.auracode.assistant.test.historyPageFromProviderEvents(
                 events = pageTurns.flatten(),
                 hasOlder = historyTurns.size > pageTurns.size,
                 olderCursor = (historyTurns.size - pageTurns.size).takeIf { it > 0 }?.toString(),
@@ -161,7 +161,7 @@ class ToolWindowCoordinatorHistoryExportTest {
             val endExclusive = cursor.toInt()
             val startInclusive = (endExclusive - pageSize).coerceAtLeast(0)
             val pageTurns = historyTurns.subList(startInclusive, endExclusive)
-            return ConversationHistoryPage(
+            return com.auracode.assistant.test.historyPageFromProviderEvents(
                 events = pageTurns.flatten(),
                 hasOlder = startInclusive > 0,
                 olderCursor = startInclusive.takeIf { it > 0 }?.toString(),
@@ -172,11 +172,11 @@ class ToolWindowCoordinatorHistoryExportTest {
     }
 
     private companion object {
-        fun historyTurn(turnId: String, userText: String, assistantText: String): List<UnifiedEvent> {
+        fun historyTurn(turnId: String, userText: String, assistantText: String): List<ProviderEvent> {
             return listOf(
-                UnifiedEvent.TurnStarted(turnId = turnId, threadId = "thread-1"),
-                UnifiedEvent.ItemUpdated(
-                    UnifiedItem(
+                ProviderEvent.TurnStarted(turnId = turnId, threadId = "thread-1"),
+                ProviderEvent.ItemUpdated(
+                    ProviderItem(
                         id = "user:$turnId",
                         kind = ItemKind.NARRATIVE,
                         status = ItemStatus.SUCCESS,
@@ -184,8 +184,8 @@ class ToolWindowCoordinatorHistoryExportTest {
                         text = userText,
                     ),
                 ),
-                UnifiedEvent.ItemUpdated(
-                    UnifiedItem(
+                ProviderEvent.ItemUpdated(
+                    ProviderItem(
                         id = "assistant:$turnId",
                         kind = ItemKind.NARRATIVE,
                         status = ItemStatus.SUCCESS,
@@ -193,7 +193,7 @@ class ToolWindowCoordinatorHistoryExportTest {
                         text = assistantText,
                     ),
                 ),
-                UnifiedEvent.TurnCompleted(turnId = turnId, outcome = TurnOutcome.SUCCESS),
+                ProviderEvent.TurnCompleted(turnId = turnId, outcome = TurnOutcome.SUCCESS),
             )
         }
     }

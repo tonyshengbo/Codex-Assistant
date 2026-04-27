@@ -47,7 +47,7 @@ import com.auracode.assistant.toolwindow.shared.assistantBodyTextStyle
 import com.auracode.assistant.toolwindow.shared.assistantUiTokens
 
 @Composable
-internal fun DrawerHeader(
+internal fun PanelHeader(
     p: DesignPalette,
     title: String,
     subtitle: String,

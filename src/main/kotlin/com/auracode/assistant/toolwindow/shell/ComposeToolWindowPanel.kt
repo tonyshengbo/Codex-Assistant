@@ -21,21 +21,21 @@ import com.auracode.assistant.notification.IdeAttentionStateProvider
 import com.auracode.assistant.settings.skills.SkillsManagementAdapterRegistry
 import com.auracode.assistant.settings.skills.SkillsRuntimeService
 import com.auracode.assistant.toolwindow.execution.ApprovalAreaStore
-import com.auracode.assistant.toolwindow.submission.ComposerAreaStore
-import com.auracode.assistant.toolwindow.shell.RightDrawerAreaStore
+import com.auracode.assistant.toolwindow.submission.SubmissionAreaStore
+import com.auracode.assistant.toolwindow.shell.SidePanelAreaStore
 import com.auracode.assistant.toolwindow.eventing.AppEvent
 import com.auracode.assistant.toolwindow.eventing.ToolWindowCoordinator
 import com.auracode.assistant.toolwindow.eventing.ToolWindowEventHub
 import com.auracode.assistant.toolwindow.eventing.UiIntent
-import com.auracode.assistant.toolwindow.external.ToolWindowExternalRequestBridge
-import com.auracode.assistant.toolwindow.sessions.HeaderAreaStore
+import com.auracode.assistant.toolwindow.external.ExternalRequestRouter
+import com.auracode.assistant.toolwindow.sessions.SessionTabsAreaStore
 import com.auracode.assistant.toolwindow.execution.ToolUserInputPromptStore
 import com.auracode.assistant.toolwindow.sessions.SessionTabCoordinator
 import com.auracode.assistant.toolwindow.sessions.SessionAttentionStore
-import com.auracode.assistant.toolwindow.execution.StatusAreaStore
-import com.auracode.assistant.toolwindow.conversation.TimelineAreaStore
-import com.auracode.assistant.toolwindow.conversation.TimelineFileChange
-import com.auracode.assistant.toolwindow.conversation.TimelineFileChangePreview
+import com.auracode.assistant.toolwindow.execution.ExecutionStatusAreaStore
+import com.auracode.assistant.toolwindow.conversation.ConversationAreaStore
+import com.auracode.assistant.toolwindow.conversation.ConversationFileChange
+import com.auracode.assistant.toolwindow.conversation.ConversationFileChangePreview
 import com.auracode.assistant.toolwindow.shared.assistantMaterialColors
 import com.auracode.assistant.toolwindow.shared.assistantPalette
 import com.auracode.assistant.toolwindow.shared.assistantTypography
@@ -78,13 +78,13 @@ class ComposeToolWindowPanel(
     private val settingsService = AgentSettingsService.getInstance()
     private val eventHub = ToolWindowEventHub()
 
-    private val headerStore = HeaderAreaStore()
-    private val statusStore = StatusAreaStore()
-    private val timelineStore = TimelineAreaStore()
+    private val sessionTabsStore = SessionTabsAreaStore()
+    private val executionStatusStore = ExecutionStatusAreaStore()
+    private val conversationStore = ConversationAreaStore()
     private val skillsRuntimeService = SkillsRuntimeService(
         adapterRegistry = SkillsManagementAdapterRegistry(settingsService),
     )
-    private val composerStore = ComposerAreaStore(
+    private val submissionStore = SubmissionAreaStore(
         availableSkillsProvider = {
             skillsRuntimeService.enabledSlashSkills(
                 engineId = chatService.defaultEngineId(),
@@ -92,12 +92,12 @@ class ComposeToolWindowPanel(
             )
         },
     )
-    private val rightDrawerStore = RightDrawerAreaStore()
+    private val sidePanelStore = SidePanelAreaStore()
     private val approvalStore = ApprovalAreaStore()
     private val toolUserInputPromptStore = ToolUserInputPromptStore()
     private val sessionAttentionStore = SessionAttentionStore()
-    private val externalRequestBridge = project.getService(ToolWindowExternalRequestBridge::class.java)
-    private val externalRequestRegistration = externalRequestBridge.registerHandler { request ->
+    private val externalRequestRouter = project.getService(ExternalRequestRouter::class.java)
+    private val externalRequestRegistration = externalRequestRouter.registerHandler { request ->
         eventHub.publishUiIntent(UiIntent.SubmitExternalRequest(request))
     }
 
@@ -119,11 +119,11 @@ class ComposeToolWindowPanel(
         chatService = chatService,
         settingsService = settingsService,
         eventHub = eventHub,
-        headerStore = headerStore,
-        statusStore = statusStore,
-        timelineStore = timelineStore,
-        composerStore = composerStore,
-        rightDrawerStore = rightDrawerStore,
+        sessionTabsStore = sessionTabsStore,
+        executionStatusStore = executionStatusStore,
+        conversationStore = conversationStore,
+        submissionStore = submissionStore,
+        sidePanelStore = sidePanelStore,
         approvalStore = approvalStore,
         toolUserInputPromptStore = toolUserInputPromptStore,
         completionNotificationService = completionNotificationService,
@@ -169,11 +169,11 @@ class ComposeToolWindowPanel(
         searchProjectFiles = { query, limit ->
             smartFileSearchService.searchByName(query = query, limit = limit)
         },
-        openTimelineFileChange = { change ->
-            openTimelineFileChange(project, change)
+        openConversationFileChange = { change ->
+            openConversationFileChange(project, change)
         },
-        openTimelineFilePath = { path ->
-            openTimelineFilePath(project, path)
+        openConversationFilePath = { path ->
+            openConversationFilePath(project, path)
         },
         revealPathInFileManager = { path ->
             revealPathInFileManager(path)
@@ -230,16 +230,16 @@ class ComposeToolWindowPanel(
 
         add(composePanel, BorderLayout.CENTER)
         composePanel.setContent {
-            val headerState by headerStore.state.collectAsState()
-            val statusState by statusStore.state.collectAsState()
-            val timelineState by timelineStore.state.collectAsState()
-            val composerState by composerStore.state.collectAsState()
-            val rightDrawerState by rightDrawerStore.state.collectAsState()
+            val sessionTabsState by sessionTabsStore.state.collectAsState()
+            val executionStatusState by executionStatusStore.state.collectAsState()
+            val conversationState by conversationStore.state.collectAsState()
+            val submissionState by submissionStore.state.collectAsState()
+            val sidePanelState by sidePanelStore.state.collectAsState()
             val approvalState by approvalStore.state.collectAsState()
             val toolUserInputPromptState by toolUserInputPromptStore.state.collectAsState()
             val languageVersion by settingsService.languageVersion.collectAsState()
             val appearanceVersion by settingsService.appearanceVersion.collectAsState()
-            val themeMode = rightDrawerState.themeMode
+            val themeMode = sidePanelState.themeMode
             val effectiveTheme = resolveEffectiveTheme(themeMode, currentIdeDarkTheme())
             val palette = assistantPalette(effectiveTheme)
 
@@ -253,11 +253,11 @@ class ComposeToolWindowPanel(
                 key(languageVersion, appearanceVersion) {
                     Surface(modifier = Modifier) {
                         ToolWindowScreen(
-                            headerState = headerState,
-                            statusState = statusState,
-                            timelineState = timelineState,
-                            composerState = composerState,
-                            rightDrawerState = rightDrawerState,
+                            sessionTabsState = sessionTabsState,
+                            executionStatusState = executionStatusState,
+                            conversationState = conversationState,
+                            submissionState = submissionState,
+                            sidePanelState = sidePanelState,
                             approvalState = approvalState,
                             toolUserInputPromptState = toolUserInputPromptState,
                             anchor = toolWindowAnchor,
@@ -297,7 +297,7 @@ class ComposeToolWindowPanel(
     private fun dispatchIntent(intent: UiIntent) {
         when (intent) {
             is UiIntent.UpdateDocument -> {
-                composerStore.applyDocumentUpdate(intent.value)?.let { request ->
+                submissionStore.applyDocumentUpdate(intent.value)?.let { request ->
                     request.mention?.let { mention ->
                         eventHub.publishUiIntent(
                             UiIntent.RequestMentionSuggestions(
@@ -344,14 +344,14 @@ class ComposeToolWindowPanel(
         )
     }
 
-    private fun openTimelineFileChange(
+    private fun openConversationFileChange(
         project: Project,
-        change: TimelineFileChange,
+        change: ConversationFileChange,
     ) {
         val app = ApplicationManager.getApplication()
         val action = Runnable {
             val vFile = LocalFileSystem.getInstance().findFileByPath(change.path)
-            val resolved = TimelineFileChangePreview.resolve(change)
+            val resolved = ConversationFileChangePreview.resolve(change)
             val oldContent = resolved.oldContent
             val newContent = resolved.newContent
             if (!oldContent.isNullOrBlank() || !newContent.isNullOrBlank()) {
@@ -377,7 +377,7 @@ class ComposeToolWindowPanel(
         }
     }
 
-    private fun openTimelineFilePath(
+    private fun openConversationFilePath(
         project: Project,
         path: String,
     ) {

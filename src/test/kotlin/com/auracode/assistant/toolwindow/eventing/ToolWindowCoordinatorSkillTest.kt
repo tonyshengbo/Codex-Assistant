@@ -4,7 +4,7 @@ import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.TextFieldValue
 import com.auracode.assistant.model.AgentRequest
 import com.auracode.assistant.protocol.TurnOutcome
-import com.auracode.assistant.protocol.UnifiedEvent
+import com.auracode.assistant.protocol.ProviderEvent
 import com.auracode.assistant.provider.AgentProvider
 import com.auracode.assistant.provider.AgentProviderFactory
 import com.auracode.assistant.provider.EngineCapabilities
@@ -19,12 +19,12 @@ import com.auracode.assistant.settings.skills.SkillsManagementAdapter
 import com.auracode.assistant.settings.skills.SkillsManagementAdapterRegistry
 import com.auracode.assistant.settings.skills.SkillsRuntimeService
 import com.auracode.assistant.toolwindow.execution.ApprovalAreaStore
-import com.auracode.assistant.toolwindow.submission.ComposerAreaStore
-import com.auracode.assistant.toolwindow.shell.RightDrawerAreaStore
+import com.auracode.assistant.toolwindow.submission.SubmissionAreaStore
+import com.auracode.assistant.toolwindow.shell.SidePanelAreaStore
 import com.auracode.assistant.toolwindow.settings.SettingsSection
-import com.auracode.assistant.toolwindow.sessions.HeaderAreaStore
-import com.auracode.assistant.toolwindow.execution.StatusAreaStore
-import com.auracode.assistant.toolwindow.conversation.TimelineAreaStore
+import com.auracode.assistant.toolwindow.sessions.SessionTabsAreaStore
+import com.auracode.assistant.toolwindow.execution.ExecutionStatusAreaStore
+import com.auracode.assistant.toolwindow.conversation.ConversationAreaStore
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
@@ -53,7 +53,7 @@ class ToolWindowCoordinatorSkillTest {
             settings = settings,
         )
         val eventHub = ToolWindowEventHub()
-        val statusStore = StatusAreaStore()
+        val executionStatusStore = ExecutionStatusAreaStore()
         val runtimeService = SkillsRuntimeService(
             adapterRegistry = SkillsManagementAdapterRegistry(
                 adapters = mapOf(
@@ -75,7 +75,7 @@ class ToolWindowCoordinatorSkillTest {
         kotlinx.coroutines.runBlocking {
             runtimeService.getSkills(engineId = "codex", cwd = ".")
         }
-        val composerStore = ComposerAreaStore(
+        val submissionStore = SubmissionAreaStore(
             availableSkillsProvider = {
                 runtimeService.enabledSlashSkills(engineId = "codex", cwd = ".")
             },
@@ -84,18 +84,18 @@ class ToolWindowCoordinatorSkillTest {
             chatService = service,
             settingsService = settings,
             eventHub = eventHub,
-            headerStore = HeaderAreaStore(),
-            statusStore = statusStore,
-            timelineStore = TimelineAreaStore(),
-            composerStore = composerStore,
-            rightDrawerStore = RightDrawerAreaStore(),
+            sessionTabsStore = SessionTabsAreaStore(),
+            executionStatusStore = executionStatusStore,
+            conversationStore = ConversationAreaStore(),
+            submissionStore = submissionStore,
+            sidePanelStore = SidePanelAreaStore(),
             approvalStore = ApprovalAreaStore(),
             skillsRuntimeService = runtimeService,
             runStartupWarmups = false,
             scopeDispatcher = testDispatcher,
         )
 
-        composerStore.onEvent(
+        submissionStore.onEvent(
             AppEvent.UiIntentPublished(
                 UiIntent.UpdateDocument(TextFieldValue("\$brainstorming write tests", TextRange(27))),
             ),
@@ -103,13 +103,13 @@ class ToolWindowCoordinatorSkillTest {
 
         eventHub.publishUiIntent(UiIntent.SendPrompt)
 
-        waitUntil(2_000) { statusStore.state.value.toast != null }
+        waitUntil(2_000) { executionStatusStore.state.value.toast != null }
 
         assertEquals(
             "Disabled skills cannot be used: brainstorming",
-            statusStore.state.value.toast?.text?.let { (it as com.auracode.assistant.toolwindow.shared.UiText.Raw).value },
+            executionStatusStore.state.value.toast?.text?.let { (it as com.auracode.assistant.toolwindow.shared.UiText.Raw).value },
         )
-        assertEquals(null, statusStore.state.value.turnStatus)
+        assertEquals(null, executionStatusStore.state.value.turnStatus)
 
         coordinator.dispose()
         service.dispose()
@@ -146,7 +146,7 @@ class ToolWindowCoordinatorSkillTest {
         kotlinx.coroutines.runBlocking {
             runtimeService.getSkills(engineId = "codex", cwd = ".")
         }
-        val store = ComposerAreaStore(
+        val store = SubmissionAreaStore(
             availableSkillsProvider = {
                 runtimeService.enabledSlashSkills(engineId = "codex", cwd = ".")
             },
@@ -192,11 +192,11 @@ class ToolWindowCoordinatorSkillTest {
             chatService = service,
             settingsService = settings,
             eventHub = eventHub,
-            headerStore = HeaderAreaStore(),
-            statusStore = StatusAreaStore(),
-            timelineStore = TimelineAreaStore(),
-            composerStore = ComposerAreaStore(),
-            rightDrawerStore = RightDrawerAreaStore(),
+            sessionTabsStore = SessionTabsAreaStore(),
+            executionStatusStore = ExecutionStatusAreaStore(),
+            conversationStore = ConversationAreaStore(),
+            submissionStore = SubmissionAreaStore(),
+            sidePanelStore = SidePanelAreaStore(),
             approvalStore = ApprovalAreaStore(),
             skillsRuntimeService = runtimeService,
             runStartupWarmups = false,
@@ -245,16 +245,16 @@ class ToolWindowCoordinatorSkillTest {
             ),
         )
         val eventHub = ToolWindowEventHub()
-        val rightDrawerStore = RightDrawerAreaStore()
+        val sidePanelStore = SidePanelAreaStore()
         val coordinator = ToolWindowCoordinator(
             chatService = service,
             settingsService = settings,
             eventHub = eventHub,
-            headerStore = HeaderAreaStore(),
-            statusStore = StatusAreaStore(),
-            timelineStore = TimelineAreaStore(),
-            composerStore = ComposerAreaStore(),
-            rightDrawerStore = rightDrawerStore,
+            sessionTabsStore = SessionTabsAreaStore(),
+            executionStatusStore = ExecutionStatusAreaStore(),
+            conversationStore = ConversationAreaStore(),
+            submissionStore = SubmissionAreaStore(),
+            sidePanelStore = sidePanelStore,
             approvalStore = ApprovalAreaStore(),
             skillsRuntimeService = SkillsRuntimeService(
                 adapterRegistry = SkillsManagementAdapterRegistry(
@@ -271,13 +271,13 @@ class ToolWindowCoordinatorSkillTest {
 
         waitUntil(5_000) {
             adapter.listCalls > initialListCalls &&
-                rightDrawerStore.state.value.settingsSection == SettingsSection.SKILLS &&
-                rightDrawerStore.state.value.skillsHasLoadedSnapshot
+                sidePanelStore.state.value.settingsSection == SettingsSection.SKILLS &&
+                sidePanelStore.state.value.skillsHasLoadedSnapshot
         }
 
-        assertEquals(SettingsSection.SKILLS, rightDrawerStore.state.value.settingsSection)
-        assertTrue(rightDrawerStore.state.value.skillsHasLoadedSnapshot)
-        assertEquals(1, rightDrawerStore.state.value.skills.size)
+        assertEquals(SettingsSection.SKILLS, sidePanelStore.state.value.settingsSection)
+        assertTrue(sidePanelStore.state.value.skillsHasLoadedSnapshot)
+        assertEquals(1, sidePanelStore.state.value.skills.size)
 
         coordinator.dispose()
         service.dispose()
@@ -299,13 +299,13 @@ class ToolWindowCoordinatorSkillTest {
             chatService = service,
             settingsService = settings,
             eventHub = eventHub,
-            headerStore = HeaderAreaStore(),
-            statusStore = StatusAreaStore(),
-            timelineStore = TimelineAreaStore(),
-            composerStore = ComposerAreaStore(),
-            rightDrawerStore = RightDrawerAreaStore(),
+            sessionTabsStore = SessionTabsAreaStore(),
+            executionStatusStore = ExecutionStatusAreaStore(),
+            conversationStore = ConversationAreaStore(),
+            submissionStore = SubmissionAreaStore(),
+            sidePanelStore = SidePanelAreaStore(),
             approvalStore = ApprovalAreaStore(),
-            openTimelineFilePath = { path -> openedPath = path },
+            openConversationFilePath = { path -> openedPath = path },
             revealPathInFileManager = { path ->
                 revealedPath = path
                 true
@@ -359,17 +359,17 @@ class ToolWindowCoordinatorSkillTest {
             ),
         )
         val eventHub = ToolWindowEventHub()
-        val statusStore = StatusAreaStore()
-        val rightDrawerStore = RightDrawerAreaStore()
+        val executionStatusStore = ExecutionStatusAreaStore()
+        val sidePanelStore = SidePanelAreaStore()
         val coordinator = ToolWindowCoordinator(
             chatService = service,
             settingsService = settings,
             eventHub = eventHub,
-            headerStore = HeaderAreaStore(),
-            statusStore = statusStore,
-            timelineStore = TimelineAreaStore(),
-            composerStore = ComposerAreaStore(),
-            rightDrawerStore = rightDrawerStore,
+            sessionTabsStore = SessionTabsAreaStore(),
+            executionStatusStore = executionStatusStore,
+            conversationStore = ConversationAreaStore(),
+            submissionStore = SubmissionAreaStore(),
+            sidePanelStore = sidePanelStore,
             approvalStore = ApprovalAreaStore(),
             skillsRuntimeService = SkillsRuntimeService(
                 adapterRegistry = SkillsManagementAdapterRegistry(
@@ -383,18 +383,18 @@ class ToolWindowCoordinatorSkillTest {
         )
 
         eventHub.publishUiIntent(UiIntent.SelectSettingsSection(SettingsSection.SKILLS))
-        waitUntil(2_000) { rightDrawerStore.state.value.skillsHasLoadedSnapshot }
+        waitUntil(2_000) { sidePanelStore.state.value.skillsHasLoadedSnapshot }
         adapter.records.clear()
 
         eventHub.publishUiIntent(UiIntent.UninstallSkill(name = "brainstorming", path = skillFile.toString()))
 
         waitUntil(2_000) { !skillDir.exists() }
-        waitUntil(2_000) { rightDrawerStore.state.value.skills.isEmpty() }
+        waitUntil(2_000) { sidePanelStore.state.value.skills.isEmpty() }
 
         assertFalse(skillDir.exists())
         assertEquals(
             "Uninstalled local skill 'brainstorming'.",
-            (statusStore.state.value.toast?.text as com.auracode.assistant.toolwindow.shared.UiText.Raw).value,
+            (executionStatusStore.state.value.toast?.text as com.auracode.assistant.toolwindow.shared.UiText.Raw).value,
         )
 
         coordinator.dispose()
@@ -430,8 +430,8 @@ class ToolWindowCoordinatorSkillTest {
                 object : AgentProviderFactory {
                     override val engineId: String = "codex"
                     override fun create(): AgentProvider = object : AgentProvider {
-                        override fun stream(request: AgentRequest): Flow<UnifiedEvent> = flow {
-                            emit(UnifiedEvent.TurnCompleted(turnId = "turn-1", outcome = TurnOutcome.SUCCESS))
+                        override fun stream(request: AgentRequest): kotlinx.coroutines.flow.Flow<com.auracode.assistant.session.kernel.SessionDomainEvent> = com.auracode.assistant.test.providerEventFlow {
+                            emit(ProviderEvent.TurnCompleted(turnId = "turn-1", outcome = TurnOutcome.SUCCESS))
                         }
 
                         override fun cancel(requestId: String) = Unit

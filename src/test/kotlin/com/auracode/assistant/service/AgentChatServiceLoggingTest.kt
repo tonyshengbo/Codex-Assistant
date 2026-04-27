@@ -11,8 +11,8 @@ import com.auracode.assistant.settings.AgentSettingsService
 import com.auracode.assistant.protocol.ItemKind
 import com.auracode.assistant.protocol.ItemStatus
 import com.auracode.assistant.protocol.TurnOutcome
-import com.auracode.assistant.protocol.UnifiedEvent
-import com.auracode.assistant.protocol.UnifiedItem
+import com.auracode.assistant.protocol.ProviderEvent
+import com.auracode.assistant.protocol.ProviderItem
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
@@ -112,11 +112,11 @@ class AgentChatServiceLoggingTest {
     private class RecordingProvider(
         private val sessionIds: ArrayDeque<String>,
     ) : AgentProvider {
-        override fun stream(request: AgentRequest): Flow<UnifiedEvent> = flow {
-            emit(UnifiedEvent.ThreadStarted(threadId = sessionIds.removeFirst()))
+        override fun stream(request: AgentRequest): kotlinx.coroutines.flow.Flow<com.auracode.assistant.session.kernel.SessionDomainEvent> = com.auracode.assistant.test.providerEventFlow {
+            emit(ProviderEvent.ThreadStarted(threadId = sessionIds.removeFirst()))
             emit(
-                UnifiedEvent.ItemUpdated(
-                    UnifiedItem(
+                ProviderEvent.ItemUpdated(
+                    ProviderItem(
                         id = "${request.requestId}:assistant",
                         kind = ItemKind.NARRATIVE,
                         status = ItemStatus.SUCCESS,
@@ -125,7 +125,7 @@ class AgentChatServiceLoggingTest {
                     ),
                 ),
             )
-            emit(UnifiedEvent.TurnCompleted(turnId = "turn-1", outcome = TurnOutcome.SUCCESS))
+            emit(ProviderEvent.TurnCompleted(turnId = "turn-1", outcome = TurnOutcome.SUCCESS))
         }
 
         override fun cancel(requestId: String) = Unit

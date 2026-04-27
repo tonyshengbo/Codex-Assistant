@@ -4,8 +4,8 @@ import com.auracode.assistant.integration.build.BuildErrorAuraRequest
 import com.auracode.assistant.integration.build.BuildErrorPromptFactory
 import com.auracode.assistant.integration.build.BuildErrorSnapshot
 import com.auracode.assistant.integration.build.BuildErrorSnapshotService
-import com.auracode.assistant.toolwindow.external.ToolWindowExternalRequestBridge
-import com.auracode.assistant.toolwindow.shared.ToolWindowUiText
+import com.auracode.assistant.toolwindow.external.ExternalRequestRouter
+import com.auracode.assistant.toolwindow.shared.AssistantUiText
 import com.intellij.analysis.problemsView.Problem
 import com.intellij.analysis.problemsView.toolWindow.ProblemNode
 import com.intellij.openapi.actionSystem.ActionUpdateThread
@@ -38,13 +38,13 @@ class AskAuraBuildProblemAction : DumbAwareAction() {
             column = node.column.takeIf { it >= 0 },
         )
         project.getService(BuildErrorSnapshotService::class.java).remember(snapshot)
-        project.getService(ToolWindowExternalRequestBridge::class.java).submitBuildErrorRequest(
+        project.getService(ExternalRequestRouter::class.java).submitBuildErrorRequest(
             BuildErrorAuraRequest(
                 snapshot = snapshot,
                 prompt = BuildErrorPromptFactory.create(snapshot),
             ),
         )
-        ToolWindowManager.getInstance(project).getToolWindow(ToolWindowUiText.PRIMARY_TOOL_WINDOW_ID)?.show()
+        ToolWindowManager.getInstance(project).getToolWindow(AssistantUiText.PRIMARY_TOOL_WINDOW_ID)?.show()
     }
 
     override fun getActionUpdateThread(): ActionUpdateThread = ActionUpdateThread.EDT

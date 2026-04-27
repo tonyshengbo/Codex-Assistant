@@ -39,13 +39,26 @@ internal class ClaudeStreamEventParser(
 
     /** 解析 Claude 的 system/init 事件。 */
     private fun parseSystem(payload: JsonObject): ClaudeStreamEvent? {
-        val subtype = payload.string("subtype")
-        if (subtype != "init") return null
-        val sessionId = payload.string("session_id", "sessionId") ?: return null
-        return ClaudeStreamEvent.SessionStarted(
-            sessionId = sessionId,
-            model = payload.string("model"),
-        )
+        return when (payload.string("subtype")) {
+            "init" -> {
+                val sessionId = payload.string("session_id", "sessionId") ?: return null
+                ClaudeStreamEvent.SessionStarted(
+                    sessionId = sessionId,
+                    model = payload.string("model"),
+                )
+            }
+
+            "api_retry" -> ClaudeStreamEvent.ApiRetry(
+                sessionId = payload.string("session_id", "sessionId"),
+                attempt = payload.int("attempt"),
+                maxRetries = payload.int("max_retries", "maxRetries"),
+                retryDelayMs = payload.double("retry_delay_ms", "retryDelayMs")?.toLong() ?: 0L,
+                errorStatus = payload.string("error_status", "errorStatus"),
+                error = payload.string("error"),
+            )
+
+            else -> null
+        }
     }
 
     /** 解析 stream_event 里的 message/content_block/message_delta 等细粒度事件。 */
@@ -300,6 +313,13 @@ internal class ClaudeStreamEventParser(
     private fun JsonObject.intOrNull(vararg keys: String): Int? {
         return keys.firstNotNullOfOrNull { key ->
             this[key]?.jsonPrimitive?.contentOrNull?.trim()?.toIntOrNull()
+        }
+    }
+
+    /** 从多个备选 key 中读取可空双精度数值。 */
+    private fun JsonObject.double(vararg keys: String): Double? {
+        return keys.firstNotNullOfOrNull { key ->
+            this[key]?.jsonPrimitive?.contentOrNull?.trim()?.toDoubleOrNull()
         }
     }
 

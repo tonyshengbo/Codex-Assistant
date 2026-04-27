@@ -7,8 +7,8 @@ import com.auracode.assistant.toolwindow.submission.AttachmentKind
 import com.auracode.assistant.toolwindow.submission.ContextEntry
 import com.auracode.assistant.toolwindow.submission.MentionSuggestion
 import com.auracode.assistant.toolwindow.submission.sortSessionSubagents
-import com.auracode.assistant.toolwindow.conversation.TimelineFileChange
-import com.auracode.assistant.toolwindow.conversation.TimelineFileChangePreview
+import com.auracode.assistant.toolwindow.conversation.ConversationFileChange
+import com.auracode.assistant.toolwindow.conversation.ConversationFileChangePreview
 import com.auracode.assistant.toolwindow.shared.UiText
 import com.intellij.openapi.application.PathManager
 import java.awt.Toolkit
@@ -38,7 +38,7 @@ internal class WorkspaceInteractionHandler(
 
     fun requestMentionSuggestions(query: String, documentVersion: Long, mentionLimit: Int) {
         val normalizedQuery = query.trim()
-        val subagents = context.composerStore.state.value.sessionSubagents
+        val subagents = context.submissionStore.state.value.sessionSubagents
             .filter { agent ->
                 normalizedQuery.isBlank() ||
                     agent.displayName.contains(normalizedQuery, ignoreCase = true) ||
@@ -69,26 +69,13 @@ internal class WorkspaceInteractionHandler(
     }
 
     fun openEditedFileDiff(path: String) {
-        val aggregate = context.composerStore.state.value.editedFiles.firstOrNull { it.path == path } ?: return
-        val resolved = TimelineFileChangePreview.resolve(aggregate.parsedDiff)
-        val change = TimelineFileChange(
-            sourceScopedId = "turn:${aggregate.turnId}",
-            path = aggregate.path,
-            displayName = aggregate.displayName,
-            kind = aggregate.parsedDiff.kind,
-            timestamp = aggregate.lastUpdatedAt,
-            addedLines = aggregate.latestAddedLines,
-            deletedLines = aggregate.latestDeletedLines,
-            unifiedDiff = aggregate.parsedDiff.unifiedDiff,
-            oldContent = resolved.oldContent,
-            newContent = resolved.newContent,
-        )
-        context.openTimelineFileChange(change)
+        val aggregate = context.submissionStore.state.value.editedFiles.firstOrNull { it.path == path } ?: return
+        context.openConversationFileChange(aggregate.change)
     }
 
     fun revertEditedFile(path: String) {
-        val aggregate = context.composerStore.state.value.editedFiles.firstOrNull { it.path == path } ?: return
-        val result = TimelineFileChangePreview.revertParsedDiff(aggregate.parsedDiff)
+        val aggregate = context.submissionStore.state.value.editedFiles.firstOrNull { it.path == path } ?: return
+        val result = ConversationFileChangePreview.revert(aggregate.change)
         if (result.isSuccess) {
             context.eventHub.publishUiIntent(UiIntent.AcceptEditedFile(path))
             context.eventHub.publish(AppEvent.StatusTextUpdated(UiText.raw(result.getOrDefault(""))))
@@ -100,12 +87,12 @@ internal class WorkspaceInteractionHandler(
     }
 
     fun revertAllEditedFiles() {
-        val aggregates = context.composerStore.state.value.editedFiles
+        val aggregates = context.submissionStore.state.value.editedFiles
         if (aggregates.isEmpty()) return
         var success = 0
         var failed = 0
         aggregates.forEach { aggregate ->
-            val result = TimelineFileChangePreview.revertParsedDiff(aggregate.parsedDiff)
+            val result = ConversationFileChangePreview.revert(aggregate.change)
             if (result.isSuccess) {
                 success += 1
                 context.eventHub.publishUiIntent(UiIntent.AcceptEditedFile(aggregate.path))

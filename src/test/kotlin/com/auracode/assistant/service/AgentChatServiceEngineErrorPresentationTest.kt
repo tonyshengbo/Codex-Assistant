@@ -7,7 +7,8 @@ import com.auracode.assistant.provider.AgentProviderFactory
 import com.auracode.assistant.provider.EngineCapabilities
 import com.auracode.assistant.provider.EngineDescriptor
 import com.auracode.assistant.provider.ProviderRegistry
-import com.auracode.assistant.protocol.UnifiedEvent
+import com.auracode.assistant.protocol.ProviderEvent
+import com.auracode.assistant.session.kernel.SessionDomainEvent
 import com.auracode.assistant.settings.AgentSettingsService
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.flow.Flow
@@ -24,7 +25,7 @@ class AgentChatServiceEngineErrorPresentationTest {
     fun `normalizes engine missing error emitted by provider`() = runBlocking {
         val service = createService(
             provider = ErrorEventProvider(
-                UnifiedEvent.Error("""Failed to start provider: Cannot run program "missing-cli": error=2, No such file or directory"""),
+                ProviderEvent.Error("""Failed to start provider: Cannot run program "missing-cli": error=2, No such file or directory"""),
             ),
             settings = AgentSettingsService().apply {
                 loadState(
@@ -41,10 +42,10 @@ class AgentChatServiceEngineErrorPresentationTest {
             model = "test-model",
             prompt = "hello",
             contextFiles = emptyList(),
-            onUnifiedEvent = { event ->
-                if (event is UnifiedEvent.Error) {
-                    errorMessage.complete(event.message)
-                }
+            onSessionDomainEvents = { events ->
+                events.filterIsInstance<SessionDomainEvent.ErrorAppended>()
+                    .firstOrNull()
+                    ?.let { event -> errorMessage.complete(event.message) }
             },
         )
 
@@ -74,10 +75,10 @@ class AgentChatServiceEngineErrorPresentationTest {
             model = "test-model",
             prompt = "hello",
             contextFiles = emptyList(),
-            onUnifiedEvent = { event ->
-                if (event is UnifiedEvent.Error) {
-                    errorMessage.complete(event.message)
-                }
+            onSessionDomainEvents = { events ->
+                events.filterIsInstance<SessionDomainEvent.ErrorAppended>()
+                    .firstOrNull()
+                    ?.let { event -> errorMessage.complete(event.message) }
             },
         )
 
@@ -89,7 +90,7 @@ class AgentChatServiceEngineErrorPresentationTest {
     @Test
     fun `passes through unrelated runtime error`() = runBlocking {
         val service = createService(
-            provider = ErrorEventProvider(UnifiedEvent.Error("Authentication failed.")),
+            provider = ErrorEventProvider(ProviderEvent.Error("Authentication failed.")),
             settings = AgentSettingsService().apply { loadState(AgentSettingsService.State()) },
         )
         val errorMessage = CompletableDeferred<String>()
@@ -99,10 +100,10 @@ class AgentChatServiceEngineErrorPresentationTest {
             model = "test-model",
             prompt = "hello",
             contextFiles = emptyList(),
-            onUnifiedEvent = { event ->
-                if (event is UnifiedEvent.Error) {
-                    errorMessage.complete(event.message)
-                }
+            onSessionDomainEvents = { events ->
+                events.filterIsInstance<SessionDomainEvent.ErrorAppended>()
+                    .firstOrNull()
+                    ?.let { event -> errorMessage.complete(event.message) }
             },
         )
 
@@ -155,9 +156,9 @@ class AgentChatServiceEngineErrorPresentationTest {
     }
 
     private class ErrorEventProvider(
-        private val event: UnifiedEvent.Error,
+        private val event: ProviderEvent.Error,
     ) : AgentProvider {
-        override fun stream(request: AgentRequest): Flow<UnifiedEvent> = flow {
+        override fun stream(request: AgentRequest): kotlinx.coroutines.flow.Flow<com.auracode.assistant.session.kernel.SessionDomainEvent> = com.auracode.assistant.test.providerEventFlow {
             emit(event)
         }
 
@@ -167,7 +168,7 @@ class AgentChatServiceEngineErrorPresentationTest {
     private class ThrowingProvider(
         private val error: Throwable,
     ) : AgentProvider {
-        override fun stream(request: AgentRequest): Flow<UnifiedEvent> = flow {
+        override fun stream(request: AgentRequest): kotlinx.coroutines.flow.Flow<com.auracode.assistant.session.kernel.SessionDomainEvent> = com.auracode.assistant.test.providerEventFlow {
             throw error
         }
 

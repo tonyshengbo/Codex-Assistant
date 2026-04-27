@@ -8,7 +8,8 @@ import com.auracode.assistant.provider.EngineCapabilities
 import com.auracode.assistant.provider.EngineDescriptor
 import com.auracode.assistant.provider.ProviderRegistry
 import com.auracode.assistant.protocol.TurnOutcome
-import com.auracode.assistant.protocol.UnifiedEvent
+import com.auracode.assistant.protocol.ProviderEvent
+import com.auracode.assistant.session.kernel.SessionDomainEvent
 import com.auracode.assistant.settings.AgentSettingsService
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.delay
@@ -40,8 +41,8 @@ class AgentChatServiceMultiSessionRunTest {
             model = "gpt-5.3-codex",
             prompt = "run-a",
             contextFiles = emptyList(),
-            onUnifiedEvent = { event ->
-                if (event is UnifiedEvent.ThreadStarted) {
+            onSessionDomainEvents = { events ->
+                if (events.any { it is SessionDomainEvent.ThreadStarted }) {
                     requestAStarted.complete(Unit)
                 }
             },
@@ -52,8 +53,8 @@ class AgentChatServiceMultiSessionRunTest {
             model = "gpt-5.3-codex",
             prompt = "run-b",
             contextFiles = emptyList(),
-            onUnifiedEvent = { event ->
-                if (event is UnifiedEvent.ThreadStarted) {
+            onSessionDomainEvents = { events ->
+                if (events.any { it is SessionDomainEvent.ThreadStarted }) {
                     requestBStarted.complete(Unit)
                 }
             },
@@ -100,8 +101,8 @@ class AgentChatServiceMultiSessionRunTest {
             model = "gpt-5.3-codex",
             prompt = "run-state",
             contextFiles = emptyList(),
-            onUnifiedEvent = { event ->
-                if (event is UnifiedEvent.ThreadStarted) {
+            onSessionDomainEvents = { events ->
+                if (events.any { it is SessionDomainEvent.ThreadStarted }) {
                     requestStarted.complete(Unit)
                 }
             },
@@ -143,8 +144,8 @@ class AgentChatServiceMultiSessionRunTest {
             model = "gpt-5.3-codex",
             prompt = "seed-session",
             contextFiles = emptyList(),
-            onUnifiedEvent = { event ->
-                if (event is UnifiedEvent.ThreadStarted) {
+            onSessionDomainEvents = { events ->
+                if (events.any { it is SessionDomainEvent.ThreadStarted }) {
                     requestStarted.complete(Unit)
                 }
             },
@@ -214,12 +215,12 @@ class AgentChatServiceMultiSessionRunTest {
         private val requestIdsByPrompt = mutableMapOf<String, String>()
         private val outcomesByPrompt = mutableMapOf<String, CompletableDeferred<TurnOutcome>>()
 
-        override fun stream(request: AgentRequest): Flow<UnifiedEvent> = flow {
+        override fun stream(request: AgentRequest): kotlinx.coroutines.flow.Flow<com.auracode.assistant.session.kernel.SessionDomainEvent> = com.auracode.assistant.test.providerEventFlow {
             requestIdsByPrompt[request.prompt] = request.requestId
-            emit(UnifiedEvent.ThreadStarted(threadId = "thread-${request.prompt}"))
+            emit(ProviderEvent.ThreadStarted(threadId = "thread-${request.prompt}"))
             when (outcomesByPrompt.getOrPut(request.prompt) { CompletableDeferred() }.await()) {
                 TurnOutcome.SUCCESS -> {
-                    emit(UnifiedEvent.TurnCompleted(turnId = "turn-${request.prompt}", outcome = TurnOutcome.SUCCESS))
+                    emit(ProviderEvent.TurnCompleted(turnId = "turn-${request.prompt}", outcome = TurnOutcome.SUCCESS))
                     completionSignals.getOrPut(request.prompt) { CompletableDeferred() }.complete(Unit)
                 }
 

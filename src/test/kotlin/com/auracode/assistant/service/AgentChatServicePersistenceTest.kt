@@ -18,8 +18,10 @@ import com.auracode.assistant.provider.ProviderRegistry
 import com.auracode.assistant.protocol.ItemKind
 import com.auracode.assistant.protocol.ItemStatus
 import com.auracode.assistant.protocol.TurnOutcome
-import com.auracode.assistant.protocol.UnifiedEvent
-import com.auracode.assistant.protocol.UnifiedItem
+import com.auracode.assistant.protocol.ProviderEvent
+import com.auracode.assistant.protocol.ProviderItem
+import com.auracode.assistant.session.kernel.SessionDomainEvent
+import com.auracode.assistant.session.kernel.SessionMessageRole
 import com.auracode.assistant.settings.AgentSettingsService
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.flow.Flow
@@ -131,7 +133,7 @@ class AgentChatServicePersistenceTest {
         val provider = RecordingHistoryProvider(threadId = "thread-1").apply {
             enqueueAssistantReply("done")
             emitToolInNextTurn(
-                UnifiedItem(
+                ProviderItem(
                     id = "tool-1",
                     kind = ItemKind.TOOL_CALL,
                     status = ItemStatus.SUCCESS,
@@ -181,14 +183,14 @@ class AgentChatServicePersistenceTest {
         )
         val history = reloaded.loadCurrentConversationHistory(limit = 10)
         val userEvent = history.events.firstNarrative(role = MessageRole.USER)
-        val toolEvent = history.events.first { it is UnifiedEvent.ItemUpdated && it.item.kind == ItemKind.TOOL_CALL }
+        val toolEvent = history.events.first { it is SessionDomainEvent.ToolUpdated }
         val assistantEvent = history.events.firstNarrative(role = MessageRole.ASSISTANT)
 
-        assertEquals("look at this", userEvent.item.text)
-        assertEquals(1, userEvent.item.attachments.size)
-        assertEquals("/assets/preview.png", userEvent.item.attachments.single().assetPath)
-        assertEquals("echo hi", (toolEvent as UnifiedEvent.ItemUpdated).item.text)
-        assertEquals("done", assistantEvent.item.text)
+        assertEquals("look at this", userEvent.text)
+        assertEquals(1, userEvent.attachments.size)
+        assertEquals("/assets/preview.png", userEvent.attachments.single().assetPath)
+        assertEquals("echo hi", (toolEvent as SessionDomainEvent.ToolUpdated).summary)
+        assertEquals("done", assistantEvent.text)
 
         reloaded.dispose()
     }
@@ -255,32 +257,32 @@ class AgentChatServicePersistenceTest {
     private class RecordingHistoryProvider(
         private val threadId: String,
     ) : AgentProvider {
-        private val turns = mutableListOf<List<UnifiedEvent>>()
+        private val turns = mutableListOf<List<ProviderEvent>>()
         private val pendingAssistantReplies = ArrayDeque<String>()
-        private var pendingTool: UnifiedItem? = null
+        private var pendingTool: ProviderItem? = null
         private var nextTurnNumber = 1
 
         fun enqueueAssistantReply(reply: String) {
             pendingAssistantReplies += reply
         }
 
-        fun emitToolInNextTurn(item: UnifiedItem) {
+        fun emitToolInNextTurn(item: ProviderItem) {
             pendingTool = item
         }
 
-        override fun stream(request: AgentRequest): Flow<UnifiedEvent> = flow {
+        override fun stream(request: AgentRequest): kotlinx.coroutines.flow.Flow<com.auracode.assistant.session.kernel.SessionDomainEvent> = com.auracode.assistant.test.providerEventFlow {
             val turnId = "turn-${nextTurnNumber++}"
             val toolItem = pendingTool
             val reply = pendingAssistantReplies.removeFirstOrNull().orEmpty()
             val events = buildList {
-                add(UnifiedEvent.ThreadStarted(threadId = threadId))
-                add(UnifiedEvent.TurnStarted(turnId = turnId, threadId = threadId))
+                add(ProviderEvent.ThreadStarted(threadId = threadId))
+                add(ProviderEvent.TurnStarted(turnId = turnId, threadId = threadId))
                 toolItem?.let { tool ->
-                    add(UnifiedEvent.ItemUpdated(tool.copy(id = "${request.requestId}:${tool.id}")))
+                    add(ProviderEvent.ItemUpdated(tool.copy(id = "${request.requestId}:${tool.id}")))
                 }
                 add(
-                    UnifiedEvent.ItemUpdated(
-                        UnifiedItem(
+                    ProviderEvent.ItemUpdated(
+                        ProviderItem(
                             id = "${request.requestId}:assistant:$turnId",
                             kind = ItemKind.NARRATIVE,
                             status = ItemStatus.SUCCESS,
@@ -289,7 +291,7 @@ class AgentChatServicePersistenceTest {
                         ),
                     ),
                 )
-                add(UnifiedEvent.TurnCompleted(turnId = turnId, outcome = TurnOutcome.SUCCESS))
+                add(ProviderEvent.TurnCompleted(turnId = turnId, outcome = TurnOutcome.SUCCESS))
             }
             turns += buildHistoryTurn(
                 turnId = turnId,
@@ -303,7 +305,7 @@ class AgentChatServicePersistenceTest {
 
         override suspend fun loadInitialHistory(ref: ConversationRef, pageSize: Int): ConversationHistoryPage {
             val pageTurns = turns.takeLast(pageSize)
-            return ConversationHistoryPage(
+            return com.auracode.assistant.test.historyPageFromProviderEvents(
                 events = pageTurns.flatten(),
                 hasOlder = turns.size > pageTurns.size,
                 olderCursor = (turns.size - pageTurns.size).takeIf { it > 0 }?.toString(),
@@ -314,7 +316,7 @@ class AgentChatServicePersistenceTest {
             val endExclusive = cursor.toIntOrNull() ?: 0
             val startInclusive = (endExclusive - pageSize).coerceAtLeast(0)
             val pageTurns = turns.subList(startInclusive, endExclusive)
-            return ConversationHistoryPage(
+            return com.auracode.assistant.test.historyPageFromProviderEvents(
                 events = pageTurns.flatten(),
                 hasOlder = startInclusive > 0,
                 olderCursor = startInclusive.takeIf { it > 0 }?.toString(),
@@ -327,13 +329,13 @@ class AgentChatServicePersistenceTest {
             turnId: String,
             userText: String,
             assistantText: String,
-            toolItem: UnifiedItem? = null,
-        ): List<UnifiedEvent> {
+            toolItem: ProviderItem? = null,
+        ): List<ProviderEvent> {
             return buildList {
-                add(UnifiedEvent.TurnStarted(turnId = turnId, threadId = threadId))
+                add(ProviderEvent.TurnStarted(turnId = turnId, threadId = threadId))
                 add(
-                    UnifiedEvent.ItemUpdated(
-                        UnifiedItem(
+                    ProviderEvent.ItemUpdated(
+                        ProviderItem(
                             id = "history:user:$turnId",
                             kind = ItemKind.NARRATIVE,
                             status = ItemStatus.SUCCESS,
@@ -342,10 +344,10 @@ class AgentChatServicePersistenceTest {
                         ),
                     ),
                 )
-                toolItem?.let { add(UnifiedEvent.ItemUpdated(it)) }
+                toolItem?.let { add(ProviderEvent.ItemUpdated(it)) }
                 add(
-                    UnifiedEvent.ItemUpdated(
-                        UnifiedItem(
+                    ProviderEvent.ItemUpdated(
+                        ProviderItem(
                             id = "history:assistant:$turnId",
                             kind = ItemKind.NARRATIVE,
                             status = ItemStatus.SUCCESS,
@@ -354,7 +356,7 @@ class AgentChatServicePersistenceTest {
                         ),
                     ),
                 )
-                add(UnifiedEvent.TurnCompleted(turnId = turnId, outcome = TurnOutcome.SUCCESS))
+                add(ProviderEvent.TurnCompleted(turnId = turnId, outcome = TurnOutcome.SUCCESS))
             }
         }
     }
@@ -365,7 +367,7 @@ class AgentChatServicePersistenceTest {
     ) : AgentProvider {
         val recordedCwds = mutableListOf<String?>()
 
-        override fun stream(request: AgentRequest): Flow<UnifiedEvent> = flow { }
+        override fun stream(request: AgentRequest): kotlinx.coroutines.flow.Flow<com.auracode.assistant.session.kernel.SessionDomainEvent> = com.auracode.assistant.test.providerEventFlow { }
 
         override suspend fun listRemoteConversations(
             pageSize: Int,
@@ -384,27 +386,27 @@ class AgentChatServicePersistenceTest {
         override fun cancel(requestId: String) = Unit
     }
 
-    private fun List<UnifiedEvent>.narrativeTexts(): List<Pair<MessageRole, String>> {
+    private fun List<SessionDomainEvent>.narrativeTexts(): List<Pair<MessageRole, String>> {
         return mapNotNull { event ->
-            val item = (event as? UnifiedEvent.ItemUpdated)?.item ?: return@mapNotNull null
-            if (item.kind != ItemKind.NARRATIVE || item.text.isNullOrBlank()) return@mapNotNull null
-            val role = when (item.name) {
-                "user_message" -> MessageRole.USER
-                "system_message" -> MessageRole.SYSTEM
-                else -> MessageRole.ASSISTANT
+            val message = event as? SessionDomainEvent.MessageAppended ?: return@mapNotNull null
+            if (message.text.isBlank()) return@mapNotNull null
+            val role = when (message.role) {
+                SessionMessageRole.USER -> MessageRole.USER
+                SessionMessageRole.SYSTEM -> MessageRole.SYSTEM
+                SessionMessageRole.ASSISTANT -> MessageRole.ASSISTANT
             }
-            role to item.text.orEmpty()
+            role to message.text
         }
     }
 
-    private fun List<UnifiedEvent>.firstNarrative(role: MessageRole): UnifiedEvent.ItemUpdated {
+    private fun List<SessionDomainEvent>.firstNarrative(role: MessageRole): SessionDomainEvent.MessageAppended {
         return first { event ->
-            val item = (event as? UnifiedEvent.ItemUpdated)?.item ?: return@first false
-            item.kind == ItemKind.NARRATIVE && when (item.name) {
-                "user_message" -> role == MessageRole.USER
-                "system_message" -> role == MessageRole.SYSTEM
-                else -> role == MessageRole.ASSISTANT
+            val message = event as? SessionDomainEvent.MessageAppended ?: return@first false
+            when (message.role) {
+                SessionMessageRole.USER -> role == MessageRole.USER
+                SessionMessageRole.SYSTEM -> role == MessageRole.SYSTEM
+                SessionMessageRole.ASSISTANT -> role == MessageRole.ASSISTANT
             }
-        } as UnifiedEvent.ItemUpdated
+        } as SessionDomainEvent.MessageAppended
     }
 }

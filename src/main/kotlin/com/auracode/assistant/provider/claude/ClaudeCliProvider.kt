@@ -5,7 +5,9 @@ import com.auracode.assistant.conversation.ConversationHistoryPage
 import com.auracode.assistant.conversation.ConversationRef
 import com.auracode.assistant.model.AgentRequest
 import com.auracode.assistant.provider.AgentProvider
-import com.auracode.assistant.protocol.UnifiedEvent
+import com.auracode.assistant.provider.session.ProviderProtocolDomainMapper
+import com.auracode.assistant.protocol.ProviderEvent
+import com.auracode.assistant.session.kernel.SessionDomainEvent
 import com.auracode.assistant.settings.AgentSettingsService
 import com.auracode.assistant.toolwindow.execution.ApprovalAction
 import com.intellij.openapi.diagnostic.Logger
@@ -33,8 +35,8 @@ internal class ClaudeCliProvider(
     /** requestId → (requestId → deferred) 的两级映射，支持同一 turn 内多个并发授权请求。 */
     private val pendingApprovals = ConcurrentHashMap<String, ConcurrentHashMap<String, CompletableDeferred<ApprovalAction>>>()
 
-    /** 启动 Claude CLI 流式会话，并将原始输出转换为统一事件。 */
-    override fun stream(request: AgentRequest): Flow<UnifiedEvent> = channelFlow {
+    /** 启动 Claude CLI 流式会话，并在 provider 边界内将统一事件折叠为 session domain events。 */
+    override fun stream(request: AgentRequest): Flow<SessionDomainEvent> = channelFlow {
         logStreamStart(request)
         val session = runCatching { launcher.start(request, settings) }
             .onFailure { error ->
@@ -44,14 +46,20 @@ internal class ClaudeCliProvider(
                 )
             }
             .getOrElse { error ->
-                send(UnifiedEvent.Error(error.message.orEmpty().ifBlank { "Failed to start Claude CLI." }))
+                emitDomainEvents(
+                    request = request,
+                    event = ProviderEvent.Error(error.message.orEmpty().ifBlank { "Failed to start Claude CLI." }),
+                    sessionEventMapper = ProviderProtocolDomainMapper(),
+                    emitDomain = { domainEvent -> send(domainEvent) },
+                )
                 return@channelFlow
             }
         running[request.requestId] = session
         val approvals = ConcurrentHashMap<String, CompletableDeferred<ApprovalAction>>()
         pendingApprovals[request.requestId] = approvals
         val accumulator = ClaudeStreamAccumulator()
-        val mapper = ClaudeUnifiedEventMapper(request)
+        val mapper = ClaudeProviderEventMapper(request)
+        val sessionEventMapper = ProviderProtocolDomainMapper()
         try {
             val exitCode = session.collect(
                 onStdoutLine = { line ->
@@ -61,12 +69,17 @@ internal class ClaudeCliProvider(
                         line = line,
                         accumulator = accumulator,
                         mapper = mapper,
-                        emitUnified = { unified ->
-                            if (unified is UnifiedEvent.ApprovalRequested) {
+                        emitProviderEvent = { unified ->
+                            if (unified is ProviderEvent.ApprovalRequested) {
                                 // 注册 deferred，等待 UI 层调用 submitApprovalDecision。
                                 val deferred = CompletableDeferred<ApprovalAction>()
                                 approvals[unified.request.requestId] = deferred
-                                send(unified)
+                                emitDomainEvents(
+                                    request = request,
+                                    event = unified,
+                                    sessionEventMapper = sessionEventMapper,
+                                    emitDomain = { domainEvent -> send(domainEvent) },
+                                )
                                 val decision = deferred.await()
                                 approvals.remove(unified.request.requestId)
                                 session.writeStdin(buildControlResponse(unified.request.requestId, decision))
@@ -75,7 +88,12 @@ internal class ClaudeCliProvider(
                                         "approvalId=${unified.request.requestId} decision=$decision",
                                 )
                             } else {
-                                send(unified)
+                                emitDomainEvents(
+                                    request = request,
+                                    event = unified,
+                                    sessionEventMapper = sessionEventMapper,
+                                    emitDomain = { domainEvent -> send(domainEvent) },
+                                )
                             }
                         },
                     )
@@ -87,13 +105,25 @@ internal class ClaudeCliProvider(
                         line = line,
                         accumulator = accumulator,
                         mapper = mapper,
-                        emitUnified = { unified -> send(unified) },
+                        emitProviderEvent = { unified ->
+                            emitDomainEvents(
+                                request = request,
+                                event = unified,
+                                sessionEventMapper = sessionEventMapper,
+                                emitDomain = { domainEvent -> send(domainEvent) },
+                            )
+                        },
                     )
                 },
             )
             diagnosticLogger("Claude CLI exited: requestId=${request.requestId} exitCode=$exitCode")
             mapper.onProcessExit(exitCode).forEach { unified ->
-                emitUnifiedEvent(request, unified) { event -> send(event) }
+                emitDomainEvents(
+                    request = request,
+                    event = unified,
+                    sessionEventMapper = sessionEventMapper,
+                    emitDomain = { domainEvent -> send(domainEvent) },
+                )
             }
         } catch (error: CancellationException) {
             throw error
@@ -102,7 +132,12 @@ internal class ClaudeCliProvider(
                 "Claude CLI stream failed: requestId=${request.requestId} " +
                     "message=${error.message.orEmpty().ifBlank { error::class.java.simpleName }}",
             )
-            send(UnifiedEvent.Error(error.message.orEmpty().ifBlank { "Claude CLI request failed." }))
+            emitDomainEvents(
+                request = request,
+                event = ProviderEvent.Error(error.message.orEmpty().ifBlank { "Claude CLI request failed." }),
+                sessionEventMapper = sessionEventMapper,
+                emitDomain = { domainEvent -> send(domainEvent) },
+            )
         } finally {
             pendingApprovals.remove(request.requestId)?.values?.forEach { it.complete(ApprovalAction.REJECT) }
             running.remove(request.requestId)
@@ -182,8 +217,8 @@ internal class ClaudeCliProvider(
         channel: String,
         line: String,
         accumulator: ClaudeStreamAccumulator,
-        mapper: ClaudeUnifiedEventMapper,
-        emitUnified: suspend (UnifiedEvent) -> Unit,
+        mapper: ClaudeProviderEventMapper,
+        emitProviderEvent: suspend (ProviderEvent) -> Unit,
     ) {
         diagnosticLogger("Claude CLI $channel: requestId=${request.requestId} line=${line.toLogSnippet()}")
         val rawEvent = parser.parse(line)
@@ -204,21 +239,24 @@ internal class ClaudeCliProvider(
                 "Claude CLI semantic event: requestId=${request.requestId} channel=$channel event=${semanticEvent.toLogSummary()}",
             )
             mapper.map(semanticEvent).forEach { unified ->
-                emitUnifiedEvent(request, unified, emitUnified)
+                emitProviderEvent(unified)
             }
         }
     }
 
-    /** 记录统一事件摘要，再向上游发射。 */
-    private suspend fun emitUnifiedEvent(
+    /** Converts provider-local unified events into session domain events before emitting them upstream. */
+    private suspend fun emitDomainEvents(
         request: AgentRequest,
-        event: UnifiedEvent,
-        emitUnified: suspend (UnifiedEvent) -> Unit,
+        event: ProviderEvent,
+        sessionEventMapper: ProviderProtocolDomainMapper,
+        emitDomain: suspend (SessionDomainEvent) -> Unit,
     ) {
         diagnosticLogger(
             "Claude CLI emit unified event: requestId=${request.requestId} event=${event.toLogSummary()}",
         )
-        emitUnified(event)
+        sessionEventMapper.map(event).forEach { domainEvent ->
+            emitDomain(domainEvent)
+        }
     }
 
     /** 将原始输出裁剪成适合日志阅读的单行片段。 */
@@ -231,6 +269,10 @@ internal class ClaudeCliProvider(
         return when (this) {
             is ClaudeStreamEvent.AssistantSnapshot -> {
                 "assistant sessionId=${sessionId.orEmpty()} messageId=${messageId.orEmpty()} content=${content.size}"
+            }
+
+            is ClaudeStreamEvent.ApiRetry -> {
+                "api-retry sessionId=${sessionId.orEmpty()} attempt=$attempt maxRetries=$maxRetries delayMs=$retryDelayMs"
             }
 
             is ClaudeStreamEvent.ContentBlockDelta -> {
@@ -299,6 +341,10 @@ internal class ClaudeCliProvider(
                 "error message=${message.toLogSnippet()}"
             }
 
+            is ClaudeConversationEvent.RetryScheduled -> {
+                "retry-scheduled attempt=$attempt maxRetries=$maxRetries delayMs=$retryDelayMs error=${error.orEmpty()}"
+            }
+
             is ClaudeConversationEvent.ReasoningUpdated -> {
                 "reasoning messageId=$messageId blockIndex=$blockIndex completed=$completed text=${text.toLogSnippet()}"
             }
@@ -322,27 +368,27 @@ internal class ClaudeCliProvider(
     }
 
     /** 生成统一事件的紧凑摘要，便于比对 UI 是否收到收尾事件。 */
-    private fun UnifiedEvent.toLogSummary(): String {
+    private fun ProviderEvent.toLogSummary(): String {
         return when (this) {
-            is UnifiedEvent.Error -> "error terminal=$terminal message=${message.toLogSnippet()}"
-            is UnifiedEvent.ItemUpdated -> {
+            is ProviderEvent.Error -> "error terminal=$terminal message=${message.toLogSnippet()}"
+            is ProviderEvent.ItemUpdated -> {
                 "item kind=${item.kind} status=${item.status} name=${item.name.orEmpty()} " +
                     "text=${item.text.orEmpty().toLogSnippet()}"
             }
 
-            is UnifiedEvent.ThreadStarted -> "thread-started threadId=$threadId"
-            is UnifiedEvent.TurnCompleted -> "turn-completed turnId=$turnId outcome=$outcome"
-            is UnifiedEvent.TurnStarted -> "turn-started turnId=$turnId threadId=${threadId.orEmpty()}"
-            is UnifiedEvent.ApprovalRequested -> "approval-request requestId=${request.requestId}"
-            is UnifiedEvent.RunningPlanUpdated -> "running-plan turnId=$turnId steps=${steps.size}"
-            is UnifiedEvent.SubagentsUpdated -> "subagents-updated count=${agents.size}"
-            is UnifiedEvent.ThreadTokenUsageUpdated -> {
+            is ProviderEvent.ThreadStarted -> "thread-started threadId=$threadId"
+            is ProviderEvent.TurnCompleted -> "turn-completed turnId=$turnId outcome=$outcome"
+            is ProviderEvent.TurnStarted -> "turn-started turnId=$turnId threadId=${threadId.orEmpty()}"
+            is ProviderEvent.ApprovalRequested -> "approval-request requestId=${request.requestId}"
+            is ProviderEvent.RunningPlanUpdated -> "running-plan turnId=$turnId steps=${steps.size}"
+            is ProviderEvent.SubagentsUpdated -> "subagents-updated count=${agents.size}"
+            is ProviderEvent.ThreadTokenUsageUpdated -> {
                 "token-usage threadId=$threadId turnId=${turnId.orEmpty()} outputTokens=$outputTokens"
             }
 
-            is UnifiedEvent.ToolUserInputRequested -> "tool-user-input requestId=${prompt.requestId}"
-            is UnifiedEvent.ToolUserInputResolved -> "tool-user-input-resolved requestId=$requestId"
-            is UnifiedEvent.TurnDiffUpdated -> "turn-diff turnId=$turnId"
+            is ProviderEvent.ToolUserInputRequested -> "tool-user-input requestId=${prompt.requestId}"
+            is ProviderEvent.ToolUserInputResolved -> "tool-user-input-resolved requestId=$requestId"
+            is ProviderEvent.TurnDiffUpdated -> "turn-diff turnId=$turnId"
         }
     }
 

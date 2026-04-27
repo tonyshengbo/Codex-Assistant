@@ -128,11 +128,26 @@ internal sealed interface SessionConversationEntry {
         val responseSummary: String? = null,
     ) : SessionConversationEntry
 
+    /** Stores one normalized plan entry. */
+    data class Plan(
+        override val id: String,
+        val turnId: String?,
+        val status: SessionActivityStatus,
+        val body: String,
+    ) : SessionConversationEntry
+
     /** Stores one terminal error entry. */
     data class Error(
         override val id: String,
         val turnId: String?,
         val message: String,
+    ) : SessionConversationEntry
+
+    /** Stores one local engine-switch boundary entry in the conversation stream. */
+    data class EngineSwitched(
+        override val id: String,
+        val targetEngineLabel: String,
+        val timestamp: Long,
     ) : SessionConversationEntry
 }
 
@@ -149,6 +164,7 @@ internal data class SessionSubmissionState(
 internal data class SessionExecutionState(
     val approvalRequests: Map<String, SessionApprovalRequest> = emptyMap(),
     val toolUserInputs: Map<String, SessionToolUserInputRequest> = emptyMap(),
+    val toolUserInputEntryIdsByRequestId: Map<String, String> = emptyMap(),
     val runningPlan: SessionRunningPlan? = null,
 )
 
@@ -165,13 +181,25 @@ internal data class SessionEditedFilesState(
 internal data class SessionEditedFileState(
     val path: String,
     val changeKind: String,
+    val displayName: String,
+    val threadId: String?,
+    val turnId: String?,
+    val addedLines: Int? = null,
+    val deletedLines: Int? = null,
+    val unifiedDiff: String? = null,
+    val oldContent: String? = null,
+    val newContent: String? = null,
+    val lastUpdatedAt: Long = 0L,
 )
 
 /**
  * Stores usage metadata derived at the session level.
  */
 internal data class SessionUsageState(
+    val model: String? = null,
+    val contextWindow: Int = 0,
     val inputTokens: Int = 0,
+    val cachedInputTokens: Int = 0,
     val outputTokens: Int = 0,
 )
 
@@ -179,7 +207,7 @@ internal data class SessionUsageState(
  * Stores subagent snapshots tracked for the session.
  */
 internal data class SessionSubagentState(
-    val agentIds: List<String> = emptyList(),
+    val agents: List<SessionSubagentSnapshot> = emptyList(),
 )
 
 /**

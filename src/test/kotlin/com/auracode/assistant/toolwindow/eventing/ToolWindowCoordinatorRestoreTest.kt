@@ -16,16 +16,16 @@ import com.auracode.assistant.provider.ProviderRegistry
 import com.auracode.assistant.protocol.ItemKind
 import com.auracode.assistant.protocol.ItemStatus
 import com.auracode.assistant.protocol.TurnOutcome
-import com.auracode.assistant.protocol.UnifiedEvent
-import com.auracode.assistant.protocol.UnifiedItem
+import com.auracode.assistant.protocol.ProviderEvent
+import com.auracode.assistant.protocol.ProviderItem
 import com.auracode.assistant.settings.AgentSettingsService
 import com.auracode.assistant.service.AgentChatService
-import com.auracode.assistant.toolwindow.submission.ComposerAreaStore
-import com.auracode.assistant.toolwindow.shell.RightDrawerAreaStore
-import com.auracode.assistant.toolwindow.sessions.HeaderAreaStore
-import com.auracode.assistant.toolwindow.execution.StatusAreaStore
-import com.auracode.assistant.toolwindow.conversation.TimelineAreaStore
-import com.auracode.assistant.toolwindow.conversation.TimelineNode
+import com.auracode.assistant.toolwindow.submission.SubmissionAreaStore
+import com.auracode.assistant.toolwindow.shell.SidePanelAreaStore
+import com.auracode.assistant.toolwindow.sessions.SessionTabsAreaStore
+import com.auracode.assistant.toolwindow.execution.ExecutionStatusAreaStore
+import com.auracode.assistant.toolwindow.conversation.ConversationAreaStore
+import com.auracode.assistant.toolwindow.conversation.ConversationActivityItem
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.flow
@@ -69,12 +69,12 @@ class ToolWindowCoordinatorRestoreTest {
             settings = settings,
         )
 
-        val timelineStore = TimelineAreaStore()
-        val coordinator = createCoordinator(service, settings, timelineStore)
-        waitUntil(timeoutMs = 2_000) { timelineStore.state.value.nodes.filterIsInstance<TimelineNode.MessageNode>().size == 2 }
+        val conversationStore = ConversationAreaStore()
+        val coordinator = createCoordinator(service, settings, conversationStore)
+        waitUntil(timeoutMs = 2_000) { conversationStore.state.value.nodes.filterIsInstance<ConversationActivityItem.MessageNode>().size == 2 }
 
-        val state = timelineStore.state.value
-        assertEquals(listOf("hello", "world"), state.nodes.filterIsInstance<TimelineNode.MessageNode>().map { it.text })
+        val state = conversationStore.state.value
+        assertEquals(listOf("hello", "world"), state.nodes.filterIsInstance<ConversationActivityItem.MessageNode>().map { it.text })
         assertFalse(state.isRunning)
 
         coordinator.dispose()
@@ -123,7 +123,7 @@ class ToolWindowCoordinatorRestoreTest {
                     userText = "look at this",
                     assistantText = "done",
                     extraItems = listOf(
-                        UnifiedItem(
+                        ProviderItem(
                             id = "tool-1",
                             kind = ItemKind.TOOL_CALL,
                             status = ItemStatus.SUCCESS,
@@ -140,18 +140,18 @@ class ToolWindowCoordinatorRestoreTest {
             settings = settings,
         )
 
-        val timelineStore = TimelineAreaStore()
-        val coordinator = createCoordinator(service, settings, timelineStore)
-        waitUntil(timeoutMs = 2_000) { timelineStore.state.value.nodes.size == 3 }
+        val conversationStore = ConversationAreaStore()
+        val coordinator = createCoordinator(service, settings, conversationStore)
+        waitUntil(timeoutMs = 2_000) { conversationStore.state.value.nodes.size == 3 }
 
-        val state = timelineStore.state.value
+        val state = conversationStore.state.value
         assertEquals(3, state.nodes.size)
-        val userNode = assertIs<TimelineNode.MessageNode>(state.nodes[0])
+        val userNode = assertIs<ConversationActivityItem.MessageNode>(state.nodes[0])
         assertEquals("look at this", userNode.text)
         assertEquals(1, userNode.attachments.size)
         assertEquals("/assets/preview.png", userNode.attachments.single().assetPath)
-        assertIs<TimelineNode.ToolCallNode>(state.nodes[1])
-        assertEquals("done", assertIs<TimelineNode.MessageNode>(state.nodes[2]).text)
+        assertIs<ConversationActivityItem.ToolCallNode>(state.nodes[1])
+        assertEquals("done", assertIs<ConversationActivityItem.MessageNode>(state.nodes[2]).text)
 
         coordinator.dispose()
         service.dispose()
@@ -183,32 +183,32 @@ class ToolWindowCoordinatorRestoreTest {
             ),
         )
         val eventHub = ToolWindowEventHub()
-        val timelineStore = TimelineAreaStore()
+        val conversationStore = ConversationAreaStore()
         val coordinator = ToolWindowCoordinator(
             chatService = AgentChatService(repository = repository, registry = registry(provider), settings = settings),
             settingsService = settings,
             eventHub = eventHub,
-            headerStore = HeaderAreaStore(),
-            statusStore = StatusAreaStore(),
-            timelineStore = timelineStore,
-            composerStore = ComposerAreaStore(),
-            rightDrawerStore = RightDrawerAreaStore(),
+            sessionTabsStore = SessionTabsAreaStore(),
+            executionStatusStore = ExecutionStatusAreaStore(),
+            conversationStore = conversationStore,
+            submissionStore = SubmissionAreaStore(),
+            sidePanelStore = SidePanelAreaStore(),
             historyPageSize = 2,
         )
-        waitUntil(timeoutMs = 2_000) { timelineStore.state.value.nodes.size == 3 }
+        waitUntil(timeoutMs = 2_000) { conversationStore.state.value.nodes.size == 3 }
 
-        assertTrue(timelineStore.state.value.nodes.first() is TimelineNode.LoadMoreNode)
+        assertTrue(conversationStore.state.value.nodes.first() is ConversationActivityItem.LoadMoreNode)
         assertEquals(
             listOf("third", "fourth"),
-            timelineStore.state.value.nodes.filterIsInstance<TimelineNode.MessageNode>().map { it.text },
+            conversationStore.state.value.nodes.filterIsInstance<ConversationActivityItem.MessageNode>().map { it.text },
         )
-        assertTrue(timelineStore.state.value.hasOlder)
+        assertTrue(conversationStore.state.value.hasOlder)
 
         eventHub.publishUiIntent(UiIntent.LoadOlderMessages)
-        waitUntil(timeoutMs = 2_000) { timelineStore.state.value.nodes.filterIsInstance<TimelineNode.MessageNode>().size == 4 }
+        waitUntil(timeoutMs = 2_000) { conversationStore.state.value.nodes.filterIsInstance<ConversationActivityItem.MessageNode>().size == 4 }
 
-        val state = timelineStore.state.value
-        assertEquals(listOf("first", "second", "third", "fourth"), state.nodes.filterIsInstance<TimelineNode.MessageNode>().map { it.text })
+        val state = conversationStore.state.value
+        assertEquals(listOf("first", "second", "third", "fourth"), state.nodes.filterIsInstance<ConversationActivityItem.MessageNode>().map { it.text })
         assertFalse(state.hasOlder)
 
         coordinator.dispose()
@@ -236,12 +236,12 @@ class ToolWindowCoordinatorRestoreTest {
                 historyTurn(turnId = "turn-1", userText = "old question", assistantText = "old answer"),
             ),
             liveStream = { request ->
-                flow {
-                    emit(UnifiedEvent.ThreadStarted(threadId = "thread-1"))
-                    emit(UnifiedEvent.TurnStarted(turnId = "turn-1", threadId = "thread-1"))
+                com.auracode.assistant.test.providerEventFlow {
+                    emit(ProviderEvent.ThreadStarted(threadId = "thread-1"))
+                    emit(ProviderEvent.TurnStarted(turnId = "turn-1", threadId = "thread-1"))
                     emit(
-                        UnifiedEvent.ItemUpdated(
-                            UnifiedItem(
+                        ProviderEvent.ItemUpdated(
+                            ProviderItem(
                                 id = "${request.requestId}:assistant",
                                 kind = ItemKind.NARRATIVE,
                                 status = ItemStatus.SUCCESS,
@@ -250,7 +250,7 @@ class ToolWindowCoordinatorRestoreTest {
                             ),
                         ),
                     )
-                    emit(UnifiedEvent.TurnCompleted(turnId = "turn-1", outcome = TurnOutcome.SUCCESS))
+                    emit(ProviderEvent.TurnCompleted(turnId = "turn-1", outcome = TurnOutcome.SUCCESS))
                 }
             },
         )
@@ -261,29 +261,29 @@ class ToolWindowCoordinatorRestoreTest {
         )
 
         val eventHub = ToolWindowEventHub()
-        val timelineStore = TimelineAreaStore()
+        val conversationStore = ConversationAreaStore()
         val coordinator = ToolWindowCoordinator(
             chatService = service,
             settingsService = settings,
             eventHub = eventHub,
-            headerStore = HeaderAreaStore(),
-            statusStore = StatusAreaStore(),
-            timelineStore = timelineStore,
-            composerStore = ComposerAreaStore(),
-            rightDrawerStore = RightDrawerAreaStore(),
+            sessionTabsStore = SessionTabsAreaStore(),
+            executionStatusStore = ExecutionStatusAreaStore(),
+            conversationStore = conversationStore,
+            submissionStore = SubmissionAreaStore(),
+            sidePanelStore = SidePanelAreaStore(),
             historyPageSize = 10,
         )
-        waitUntil(timeoutMs = 2_000) { timelineStore.state.value.nodes.filterIsInstance<TimelineNode.MessageNode>().size == 2 }
+        waitUntil(timeoutMs = 2_000) { conversationStore.state.value.nodes.filterIsInstance<ConversationActivityItem.MessageNode>().size == 2 }
 
         eventHub.publishUiIntent(UiIntent.InputChanged("new question"))
         eventHub.publishUiIntent(UiIntent.SendPrompt)
 
         waitUntil(timeoutMs = 2_000) {
-            !timelineStore.state.value.isRunning &&
-                timelineStore.state.value.nodes.filterIsInstance<TimelineNode.MessageNode>().size >= 4
+            !conversationStore.state.value.isRunning &&
+                conversationStore.state.value.nodes.filterIsInstance<ConversationActivityItem.MessageNode>().size >= 4
         }
 
-        val messages = timelineStore.state.value.nodes.filterIsInstance<TimelineNode.MessageNode>()
+        val messages = conversationStore.state.value.nodes.filterIsInstance<ConversationActivityItem.MessageNode>()
         assertEquals(
             listOf("old question", "old answer", "new question", "new answer"),
             messages.map { it.text },
@@ -296,17 +296,17 @@ class ToolWindowCoordinatorRestoreTest {
     private fun createCoordinator(
         service: AgentChatService,
         settings: AgentSettingsService,
-        timelineStore: TimelineAreaStore,
+        conversationStore: ConversationAreaStore,
     ): ToolWindowCoordinator {
         return ToolWindowCoordinator(
             chatService = service,
             settingsService = settings,
             eventHub = ToolWindowEventHub(),
-            headerStore = HeaderAreaStore(),
-            statusStore = StatusAreaStore(),
-            timelineStore = timelineStore,
-            composerStore = ComposerAreaStore(),
-            rightDrawerStore = RightDrawerAreaStore(),
+            sessionTabsStore = SessionTabsAreaStore(),
+            executionStatusStore = ExecutionStatusAreaStore(),
+            conversationStore = conversationStore,
+            submissionStore = SubmissionAreaStore(),
+            sidePanelStore = SidePanelAreaStore(),
             historyPageSize = 10,
         )
     }
@@ -347,14 +347,17 @@ class ToolWindowCoordinatorRestoreTest {
     }
 
     private class HistoryBackedProvider(
-        private val historyTurns: MutableList<List<UnifiedEvent>>,
-        private val liveStream: (AgentRequest) -> Flow<UnifiedEvent> = { emptyFlow() },
+        private val historyTurns: MutableList<List<ProviderEvent>>,
+        private val liveStream: (AgentRequest) -> kotlinx.coroutines.flow.Flow<com.auracode.assistant.session.kernel.SessionDomainEvent> = {
+            com.auracode.assistant.test.emptySessionDomainEventFlow()
+        },
     ) : AgentProvider {
-        override fun stream(request: AgentRequest): Flow<UnifiedEvent> = liveStream(request)
+        override fun stream(request: AgentRequest): kotlinx.coroutines.flow.Flow<com.auracode.assistant.session.kernel.SessionDomainEvent> =
+            liveStream(request)
 
         override suspend fun loadInitialHistory(ref: ConversationRef, pageSize: Int): ConversationHistoryPage {
             val pageTurns = historyTurns.takeLast(pageSize)
-            return ConversationHistoryPage(
+            return com.auracode.assistant.test.historyPageFromProviderEvents(
                 events = pageTurns.flatten(),
                 hasOlder = historyTurns.size > pageTurns.size,
                 olderCursor = (historyTurns.size - pageTurns.size).takeIf { it > 0 }?.toString(),
@@ -365,7 +368,7 @@ class ToolWindowCoordinatorRestoreTest {
             val endExclusive = cursor.toIntOrNull() ?: 0
             val startInclusive = (endExclusive - pageSize).coerceAtLeast(0)
             val pageTurns = historyTurns.subList(startInclusive, endExclusive)
-            return ConversationHistoryPage(
+            return com.auracode.assistant.test.historyPageFromProviderEvents(
                 events = pageTurns.flatten(),
                 hasOlder = startInclusive > 0,
                 olderCursor = startInclusive.takeIf { it > 0 }?.toString(),
@@ -380,13 +383,13 @@ class ToolWindowCoordinatorRestoreTest {
             turnId: String,
             userText: String,
             assistantText: String,
-            extraItems: List<UnifiedItem> = emptyList(),
-        ): List<UnifiedEvent> {
+            extraItems: List<ProviderItem> = emptyList(),
+        ): List<ProviderEvent> {
             return buildList {
-                add(UnifiedEvent.TurnStarted(turnId = turnId, threadId = "thread-1"))
+                add(ProviderEvent.TurnStarted(turnId = turnId, threadId = "thread-1"))
                 add(
-                    UnifiedEvent.ItemUpdated(
-                        UnifiedItem(
+                    ProviderEvent.ItemUpdated(
+                        ProviderItem(
                             id = "history:user:$turnId",
                             kind = ItemKind.NARRATIVE,
                             status = ItemStatus.SUCCESS,
@@ -395,11 +398,11 @@ class ToolWindowCoordinatorRestoreTest {
                         ),
                     ),
                 )
-                extraItems.forEach { add(UnifiedEvent.ItemUpdated(it.copy(id = "history:${it.id}:$turnId"))) }
+                extraItems.forEach { add(ProviderEvent.ItemUpdated(it.copy(id = "history:${it.id}:$turnId"))) }
                 if (assistantText.isNotBlank()) {
                     add(
-                        UnifiedEvent.ItemUpdated(
-                            UnifiedItem(
+                        ProviderEvent.ItemUpdated(
+                            ProviderItem(
                                 id = "history:assistant:$turnId",
                                 kind = ItemKind.NARRATIVE,
                                 status = ItemStatus.SUCCESS,
@@ -409,7 +412,7 @@ class ToolWindowCoordinatorRestoreTest {
                         ),
                     )
                 }
-                add(UnifiedEvent.TurnCompleted(turnId = turnId, outcome = TurnOutcome.SUCCESS))
+                add(ProviderEvent.TurnCompleted(turnId = turnId, outcome = TurnOutcome.SUCCESS))
             }
         }
     }

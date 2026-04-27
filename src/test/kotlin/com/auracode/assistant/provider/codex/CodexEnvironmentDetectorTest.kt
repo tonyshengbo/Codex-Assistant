@@ -72,9 +72,9 @@ class CodexEnvironmentDetectorTest {
 
     @Test
     fun `probe reports success when initialize succeeds`() {
-        val probe = CodexAppServerProbe(
+        val probe = CodexRuntimeProbe(
             runner = { _, _ ->
-                CodexAppServerProbeExecution(initialized = true)
+                CodexRuntimeProbeExecution(initialized = true)
             },
         )
 
@@ -102,9 +102,9 @@ class CodexEnvironmentDetectorTest {
                 operatingSystemName = "Linux",
                 pathExt = "",
             ),
-            appServerProbe = CodexAppServerProbe(
+            appServerProbe = CodexRuntimeProbe(
                 runner = { _, _ ->
-                    CodexAppServerProbeExecution(initialized = true)
+                    CodexRuntimeProbeExecution(initialized = true)
                 },
             ),
         )
@@ -137,9 +137,9 @@ class CodexEnvironmentDetectorTest {
                 operatingSystemName = "Mac OS X",
                 pathExt = "",
             ),
-            appServerProbe = CodexAppServerProbe(
+            appServerProbe = CodexRuntimeProbe(
                 runner = { _, _ ->
-                    CodexAppServerProbeExecution(initialized = true)
+                    CodexRuntimeProbeExecution(initialized = true)
                 },
             ),
         )
@@ -167,9 +167,9 @@ class CodexEnvironmentDetectorTest {
                 operatingSystemName = "Linux",
                 pathExt = "",
             ),
-            appServerProbe = CodexAppServerProbe(
+            appServerProbe = CodexRuntimeProbe(
                 runner = { _, _ ->
-                    CodexAppServerProbeExecution(initialized = true)
+                    CodexRuntimeProbeExecution(initialized = true)
                 },
             ),
         )

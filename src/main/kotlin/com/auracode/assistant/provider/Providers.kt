@@ -2,10 +2,10 @@ package com.auracode.assistant.provider
 
 import com.auracode.assistant.provider.claude.ClaudeModelCatalog
 import com.auracode.assistant.provider.claude.ClaudeProviderFactory
-import com.auracode.assistant.provider.codex.CodexAppServerProvider
+import com.auracode.assistant.provider.codex.CodexRuntimeProvider
 import com.auracode.assistant.provider.codex.CodexModelCatalog
 import com.auracode.assistant.settings.AgentSettingsService
-import com.auracode.assistant.protocol.UnifiedToolUserInputAnswerDraft
+import com.auracode.assistant.protocol.ProviderToolUserInputAnswerDraft
 import com.auracode.assistant.toolwindow.execution.ApprovalAction
 import java.util.concurrent.ConcurrentHashMap
 
@@ -26,10 +26,10 @@ private val claudeCapabilities = EngineCapabilities(
 )
 
 /** Registers the Codex provider implementation behind the shared provider factory contract. */
-class CodexProviderFactory(private val settings: AgentSettingsService) : AgentProviderFactory {
+internal class CodexProviderFactory(private val settings: AgentSettingsService) : AgentProviderFactory {
     override val engineId: String = ENGINE_ID
 
-    override fun create(): AgentProvider = CodexAppServerProvider(settings)
+    override fun create(): AgentProvider = CodexRuntimeProvider(settings)
 
     companion object {
         const val ENGINE_ID: String = "codex"
@@ -37,7 +37,7 @@ class CodexProviderFactory(private val settings: AgentSettingsService) : AgentPr
 }
 
 /** Resolves engine descriptors and lazily instantiates provider implementations. */
-class ProviderRegistry(
+internal class ProviderRegistry(
     descriptors: List<EngineDescriptor>,
     factories: List<AgentProviderFactory>,
     private val defaultEngineId: String,
@@ -94,7 +94,7 @@ class ProviderRegistry(
 
     fun submitToolUserInput(
         requestId: String,
-        answers: Map<String, UnifiedToolUserInputAnswerDraft>,
+        answers: Map<String, ProviderToolUserInputAnswerDraft>,
     ): Boolean {
         return providers.values.any { it.submitToolUserInput(requestId, answers) }
     }

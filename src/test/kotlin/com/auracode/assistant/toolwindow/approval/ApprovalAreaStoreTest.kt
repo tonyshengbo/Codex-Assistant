@@ -1,7 +1,7 @@
 package com.auracode.assistant.toolwindow.execution
 
-import com.auracode.assistant.protocol.UnifiedApprovalRequest
-import com.auracode.assistant.protocol.UnifiedApprovalRequestKind
+import com.auracode.assistant.protocol.ProviderApprovalRequest
+import com.auracode.assistant.protocol.ProviderApprovalRequestKind
 import com.auracode.assistant.toolwindow.eventing.AppEvent
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -66,12 +66,12 @@ class ApprovalAreaStoreTest {
         assertNotNull(store.state.value.current)
     }
 
-    private fun request(requestId: String, itemId: String): UnifiedApprovalRequest {
-        return UnifiedApprovalRequest(
+    private fun request(requestId: String, itemId: String): ProviderApprovalRequest {
+        return ProviderApprovalRequest(
             requestId = requestId,
             turnId = "turn-1",
             itemId = itemId,
-            kind = UnifiedApprovalRequestKind.COMMAND,
+            kind = ProviderApprovalRequestKind.COMMAND,
             title = "Run command",
             body = "./gradlew test",
             command = "./gradlew test",

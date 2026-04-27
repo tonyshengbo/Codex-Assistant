@@ -64,6 +64,15 @@ internal sealed interface ClaudeConversationEvent {
         val message: String,
     ) : ClaudeConversationEvent
 
+    /** Represents one retry notice that should surface as a non-terminal provider error. */
+    data class RetryScheduled(
+        val attempt: Int,
+        val maxRetries: Int,
+        val retryDelayMs: Long,
+        val errorStatus: String? = null,
+        val error: String? = null,
+    ) : ClaudeConversationEvent
+
     /** 表示 Claude CLI 请求工具执行授权（来自 control_request/can_use_tool）。 */
     data class PermissionRequested(
         val requestId: String,

@@ -1,17 +1,17 @@
 package com.auracode.assistant.toolwindow.eventing
 
-import com.auracode.assistant.toolwindow.submission.ComposerAreaState
-import com.auracode.assistant.toolwindow.submission.PendingComposerSubmission
+import com.auracode.assistant.toolwindow.submission.SubmissionAreaState
+import com.auracode.assistant.toolwindow.submission.PendingSubmission
 import com.auracode.assistant.toolwindow.execution.ToolUserInputPromptUiModel
 
 internal object ToolWindowCoordinatorIds {
     fun newLocalTurnId(): String = "local-turn-${System.currentTimeMillis()}"
 
-    fun newPendingSubmissionId(composerState: ComposerAreaState): String {
-        return "pending-${System.currentTimeMillis()}-${composerState.pendingSubmissions.size}"
+    fun newPendingSubmissionId(submissionState: SubmissionAreaState): String {
+        return "pending-${System.currentTimeMillis()}-${submissionState.pendingSubmissions.size}"
     }
 
-    fun newExternalSubmissionId(queue: ArrayDeque<PendingComposerSubmission>): String {
+    fun newExternalSubmissionId(queue: ArrayDeque<PendingSubmission>): String {
         return "ide-request-${System.currentTimeMillis()}-${queue.size}"
     }
 

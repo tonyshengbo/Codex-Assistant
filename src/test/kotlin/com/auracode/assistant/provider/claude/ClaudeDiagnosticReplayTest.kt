@@ -4,7 +4,7 @@ import com.auracode.assistant.model.AgentRequest
 import com.auracode.assistant.protocol.ItemKind
 import com.auracode.assistant.protocol.ItemStatus
 import com.auracode.assistant.protocol.TurnOutcome
-import com.auracode.assistant.protocol.UnifiedEvent
+import com.auracode.assistant.protocol.ProviderEvent
 import com.auracode.assistant.provider.diagnostics.ProviderDiagnosticFixture
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -36,39 +36,39 @@ class ClaudeDiagnosticReplayTest {
         )
 
         assertTrue(events.any { event ->
-            event is UnifiedEvent.ItemUpdated &&
+            event is ProviderEvent.ItemUpdated &&
                 event.item.kind == ItemKind.COMMAND_EXEC &&
                 event.item.status == ItemStatus.FAILED &&
                 event.item.text?.contains("File does not exist") == true
         })
         assertTrue(events.any { event ->
-            event is UnifiedEvent.ItemUpdated &&
+            event is ProviderEvent.ItemUpdated &&
                 event.item.kind == ItemKind.NARRATIVE &&
                 event.item.name == "reasoning" &&
                 event.item.text == "Inspecting repository structure"
         })
         assertTrue(events.any { event ->
-            event is UnifiedEvent.ItemUpdated &&
+            event is ProviderEvent.ItemUpdated &&
                 event.item.kind == ItemKind.NARRATIVE &&
                 event.item.name == "message" &&
                 event.item.text == "工程已全部创建完毕。"
         })
 
-        val finalUsage = events.filterIsInstance<UnifiedEvent.ThreadTokenUsageUpdated>().last()
+        val finalUsage = events.filterIsInstance<ProviderEvent.ThreadTokenUsageUpdated>().last()
         assertEquals(200000, finalUsage.contextWindow)
         assertEquals(12125, finalUsage.outputTokens)
 
-        val completed = assertIs<UnifiedEvent.TurnCompleted>(events.last())
+        val completed = assertIs<ProviderEvent.TurnCompleted>(events.last())
         assertEquals(TurnOutcome.SUCCESS, completed.outcome)
     }
 
     /**
      * Replays one diagnostic fixture into unified events using the production Claude replay chain.
      */
-    private fun replayFixture(fixture: ProviderDiagnosticFixture): List<UnifiedEvent> {
+    private fun replayFixture(fixture: ProviderDiagnosticFixture): List<ProviderEvent> {
         val parser = ClaudeStreamEventParser()
         val accumulator = ClaudeStreamAccumulator()
-        val mapper = ClaudeUnifiedEventMapper(
+        val mapper = ClaudeProviderEventMapper(
             request = AgentRequest(
                 requestId = "req-claude-diagnostic",
                 engineId = "claude",

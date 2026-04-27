@@ -11,7 +11,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import com.auracode.assistant.i18n.AuraCodeBundle
 import com.auracode.assistant.provider.codex.CodexEnvironmentStatus
-import com.auracode.assistant.toolwindow.shell.RightDrawerAreaState
+import com.auracode.assistant.toolwindow.shell.SidePanelAreaState
 import com.auracode.assistant.toolwindow.settings.RuntimeSettingsTab
 import com.auracode.assistant.toolwindow.eventing.UiIntent
 import com.auracode.assistant.toolwindow.shared.DesignPalette
@@ -21,7 +21,7 @@ import com.auracode.assistant.toolwindow.shared.assistantUiTokens
 @Composable
 internal fun RuntimeSettingsPage(
     p: DesignPalette,
-    state: RightDrawerAreaState,
+    state: SidePanelAreaState,
     onIntent: (UiIntent) -> Unit,
 ) {
     val t = assistantUiTokens()
@@ -110,7 +110,7 @@ private fun RuntimeHeaderActions(
 @Composable
 private fun CodexRuntimeTabContent(
     p: DesignPalette,
-    state: RightDrawerAreaState,
+    state: SidePanelAreaState,
     onIntent: (UiIntent) -> Unit,
 ) {
     val result = state.environmentCheckResult
@@ -153,7 +153,7 @@ private fun CodexRuntimeTabContent(
 @Composable
 private fun ClaudeRuntimeTabContent(
     p: DesignPalette,
-    state: RightDrawerAreaState,
+    state: SidePanelAreaState,
     onIntent: (UiIntent) -> Unit,
 ) {
     val result = state.claudeRuntimeCheckResult
@@ -193,7 +193,7 @@ private fun ClaudeRuntimeTabContent(
 }
 
 /** Builds the inline error text for the active Codex CLI path field. */
-private fun codexCliPathError(state: RightDrawerAreaState): String? {
+private fun codexCliPathError(state: SidePanelAreaState): String? {
     return when (state.environmentCheckResult?.codexStatus) {
         CodexEnvironmentStatus.FAILED -> AuraCodeBundle.message("settings.runtime.codexPath.error.invalid")
         CodexEnvironmentStatus.MISSING -> AuraCodeBundle.message("settings.runtime.codexPath.error.missing")
@@ -202,7 +202,7 @@ private fun codexCliPathError(state: RightDrawerAreaState): String? {
 }
 
 /** Builds the inline error text for the active Claude CLI path field. */
-private fun claudeCliPathError(state: RightDrawerAreaState): String? {
+private fun claudeCliPathError(state: SidePanelAreaState): String? {
     return when (state.claudeRuntimeCheckResult?.cliStatus) {
         CodexEnvironmentStatus.FAILED -> AuraCodeBundle.message("settings.runtime.claudePath.error.invalid")
         CodexEnvironmentStatus.MISSING -> AuraCodeBundle.message("settings.runtime.claudePath.error.missing")

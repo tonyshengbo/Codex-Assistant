@@ -1,7 +1,7 @@
 package com.auracode.assistant.actions
 
 import com.auracode.assistant.i18n.AuraCodeBundle
-import com.auracode.assistant.toolwindow.shared.ToolWindowUiText
+import com.auracode.assistant.toolwindow.shared.AssistantUiText
 import com.intellij.openapi.actionSystem.AnAction
 import com.intellij.openapi.actionSystem.AnActionEvent
 import com.intellij.openapi.wm.ToolWindowManager
@@ -20,6 +20,6 @@ class QuickOpenAction : AnAction() {
     }
 
     companion object {
-        val TOOL_WINDOW_ID: String = ToolWindowUiText.PRIMARY_TOOL_WINDOW_ID
+        val TOOL_WINDOW_ID: String = AssistantUiText.PRIMARY_TOOL_WINDOW_ID
     }
 }

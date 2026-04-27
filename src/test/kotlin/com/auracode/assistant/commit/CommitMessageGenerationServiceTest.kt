@@ -2,8 +2,6 @@ package com.auracode.assistant.commit
 
 import com.auracode.assistant.protocol.ItemKind
 import com.auracode.assistant.protocol.ItemStatus
-import com.auracode.assistant.protocol.UnifiedEvent
-import com.auracode.assistant.protocol.UnifiedItem
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.runBlocking
 import kotlin.test.Test
@@ -25,13 +23,11 @@ class CommitMessageGenerationServiceTest {
                 streamProvider = {
                     capturedRequest = it
                     flowOf(
-                        UnifiedEvent.ItemUpdated(
-                            UnifiedItem(
-                                id = "item-1",
-                                kind = ItemKind.NARRATIVE,
-                                status = ItemStatus.SUCCESS,
-                                text = "feat: add commit message generation button",
-                            ),
+                        com.auracode.assistant.session.kernel.SessionDomainEvent.MessageAppended(
+                            messageId = "item-1",
+                            turnId = "turn-1",
+                            role = com.auracode.assistant.session.kernel.SessionMessageRole.ASSISTANT,
+                            text = "feat: add commit message generation button",
                         ),
                     )
                 },
@@ -58,13 +54,11 @@ class CommitMessageGenerationServiceTest {
             val service = CommitMessageGenerationService(
                 streamProvider = {
                     flowOf(
-                        UnifiedEvent.ItemUpdated(
-                            UnifiedItem(
-                                id = "item-1",
-                                kind = ItemKind.NARRATIVE,
-                                status = ItemStatus.SUCCESS,
-                                text = "add commit message generation button",
-                            ),
+                        com.auracode.assistant.session.kernel.SessionDomainEvent.MessageAppended(
+                            messageId = "item-1",
+                            turnId = "turn-1",
+                            role = com.auracode.assistant.session.kernel.SessionMessageRole.ASSISTANT,
+                            text = "add commit message generation button",
                         ),
                     )
                 },

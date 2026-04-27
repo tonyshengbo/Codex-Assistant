@@ -1,9 +1,10 @@
 package com.auracode.assistant.provider.claude
 
-import com.auracode.assistant.protocol.ItemKind
-import com.auracode.assistant.protocol.ItemStatus
-import com.auracode.assistant.protocol.TurnOutcome
-import com.auracode.assistant.protocol.UnifiedEvent
+import com.auracode.assistant.session.kernel.SessionActivityStatus
+import com.auracode.assistant.session.kernel.SessionCommandKind
+import com.auracode.assistant.session.kernel.SessionDomainEvent
+import com.auracode.assistant.session.kernel.SessionMessageRole
+import com.auracode.assistant.session.kernel.SessionTurnOutcome
 import java.nio.file.Files
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -48,24 +49,21 @@ class ClaudeLocalHistoryReaderTest {
         // TurnStarted + user ItemUpdated + assistant ItemUpdated + TurnCompleted
         assertEquals(4, result.events.size)
 
-        val turnStarted = assertIs<UnifiedEvent.TurnStarted>(result.events[0])
+        val turnStarted = assertIs<SessionDomainEvent.TurnStarted>(result.events[0])
         assertEquals("user-uuid-1", turnStarted.turnId)
         assertEquals(sessionId, turnStarted.threadId)
 
-        val userItem = assertIs<UnifiedEvent.ItemUpdated>(result.events[1])
-        assertEquals("user_message", userItem.item.name)
-        assertEquals("Hello Claude", userItem.item.text)
-        assertEquals(ItemKind.NARRATIVE, userItem.item.kind)
-        assertEquals(ItemStatus.SUCCESS, userItem.item.status)
+        val userItem = assertIs<SessionDomainEvent.MessageAppended>(result.events[1])
+        assertEquals(SessionMessageRole.USER, userItem.role)
+        assertEquals("Hello Claude", userItem.text)
 
-        val assistantItem = assertIs<UnifiedEvent.ItemUpdated>(result.events[2])
-        assertEquals("message", assistantItem.item.name)
-        assertEquals("Hello! How can I help?", assistantItem.item.text)
-        assertEquals(ItemKind.NARRATIVE, assistantItem.item.kind)
+        val assistantItem = assertIs<SessionDomainEvent.MessageAppended>(result.events[2])
+        assertEquals(SessionMessageRole.ASSISTANT, assistantItem.role)
+        assertEquals("Hello! How can I help?", assistantItem.text)
 
-        val turnCompleted = assertIs<UnifiedEvent.TurnCompleted>(result.events[3])
+        val turnCompleted = assertIs<SessionDomainEvent.TurnCompleted>(result.events[3])
         assertEquals("user-uuid-1", turnCompleted.turnId)
-        assertEquals(TurnOutcome.SUCCESS, turnCompleted.outcome)
+        assertEquals(SessionTurnOutcome.SUCCESS, turnCompleted.outcome)
     }
 
     @Test
@@ -90,27 +88,27 @@ class ClaudeLocalHistoryReaderTest {
         // 2 turns × 4 events each = 8 events
         assertEquals(8, result.events.size)
 
-        val firstTurn = assertIs<UnifiedEvent.TurnStarted>(result.events[0])
+        val firstTurn = assertIs<SessionDomainEvent.TurnStarted>(result.events[0])
         assertEquals("user-1", firstTurn.turnId)
 
-        val firstUser = assertIs<UnifiedEvent.ItemUpdated>(result.events[1])
-        assertEquals("First question", firstUser.item.text)
+        val firstUser = assertIs<SessionDomainEvent.MessageAppended>(result.events[1])
+        assertEquals("First question", firstUser.text)
 
-        val firstAssistant = assertIs<UnifiedEvent.ItemUpdated>(result.events[2])
-        assertEquals("First answer", firstAssistant.item.text)
+        val firstAssistant = assertIs<SessionDomainEvent.MessageAppended>(result.events[2])
+        assertEquals("First answer", firstAssistant.text)
 
-        assertIs<UnifiedEvent.TurnCompleted>(result.events[3])
+        assertIs<SessionDomainEvent.TurnCompleted>(result.events[3])
 
-        val secondTurn = assertIs<UnifiedEvent.TurnStarted>(result.events[4])
+        val secondTurn = assertIs<SessionDomainEvent.TurnStarted>(result.events[4])
         assertEquals("user-2", secondTurn.turnId)
 
-        val secondUser = assertIs<UnifiedEvent.ItemUpdated>(result.events[5])
-        assertEquals("Second question", secondUser.item.text)
+        val secondUser = assertIs<SessionDomainEvent.MessageAppended>(result.events[5])
+        assertEquals("Second question", secondUser.text)
 
-        val secondAssistant = assertIs<UnifiedEvent.ItemUpdated>(result.events[6])
-        assertEquals("Second answer", secondAssistant.item.text)
+        val secondAssistant = assertIs<SessionDomainEvent.MessageAppended>(result.events[6])
+        assertEquals("Second answer", secondAssistant.text)
 
-        assertIs<UnifiedEvent.TurnCompleted>(result.events[7])
+        assertIs<SessionDomainEvent.TurnCompleted>(result.events[7])
     }
 
     @Test
@@ -132,8 +130,8 @@ class ClaudeLocalHistoryReaderTest {
         val result = reader.readHistory(sessionId)
 
         assertEquals(4, result.events.size)
-        val userItem = assertIs<UnifiedEvent.ItemUpdated>(result.events[1])
-        assertEquals("Main message", userItem.item.text)
+        val userItem = assertIs<SessionDomainEvent.MessageAppended>(result.events[1])
+        assertEquals("Main message", userItem.text)
     }
 
     @Test
@@ -154,10 +152,10 @@ class ClaudeLocalHistoryReaderTest {
         val result = reader.readHistory(sessionId)
 
         assertEquals(4, result.events.size)
-        val toolItem = assertIs<UnifiedEvent.ItemUpdated>(result.events[2])
-        assertEquals(ItemKind.TOOL_CALL, toolItem.item.kind)
-        val assistantItem = assertIs<UnifiedEvent.ItemUpdated>(result.events[3])
-        assertEquals("Done.", assistantItem.item.text)
+        val toolItem = assertIs<SessionDomainEvent.ToolUpdated>(result.events[2])
+        assertEquals("Bash", toolItem.toolName)
+        val assistantItem = assertIs<SessionDomainEvent.MessageAppended>(result.events[3])
+        assertEquals("Done.", assistantItem.text)
     }
 
     @Test
@@ -180,8 +178,8 @@ class ClaudeLocalHistoryReaderTest {
         val result = reader.readHistory(sessionId)
 
         assertEquals(4, result.events.size)
-        val userItem = assertIs<UnifiedEvent.ItemUpdated>(result.events[1])
-        assertEquals("Valid message", userItem.item.text)
+        val userItem = assertIs<SessionDomainEvent.MessageAppended>(result.events[1])
+        assertEquals("Valid message", userItem.text)
     }
 
     @Test
@@ -208,23 +206,27 @@ class ClaudeLocalHistoryReaderTest {
 
         val reader = ClaudeLocalHistoryReader(claudeProjectsDir = projectsDir)
         val result = reader.readHistory(sessionId)
-        val itemUpdates = result.events.filterIsInstance<UnifiedEvent.ItemUpdated>()
+        val commandUpdates = result.events.filterIsInstance<SessionDomainEvent.CommandUpdated>()
+        val fileChangeUpdates = result.events.filterIsInstance<SessionDomainEvent.FileChangesUpdated>()
 
-        assertTrue(itemUpdates.none { it.item.id.contains("tooluse_todo") })
+        assertTrue(commandUpdates.none { it.itemId.contains("tooluse_todo") })
+        assertTrue(fileChangeUpdates.none { it.itemId.contains("tooluse_todo") })
 
-        val readItem = itemUpdates.firstOrNull { it.item.id.contains("tooluse_read") }
+        val readItem = commandUpdates.firstOrNull { it.itemId.contains("tooluse_read") }
             ?: error("Missing Read history item.")
-        assertEquals(ItemKind.COMMAND_EXEC, readItem.item.kind)
-        assertTrue(readItem.item.command.orEmpty().contains("/tmp/ClaudeCliProviderTest.kt"))
+        assertEquals(SessionCommandKind.READ_FILE, readItem.commandKind)
+        assertTrue(readItem.command.orEmpty().contains("/tmp/ClaudeCliProviderTest.kt"))
 
-        val writeItem = itemUpdates.firstOrNull { it.item.id.contains("tooluse_write") && it.item.status == ItemStatus.SUCCESS }
+        val writeItem = fileChangeUpdates.firstOrNull {
+            it.itemId.contains("tooluse_write") && it.status == SessionActivityStatus.SUCCESS
+        }
             ?: error("Missing Write history item.")
-        assertEquals(ItemKind.DIFF_APPLY, writeItem.item.kind)
-        assertEquals("/tmp/ClaudeLocalHistoryReader.kt", writeItem.item.fileChanges.single().path)
+        assertEquals("/tmp/ClaudeLocalHistoryReader.kt", writeItem.changes.single().path)
 
-        val editItem = itemUpdates.firstOrNull { it.item.id.contains("tooluse_edit") && it.item.status == ItemStatus.SUCCESS }
+        val editItem = fileChangeUpdates.firstOrNull {
+            it.itemId.contains("tooluse_edit") && it.status == SessionActivityStatus.SUCCESS
+        }
             ?: error("Missing Edit history item.")
-        assertEquals(ItemKind.DIFF_APPLY, editItem.item.kind)
-        assertEquals("/tmp/ClaudeCliProvider.kt", editItem.item.fileChanges.single().path)
+        assertEquals("/tmp/ClaudeCliProvider.kt", editItem.changes.single().path)
     }
 }

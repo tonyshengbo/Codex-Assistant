@@ -10,7 +10,7 @@ import kotlinx.coroutines.flow.asStateFlow
 internal class SessionKernel(
     private val sessionId: String,
     private val engineId: String,
-    private val reducer: SessionReducer = SessionReducer(),
+    private val reducer: SessionStateReducer = SessionStateReducer(),
     private val runtimeRegistry: SessionRuntimeRegistry? = null,
 ) {
     private val stateLock = Any()

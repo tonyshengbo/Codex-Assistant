@@ -7,8 +7,8 @@ import com.auracode.assistant.model.AgentRequest
 import com.auracode.assistant.protocol.ItemKind
 import com.auracode.assistant.protocol.ItemStatus
 import com.auracode.assistant.protocol.TurnOutcome
-import com.auracode.assistant.protocol.UnifiedEvent
-import com.auracode.assistant.protocol.UnifiedItem
+import com.auracode.assistant.protocol.ProviderEvent
+import com.auracode.assistant.protocol.ProviderItem
 import com.auracode.assistant.provider.AgentProvider
 import com.auracode.assistant.provider.AgentProviderFactory
 import com.auracode.assistant.provider.EngineCapabilities
@@ -16,12 +16,12 @@ import com.auracode.assistant.provider.EngineDescriptor
 import com.auracode.assistant.provider.ProviderRegistry
 import com.auracode.assistant.service.AgentChatService
 import com.auracode.assistant.settings.AgentSettingsService
-import com.auracode.assistant.toolwindow.submission.ComposerAreaStore
-import com.auracode.assistant.toolwindow.shell.RightDrawerAreaStore
-import com.auracode.assistant.toolwindow.sessions.HeaderAreaStore
-import com.auracode.assistant.toolwindow.execution.StatusAreaStore
-import com.auracode.assistant.toolwindow.conversation.TimelineAreaStore
-import com.auracode.assistant.toolwindow.conversation.TimelineNode
+import com.auracode.assistant.toolwindow.submission.SubmissionAreaStore
+import com.auracode.assistant.toolwindow.shell.SidePanelAreaStore
+import com.auracode.assistant.toolwindow.sessions.SessionTabsAreaStore
+import com.auracode.assistant.toolwindow.execution.ExecutionStatusAreaStore
+import com.auracode.assistant.toolwindow.conversation.ConversationAreaStore
+import com.auracode.assistant.toolwindow.conversation.ConversationActivityItem
 import com.auracode.assistant.persistence.chat.SQLiteChatSessionRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -39,7 +39,7 @@ import kotlin.test.assertTrue
 @OptIn(ExperimentalCoroutinesApi::class)
 class ToolWindowPlanFlowTest {
     @Test
-    fun `running turn plan updates populate composer state without timeline plan nodes`() {
+    fun `running turn plan updates populate timeline plan nodes`() {
         val harness = CoordinatorHarness()
 
         harness.eventHub.publishUiIntent(UiIntent.TogglePlanMode)
@@ -48,14 +48,14 @@ class ToolWindowPlanFlowTest {
         harness.waitUntil { harness.provider.requests.isNotEmpty() }
 
         harness.provider.emitRunningPlanUpdate(
-            UnifiedEvent.RunningPlanUpdated(
+            ProviderEvent.RunningPlanUpdated(
                 threadId = "thread-1",
                 turnId = "turn-1",
                 explanation = "Working through plan",
                 steps = listOf(
-                    com.auracode.assistant.protocol.UnifiedRunningPlanStep(step = "Inspect events", status = "completed"),
-                    com.auracode.assistant.protocol.UnifiedRunningPlanStep(step = "Wire composer panel", status = "inProgress"),
-                    com.auracode.assistant.protocol.UnifiedRunningPlanStep(step = "Verify flow", status = "pending"),
+                    com.auracode.assistant.protocol.ProviderPlanStep(step = "Inspect events", status = "completed"),
+                    com.auracode.assistant.protocol.ProviderPlanStep(step = "Wire composer panel", status = "inProgress"),
+                    com.auracode.assistant.protocol.ProviderPlanStep(step = "Verify flow", status = "pending"),
                 ),
                 body = """
                     Working through plan
@@ -67,12 +67,11 @@ class ToolWindowPlanFlowTest {
             ),
         )
 
-        harness.waitUntil { harness.composerStore.state.value.runningPlan != null }
-        val runningPlan = harness.composerStore.state.value.runningPlan
-        assertEquals("thread-1", runningPlan?.threadId)
-        assertEquals("turn-1", runningPlan?.turnId)
-        assertEquals("Wire composer panel", runningPlan?.steps?.get(1)?.step)
-        assertTrue(harness.timelineStore.state.value.nodes.none { it is TimelineNode.PlanNode })
+        harness.waitUntil { harness.conversationStore.state.value.nodes.any { it is ConversationActivityItem.PlanNode } }
+        val planNode = harness.conversationStore.state.value.nodes.filterIsInstance<ConversationActivityItem.PlanNode>().single()
+        assertEquals("turn-1", planNode.turnId)
+        assertTrue(planNode.body.contains("Wire composer panel"))
+        assertNull(harness.submissionStore.state.value.runningPlan)
 
         harness.dispose()
     }
@@ -81,7 +80,7 @@ class ToolWindowPlanFlowTest {
     fun `plan mode is passed to provider and successful plan turn opens completion prompt`() {
         val harness = CoordinatorHarness()
 
-        harness.eventHub.publishUiIntent(UiIntent.SelectMode(ComposerMode.APPROVAL))
+        harness.eventHub.publishUiIntent(UiIntent.SelectMode(SubmissionMode.APPROVAL))
         harness.eventHub.publishUiIntent(UiIntent.TogglePlanMode)
         harness.eventHub.publishUiIntent(UiIntent.InputChanged("Plan this change"))
         harness.eventHub.publishUiIntent(UiIntent.SendPrompt)
@@ -92,7 +91,7 @@ class ToolWindowPlanFlowTest {
         assertEquals(AgentApprovalMode.REQUIRE_CONFIRMATION, request.approvalMode)
 
         harness.provider.emitPlanUpdate(
-            UnifiedItem(
+            ProviderItem(
                 id = "req-1:plan:turn-1",
                 kind = ItemKind.PLAN_UPDATE,
                 status = ItemStatus.SUCCESS,
@@ -102,10 +101,10 @@ class ToolWindowPlanFlowTest {
         )
         harness.provider.completeTurn()
 
-        harness.waitUntil { harness.composerStore.state.value.planCompletion != null }
-        val prompt = harness.composerStore.state.value.planCompletion
+        harness.waitUntil { harness.submissionStore.state.value.planCompletion != null }
+        val prompt = harness.submissionStore.state.value.planCompletion
         assertEquals("Ship plan mode", prompt?.planTitle)
-        assertNull(harness.composerStore.state.value.runningPlan)
+        assertNull(harness.submissionStore.state.value.runningPlan)
 
         harness.dispose()
     }
@@ -120,27 +119,27 @@ class ToolWindowPlanFlowTest {
         harness.waitUntil { harness.provider.requests.isNotEmpty() }
 
         harness.provider.emitRunningPlanUpdate(
-            UnifiedEvent.RunningPlanUpdated(
+            ProviderEvent.RunningPlanUpdated(
                 threadId = "thread-1",
                 turnId = "turn-1",
                 explanation = "Working through plan",
                 steps = listOf(
-                    com.auracode.assistant.protocol.UnifiedRunningPlanStep(step = "Inspect events", status = "inProgress"),
+                    com.auracode.assistant.protocol.ProviderPlanStep(step = "Inspect events", status = "inProgress"),
                 ),
                 body = "",
             ),
         )
 
-        harness.waitUntil { harness.composerStore.state.value.runningPlan != null }
+        harness.waitUntil { harness.conversationStore.state.value.nodes.any { it is ConversationActivityItem.PlanNode } }
         harness.provider.completeTurn()
-        harness.waitUntil { harness.composerStore.state.value.runningPlan == null }
-        assertNull(harness.composerStore.state.value.planCompletion)
+        harness.waitUntil { !harness.conversationStore.state.value.isRunning }
+        assertNull(harness.submissionStore.state.value.planCompletion)
 
         harness.dispose()
     }
 
     @Test
-    fun `non plan turn running plan updates populate composer and clear on turn completion`() {
+    fun `non plan turn running plan updates populate timeline and clear on turn completion`() {
         val harness = CoordinatorHarness()
 
         harness.eventHub.publishUiIntent(UiIntent.InputChanged("Run normal claude turn"))
@@ -148,13 +147,13 @@ class ToolWindowPlanFlowTest {
         harness.waitUntil { harness.provider.requests.isNotEmpty() }
 
         harness.provider.emitRunningPlanUpdate(
-            UnifiedEvent.RunningPlanUpdated(
+            ProviderEvent.RunningPlanUpdated(
                 threadId = "thread-1",
                 turnId = "turn-1",
                 explanation = null,
                 steps = listOf(
-                    com.auracode.assistant.protocol.UnifiedRunningPlanStep(step = "Analyze timeline mapping", status = "completed"),
-                    com.auracode.assistant.protocol.UnifiedRunningPlanStep(step = "Show running plan above composer", status = "in_progress"),
+                    com.auracode.assistant.protocol.ProviderPlanStep(step = "Analyze timeline mapping", status = "completed"),
+                    com.auracode.assistant.protocol.ProviderPlanStep(step = "Show running plan above composer", status = "in_progress"),
                 ),
                 body = """
                     - [x] Analyze timeline mapping
@@ -163,15 +162,15 @@ class ToolWindowPlanFlowTest {
             ),
         )
 
-        harness.waitUntil { harness.composerStore.state.value.runningPlan != null }
-        val runningPlan = harness.composerStore.state.value.runningPlan
-        assertEquals("turn-1", runningPlan?.turnId)
-        assertEquals("Show running plan above composer", runningPlan?.steps?.get(1)?.step)
-        assertTrue(harness.timelineStore.state.value.nodes.none { it is TimelineNode.PlanNode })
+        harness.waitUntil { harness.conversationStore.state.value.nodes.any { it is ConversationActivityItem.PlanNode } }
+        val runningPlan = harness.conversationStore.state.value.nodes.filterIsInstance<ConversationActivityItem.PlanNode>().single()
+        assertEquals("turn-1", runningPlan.turnId)
+        assertTrue(runningPlan.body.contains("Show running plan above composer"))
+        assertNull(harness.submissionStore.state.value.runningPlan)
 
         harness.provider.completeTurn()
-        harness.waitUntil { harness.composerStore.state.value.runningPlan == null }
-        assertNull(harness.composerStore.state.value.planCompletion)
+        harness.waitUntil { !harness.conversationStore.state.value.isRunning }
+        assertNull(harness.submissionStore.state.value.planCompletion)
 
         harness.dispose()
     }
@@ -180,14 +179,14 @@ class ToolWindowPlanFlowTest {
     fun `executing approved plan starts follow up turn on same thread with last execution mode`() {
         val harness = CoordinatorHarness()
 
-        harness.eventHub.publishUiIntent(UiIntent.SelectMode(ComposerMode.APPROVAL))
+        harness.eventHub.publishUiIntent(UiIntent.SelectMode(SubmissionMode.APPROVAL))
         harness.eventHub.publishUiIntent(UiIntent.TogglePlanMode)
         harness.eventHub.publishUiIntent(UiIntent.InputChanged("Plan this change"))
         harness.eventHub.publishUiIntent(UiIntent.SendPrompt)
         harness.waitUntil { harness.provider.requests.isNotEmpty() }
 
         harness.provider.emitPlanUpdate(
-            UnifiedItem(
+            ProviderItem(
                 id = "req-1:plan:turn-1",
                 kind = ItemKind.PLAN_UPDATE,
                 status = ItemStatus.SUCCESS,
@@ -196,37 +195,37 @@ class ToolWindowPlanFlowTest {
             ),
         )
         harness.provider.completeTurn()
-        harness.waitUntil { harness.composerStore.state.value.planCompletion != null }
+        harness.waitUntil { harness.submissionStore.state.value.planCompletion != null }
 
         harness.eventHub.publishUiIntent(UiIntent.ExecuteApprovedPlan)
 
         harness.waitUntil {
             harness.provider.requests.size == 2 &&
-                harness.composerStore.state.value.planCompletion == null
+                harness.submissionStore.state.value.planCompletion == null
         }
         val executionRequest = harness.provider.requests.last()
         assertEquals("thread-1", executionRequest.remoteConversationId)
         assertEquals(AgentCollaborationMode.DEFAULT, executionRequest.collaborationMode)
         assertEquals(AgentApprovalMode.REQUIRE_CONFIRMATION, executionRequest.approvalMode)
         assertTrue(executionRequest.prompt.contains("approved the latest plan", ignoreCase = true))
-        assertEquals(ComposerMode.APPROVAL, harness.composerStore.state.value.executionMode)
-        assertEquals(false, harness.composerStore.state.value.planEnabled)
-        assertNull(harness.composerStore.state.value.runningPlan)
-        harness.waitUntil { harness.timelineStore.state.value.isRunning }
+        assertEquals(SubmissionMode.APPROVAL, harness.submissionStore.state.value.executionMode)
+        assertEquals(false, harness.submissionStore.state.value.planEnabled)
+        assertNull(harness.submissionStore.state.value.runningPlan)
+        harness.waitUntil { harness.conversationStore.state.value.isRunning }
 
         harness.provider.emitRunningPlanUpdate(
-            UnifiedEvent.RunningPlanUpdated(
+            ProviderEvent.RunningPlanUpdated(
                 threadId = "thread-1",
                 turnId = "turn-1",
                 explanation = "Working through execution",
                 steps = listOf(
-                    com.auracode.assistant.protocol.UnifiedRunningPlanStep(step = "Apply patch", status = "inProgress"),
+                    com.auracode.assistant.protocol.ProviderPlanStep(step = "Apply patch", status = "inProgress"),
                 ),
                 body = "- [inProgress] Apply patch",
             ),
         )
         harness.provider.emitPlanUpdate(
-            UnifiedItem(
+            ProviderItem(
                 id = "req-2:plan:turn-1",
                 kind = ItemKind.PLAN_UPDATE,
                 status = ItemStatus.SUCCESS,
@@ -235,10 +234,10 @@ class ToolWindowPlanFlowTest {
             ),
         )
         harness.provider.completeTurn()
-        harness.waitUntil { !harness.timelineStore.state.value.isRunning }
+        harness.waitUntil { !harness.conversationStore.state.value.isRunning }
 
-        assertNull(harness.composerStore.state.value.runningPlan)
-        assertNull(harness.composerStore.state.value.planCompletion)
+        assertNull(harness.submissionStore.state.value.runningPlan)
+        assertNull(harness.submissionStore.state.value.planCompletion)
 
         harness.dispose()
     }
@@ -253,7 +252,7 @@ class ToolWindowPlanFlowTest {
         harness.waitUntil { harness.provider.requests.isNotEmpty() }
 
         harness.provider.emitPlanUpdate(
-            UnifiedItem(
+            ProviderItem(
                 id = "req-1:plan:turn-1",
                 kind = ItemKind.PLAN_UPDATE,
                 status = ItemStatus.SUCCESS,
@@ -262,13 +261,13 @@ class ToolWindowPlanFlowTest {
             ),
         )
         harness.provider.completeTurn()
-        harness.waitUntil { harness.composerStore.state.value.planCompletion != null }
+        harness.waitUntil { harness.submissionStore.state.value.planCompletion != null }
 
         harness.eventHub.publishUiIntent(UiIntent.DismissPlanCompletionPrompt)
-        harness.waitUntil { harness.composerStore.state.value.planCompletion == null }
+        harness.waitUntil { harness.submissionStore.state.value.planCompletion == null }
 
         assertEquals(1, harness.provider.requests.size)
-        assertTrue(harness.composerStore.state.value.planEnabled)
+        assertTrue(harness.submissionStore.state.value.planEnabled)
 
         harness.dispose()
     }
@@ -283,7 +282,7 @@ class ToolWindowPlanFlowTest {
         harness.waitUntil { harness.provider.requests.isNotEmpty() }
 
         harness.provider.emitPlanUpdate(
-            UnifiedItem(
+            ProviderItem(
                 id = "req-1:plan:turn-1",
                 kind = ItemKind.PLAN_UPDATE,
                 status = ItemStatus.SUCCESS,
@@ -292,7 +291,7 @@ class ToolWindowPlanFlowTest {
             ),
         )
         harness.provider.completeTurn()
-        harness.waitUntil { harness.composerStore.state.value.planCompletion != null }
+        harness.waitUntil { harness.submissionStore.state.value.planCompletion != null }
 
         harness.eventHub.publishUiIntent(UiIntent.EditPlanRevisionDraft("Make it more incremental"))
         harness.eventHub.publishUiIntent(UiIntent.SubmitPlanRevision)
@@ -303,8 +302,8 @@ class ToolWindowPlanFlowTest {
         assertEquals(AgentCollaborationMode.PLAN, revisionRequest.collaborationMode)
         assertEquals(AgentApprovalMode.AUTO, revisionRequest.approvalMode)
         assertTrue(revisionRequest.prompt.contains("Make it more incremental"))
-        assertTrue(harness.composerStore.state.value.planEnabled)
-        assertEquals(null, harness.composerStore.state.value.planCompletion)
+        assertTrue(harness.submissionStore.state.value.planEnabled)
+        assertEquals(null, harness.submissionStore.state.value.planCompletion)
 
         harness.dispose()
     }
@@ -343,17 +342,17 @@ class ToolWindowPlanFlowTest {
             scopeDispatcher = testDispatcher,
         )
         val eventHub = ToolWindowEventHub()
-        val timelineStore = TimelineAreaStore()
-        val composerStore = ComposerAreaStore()
+        val conversationStore = ConversationAreaStore()
+        val submissionStore = SubmissionAreaStore()
         private val coordinator = ToolWindowCoordinator(
             chatService = service,
             settingsService = settings,
             eventHub = eventHub,
-            headerStore = HeaderAreaStore(),
-            statusStore = StatusAreaStore(),
-            timelineStore = timelineStore,
-            composerStore = composerStore,
-            rightDrawerStore = RightDrawerAreaStore(),
+            sessionTabsStore = SessionTabsAreaStore(),
+            executionStatusStore = ExecutionStatusAreaStore(),
+            conversationStore = conversationStore,
+            submissionStore = submissionStore,
+            sidePanelStore = SidePanelAreaStore(),
             runStartupWarmups = false,
             scopeDispatcher = testDispatcher,
         )
@@ -377,7 +376,7 @@ class ToolWindowPlanFlowTest {
 
     private class RecordingPlanProvider : AgentProvider {
         val requests = CopyOnWriteArrayList<AgentRequest>()
-        private var sink: (UnifiedEvent) -> Unit = {}
+        private var sink: (ProviderEvent) -> Unit = {}
 
         override fun capabilities(): ConversationCapabilities = ConversationCapabilities(
             supportsStructuredHistory = false,
@@ -390,24 +389,24 @@ class ToolWindowPlanFlowTest {
             supportsImageInputs = true,
         )
 
-        override fun stream(request: AgentRequest): Flow<UnifiedEvent> = callbackFlow {
+        override fun stream(request: AgentRequest): kotlinx.coroutines.flow.Flow<com.auracode.assistant.session.kernel.SessionDomainEvent> = callbackFlow {
             requests += request
-            sink = { event -> trySend(event); Unit }
-            trySend(UnifiedEvent.ThreadStarted("thread-1"))
-            trySend(UnifiedEvent.TurnStarted("turn-1", "thread-1"))
+            sink = { event -> com.auracode.assistant.test.trySendProviderEvent(this, event); Unit }
+            com.auracode.assistant.test.trySendProviderEvent(this, ProviderEvent.ThreadStarted("thread-1"))
+            com.auracode.assistant.test.trySendProviderEvent(this, ProviderEvent.TurnStarted("turn-1", "thread-1"))
             awaitClose { sink = {} }
         }
 
-        fun emitPlanUpdate(item: UnifiedItem) {
-            sink(UnifiedEvent.ItemUpdated(item))
+        fun emitPlanUpdate(item: ProviderItem) {
+            sink(ProviderEvent.ItemUpdated(item))
         }
 
-        fun emitRunningPlanUpdate(event: UnifiedEvent.RunningPlanUpdated) {
+        fun emitRunningPlanUpdate(event: ProviderEvent.RunningPlanUpdated) {
             sink(event)
         }
 
         fun completeTurn() {
-            sink(UnifiedEvent.TurnCompleted("turn-1", TurnOutcome.SUCCESS))
+            sink(ProviderEvent.TurnCompleted("turn-1", TurnOutcome.SUCCESS))
         }
 
         override fun cancel(requestId: String) = Unit

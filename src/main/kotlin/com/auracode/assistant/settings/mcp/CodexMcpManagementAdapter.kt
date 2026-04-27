@@ -3,7 +3,7 @@ package com.auracode.assistant.settings.mcp
 import com.auracode.assistant.coroutine.AppCoroutineManager
 import com.auracode.assistant.coroutine.ManagedCoroutineScope
 import com.auracode.assistant.provider.CodexProviderFactory
-import com.auracode.assistant.provider.codex.CodexAppServerJsonSupport
+import com.auracode.assistant.provider.codex.CodexRuntimeJsonSupport
 import com.auracode.assistant.provider.codex.CodexEnvironmentDetector
 import com.auracode.assistant.provider.codex.CodexEnvironmentResolution
 import com.auracode.assistant.provider.codex.CodexEnvironmentStatus
@@ -452,7 +452,7 @@ private class RealCodexMcpAppServerClient(
     override suspend fun initialize() {
         request(
             method = "initialize",
-            params = CodexAppServerJsonSupport.initializeParams()
+            params = CodexRuntimeJsonSupport.initializeParams()
         )
         notify(method = "initialized", params = buildJsonObject { })
     }

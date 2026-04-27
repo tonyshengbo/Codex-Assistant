@@ -6,7 +6,7 @@ import java.util.concurrent.ConcurrentHashMap
  * Creates, reuses, and removes session kernels keyed by session id.
  */
 internal class SessionKernelManager(
-    private val reducer: SessionReducer = SessionReducer(),
+    private val reducer: SessionStateReducer = SessionStateReducer(),
     private val runtimeRegistry: SessionRuntimeRegistry = SessionRuntimeRegistry(),
 ) {
     private val kernelsBySessionId = ConcurrentHashMap<String, SessionKernel>()

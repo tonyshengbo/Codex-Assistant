@@ -6,8 +6,8 @@ import com.auracode.assistant.integration.ide.IdeContextFiles
 import com.auracode.assistant.integration.ide.IdeExternalRequest
 import com.auracode.assistant.integration.ide.IdePromptFactory
 import com.auracode.assistant.integration.ide.IdeRequestSource
-import com.auracode.assistant.toolwindow.external.ToolWindowExternalRequestBridge
-import com.auracode.assistant.toolwindow.shared.ToolWindowUiText
+import com.auracode.assistant.toolwindow.external.ExternalRequestRouter
+import com.auracode.assistant.toolwindow.shared.AssistantUiText
 import com.intellij.openapi.actionSystem.ActionUpdateThread
 import com.intellij.openapi.actionSystem.AnActionEvent
 import com.intellij.openapi.actionSystem.CommonDataKeys
@@ -34,8 +34,8 @@ class AskAuraCurrentFileAction : DumbAwareAction() {
             prompt = IdePromptFactory.explainFile(file.path),
             contextFiles = IdeContextFiles.fromFilePath(file.path),
         )
-        project.getService(ToolWindowExternalRequestBridge::class.java).submitRequest(request)
-        ToolWindowManager.getInstance(project).getToolWindow(ToolWindowUiText.PRIMARY_TOOL_WINDOW_ID)?.show()
+        project.getService(ExternalRequestRouter::class.java).submitRequest(request)
+        ToolWindowManager.getInstance(project).getToolWindow(AssistantUiText.PRIMARY_TOOL_WINDOW_ID)?.show()
     }
 
     override fun getActionUpdateThread(): ActionUpdateThread = ActionUpdateThread.EDT

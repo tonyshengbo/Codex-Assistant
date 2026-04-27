@@ -2,10 +2,10 @@ package com.auracode.assistant.provider.codex.semantic
 
 import com.auracode.assistant.protocol.ItemKind
 import com.auracode.assistant.protocol.ItemStatus
-import com.auracode.assistant.protocol.UnifiedApprovalRequest
-import com.auracode.assistant.protocol.UnifiedEvent
-import com.auracode.assistant.protocol.UnifiedItem
-import com.auracode.assistant.protocol.UnifiedToolUserInputPrompt
+import com.auracode.assistant.protocol.ProviderApprovalRequest
+import com.auracode.assistant.protocol.ProviderEvent
+import com.auracode.assistant.protocol.ProviderItem
+import com.auracode.assistant.protocol.ProviderToolUserInputPrompt
 import com.auracode.assistant.session.kernel.SessionActivityStatus
 import com.auracode.assistant.session.kernel.SessionApprovalRequest
 import com.auracode.assistant.session.kernel.SessionApprovalRequestKind
@@ -27,22 +27,22 @@ internal class CodexSemanticEventExtractor(
     private val fileChangeParser: FileChangeSemanticParser = FileChangeSemanticParser(),
 ) {
     /** Extracts zero or more semantic records from one Codex unified event. */
-    fun extract(event: UnifiedEvent): List<CodexSemanticRecord> {
+    fun extract(event: ProviderEvent): List<CodexSemanticRecord> {
         return when (event) {
-            is UnifiedEvent.ItemUpdated -> extractItem(event.item)
-            is UnifiedEvent.ApprovalRequested -> listOf(
+            is ProviderEvent.ItemUpdated -> extractItem(event.item)
+            is ProviderEvent.ApprovalRequested -> listOf(
                 CodexSemanticRecord.ApprovalRequest(
                     request = approvalRequest(event.request),
                 ),
             )
 
-            is UnifiedEvent.ToolUserInputRequested -> listOf(
+            is ProviderEvent.ToolUserInputRequested -> listOf(
                 CodexSemanticRecord.ToolUserInputRequest(
                     request = toolUserInputRequest(event.prompt),
                 ),
             )
 
-            is UnifiedEvent.RunningPlanUpdated -> listOf(
+            is ProviderEvent.RunningPlanUpdated -> listOf(
                 CodexSemanticRecord.RunningPlanActivity(
                     plan = SessionRunningPlan(
                         turnId = event.turnId,
@@ -63,7 +63,7 @@ internal class CodexSemanticEventExtractor(
     }
 
     /** Extracts semantic records from one structured unified item. */
-    private fun extractItem(item: UnifiedItem): List<CodexSemanticRecord> {
+    private fun extractItem(item: ProviderItem): List<CodexSemanticRecord> {
         val status = item.status.toSessionStatus()
         return when (item.kind) {
             ItemKind.COMMAND_EXEC -> listOf(
@@ -83,7 +83,7 @@ internal class CodexSemanticEventExtractor(
             )
 
             ItemKind.DIFF_APPLY -> {
-                val changes = fileChangeParser.parseUnifiedFileChanges(item.fileChanges)
+                val changes = fileChangeParser.parseProviderFileChanges(item.fileChanges)
                 listOf(
                     CodexSemanticRecord.FileChangesActivity(
                         itemId = item.id,
@@ -100,7 +100,7 @@ internal class CodexSemanticEventExtractor(
                     itemId = item.id,
                     turnId = null,
                     status = status,
-                    toolKind = toolClassifier.classifyUnifiedTool(item.name),
+                    toolKind = toolClassifier.classifyProviderTool(item.name),
                     toolName = item.name.orEmpty().ifBlank { "tool" },
                     summary = item.text,
                 ),
@@ -111,24 +111,24 @@ internal class CodexSemanticEventExtractor(
     }
 
     /** Converts a unified approval request into a kernel-facing approval request model. */
-    private fun approvalRequest(request: UnifiedApprovalRequest): SessionApprovalRequest {
+    private fun approvalRequest(request: ProviderApprovalRequest): SessionApprovalRequest {
         return SessionApprovalRequest(
             requestId = request.requestId,
             turnId = request.turnId,
             itemId = request.itemId,
             kind = when (request.kind) {
-                com.auracode.assistant.protocol.UnifiedApprovalRequestKind.COMMAND -> SessionApprovalRequestKind.COMMAND
-                com.auracode.assistant.protocol.UnifiedApprovalRequestKind.FILE_CHANGE -> SessionApprovalRequestKind.FILE_CHANGE
-                com.auracode.assistant.protocol.UnifiedApprovalRequestKind.PERMISSIONS -> SessionApprovalRequestKind.PERMISSIONS
+                com.auracode.assistant.protocol.ProviderApprovalRequestKind.COMMAND -> SessionApprovalRequestKind.COMMAND
+                com.auracode.assistant.protocol.ProviderApprovalRequestKind.FILE_CHANGE -> SessionApprovalRequestKind.FILE_CHANGE
+                com.auracode.assistant.protocol.ProviderApprovalRequestKind.PERMISSIONS -> SessionApprovalRequestKind.PERMISSIONS
             },
             titleKey = when (request.kind) {
-                com.auracode.assistant.protocol.UnifiedApprovalRequestKind.COMMAND ->
+                com.auracode.assistant.protocol.ProviderApprovalRequestKind.COMMAND ->
                     "session.execution.approval.runCommand"
 
-                com.auracode.assistant.protocol.UnifiedApprovalRequestKind.FILE_CHANGE ->
+                com.auracode.assistant.protocol.ProviderApprovalRequestKind.FILE_CHANGE ->
                     "session.execution.approval.applyFileChange"
 
-                com.auracode.assistant.protocol.UnifiedApprovalRequestKind.PERMISSIONS ->
+                com.auracode.assistant.protocol.ProviderApprovalRequestKind.PERMISSIONS ->
                     "session.execution.approval.grantPermissions"
             },
             body = request.body,
@@ -140,7 +140,7 @@ internal class CodexSemanticEventExtractor(
     }
 
     /** Converts a unified tool user-input prompt into a kernel-facing request model. */
-    private fun toolUserInputRequest(prompt: UnifiedToolUserInputPrompt): SessionToolUserInputRequest {
+    private fun toolUserInputRequest(prompt: ProviderToolUserInputPrompt): SessionToolUserInputRequest {
         return SessionToolUserInputRequest(
             requestId = prompt.requestId,
             threadId = prompt.threadId,

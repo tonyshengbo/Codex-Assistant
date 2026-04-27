@@ -18,7 +18,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.auracode.assistant.i18n.AuraCodeBundle
-import com.auracode.assistant.toolwindow.shell.RightDrawerAreaState
+import com.auracode.assistant.toolwindow.shell.SidePanelAreaState
 import com.auracode.assistant.toolwindow.eventing.UiIntent
 import com.auracode.assistant.toolwindow.shared.DesignPalette
 import com.auracode.assistant.toolwindow.shared.assistantUiTokens
@@ -26,7 +26,7 @@ import com.auracode.assistant.toolwindow.shared.assistantUiTokens
 @Composable
 internal fun AgentEditorDialog(
     p: DesignPalette,
-    state: RightDrawerAreaState,
+    state: SidePanelAreaState,
     onIntent: (UiIntent) -> Unit,
 ) {
     val t = assistantUiTokens()
@@ -56,7 +56,7 @@ internal fun AgentEditorDialog(
                     verticalAlignment = Alignment.Top,
                     horizontalArrangement = Arrangement.spacedBy(t.spacing.md),
                 ) {
-                    DrawerHeader(
+                    PanelHeader(
                         p = p,
                         title = state.agentDraftName.ifBlank { AuraCodeBundle.message("settings.agent.new") },
                         subtitle = AuraCodeBundle.message("settings.agent.editor.subtitle"),

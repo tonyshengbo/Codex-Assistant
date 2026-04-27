@@ -33,6 +33,8 @@ class ToolWindowArchitectureMigrationTest {
         val sourceText = Files.readString(coordinatorSource)
         assertFalse(sourceText.contains("SessionScopedEventDispatcher"))
         assertFalse(sourceText.contains("SessionUiStateCache"))
+        assertFalse(sourceText.contains("ProviderEventSessionEventMapper"))
+        assertFalse(sourceText.contains("applyProviderEventToKernel"))
     }
 
     @Test
@@ -65,8 +67,9 @@ class ToolWindowArchitectureMigrationTest {
         assertFalse(Files.exists(projectRoot.resolve("src/main/kotlin/com/auracode/assistant/toolwindow/drawer")))
         assertFalse(Files.exists(projectRoot.resolve("src/main/kotlin/com/auracode/assistant/toolwindow/session")))
         assertFalse(Files.exists(projectRoot.resolve("src/main/kotlin/com/auracode/assistant/toolwindow/header")))
-        assertFalse(Files.exists(projectRoot.resolve("src/main/kotlin/com/auracode/assistant/toolwindow/timeline/TimelineNodeMapper.kt")))
-        assertFalse(Files.exists(projectRoot.resolve("src/main/kotlin/com/auracode/assistant/toolwindow/timeline/TimelineNodeReducer.kt")))
+        assertFalse(Files.exists(projectRoot.resolve("src/main/kotlin/com/auracode/assistant/toolwindow/timeline/ConversationActivityItemMapper.kt")))
+        assertFalse(Files.exists(projectRoot.resolve("src/main/kotlin/com/auracode/assistant/toolwindow/timeline/ConversationActivityItemReducer.kt")))
+        assertFalse(Files.exists(projectRoot.resolve("src/main/kotlin/com/auracode/assistant/toolwindow/conversation/ConversationActivityItemReducer.kt")))
     }
 
     /**

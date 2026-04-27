@@ -17,32 +17,32 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.unit.dp
 import com.auracode.assistant.toolwindow.execution.ApprovalAreaState
-import com.auracode.assistant.toolwindow.submission.ComposerAreaState
-import com.auracode.assistant.toolwindow.submission.ComposerRegion
-import com.auracode.assistant.toolwindow.shell.RightDrawerAreaState
-import com.auracode.assistant.toolwindow.shell.RightDrawerKind
-import com.auracode.assistant.toolwindow.shell.RightDrawerRegion
+import com.auracode.assistant.toolwindow.submission.SubmissionAreaState
+import com.auracode.assistant.toolwindow.submission.SubmissionRegion
+import com.auracode.assistant.toolwindow.shell.SidePanelAreaState
+import com.auracode.assistant.toolwindow.shell.SidePanelKind
+import com.auracode.assistant.toolwindow.shell.SidePanelRegion
 import com.auracode.assistant.toolwindow.eventing.UiIntent
-import com.auracode.assistant.toolwindow.sessions.HeaderAreaState
+import com.auracode.assistant.toolwindow.sessions.SessionTabsAreaState
 import com.auracode.assistant.settings.UiThemeMode
-import com.auracode.assistant.toolwindow.sessions.HeaderRegion
+import com.auracode.assistant.toolwindow.sessions.SessionTabsRegion
 import com.auracode.assistant.toolwindow.execution.ToolUserInputPromptState
 import com.auracode.assistant.toolwindow.shared.assistantPalette
 import com.auracode.assistant.toolwindow.shared.assistantUiTokens
-import com.auracode.assistant.toolwindow.execution.StatusAreaState
-import com.auracode.assistant.toolwindow.execution.StatusToastOverlay
-import com.auracode.assistant.toolwindow.execution.TurnStatusRegion
-import com.auracode.assistant.toolwindow.conversation.TimelineAreaState
-import com.auracode.assistant.toolwindow.conversation.TimelineRegion
+import com.auracode.assistant.toolwindow.execution.ExecutionStatusAreaState
+import com.auracode.assistant.toolwindow.execution.ExecutionStatusToastOverlay
+import com.auracode.assistant.toolwindow.execution.ExecutionTurnStatusRegion
+import com.auracode.assistant.toolwindow.conversation.ConversationAreaState
+import com.auracode.assistant.toolwindow.conversation.ConversationActivityRegion
 import com.intellij.openapi.wm.ToolWindowAnchor
 
 @Composable
 internal fun ToolWindowScreen(
-    headerState: HeaderAreaState,
-    statusState: StatusAreaState,
-    timelineState: TimelineAreaState,
-    composerState: ComposerAreaState,
-    rightDrawerState: RightDrawerAreaState,
+    sessionTabsState: SessionTabsAreaState,
+    executionStatusState: ExecutionStatusAreaState,
+    conversationState: ConversationAreaState,
+    submissionState: SubmissionAreaState,
+    sidePanelState: SidePanelAreaState,
     approvalState: ApprovalAreaState,
     toolUserInputPromptState: ToolUserInputPromptState,
     anchor: ToolWindowAnchor,
@@ -87,38 +87,23 @@ internal fun ToolWindowScreen(
             },
     ) {
         Column(modifier = Modifier.fillMaxWidth().fillMaxHeight()) {
-            HeaderRegion(p = p, state = headerState, onIntent = onIntent)
-            TimelineRegion(
+            SessionTabsRegion(p = p, state = sessionTabsState, onIntent = onIntent)
+            ConversationActivityRegion(
                 modifier = Modifier.weight(1f).fillMaxWidth(),
                 p = p,
-                state = timelineState,
+                state = conversationState,
                 onIntent = onIntent,
             )
-            composerState.runningPlan?.let { runningPlan ->
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(p.composerBg)
-                        .padding(horizontal = t.spacing.md, vertical = t.spacing.xs),
-                ) {
-                    com.auracode.assistant.toolwindow.submission.RunningPlanComposerSection(
-                        p = p,
-                        state = runningPlan,
-                        expanded = composerState.runningPlanExpanded,
-                        onIntent = onIntent,
-                    )
-                }
-            }
-            TurnStatusRegion(p = p, state = statusState)
+            ExecutionTurnStatusRegion(p = p, state = executionStatusState)
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .background(p.composerBg),
+                    .background(p.submissionBg),
             ) {
-                ComposerRegion(
+                SubmissionRegion(
                     p = p,
-                    state = composerState,
-                    conversationState = timelineState,
+                    state = submissionState,
+                    conversationState = conversationState,
                     approvalState = approvalState,
                     toolUserInputPromptState = toolUserInputPromptState,
                     onIntent = onIntent,
@@ -130,15 +115,15 @@ internal fun ToolWindowScreen(
                 .fillMaxSize()
                 .padding(horizontal = t.spacing.md, vertical = t.spacing.lg),
         ) {
-            StatusToastOverlay(
+            ExecutionStatusToastOverlay(
                 p = p,
-                state = statusState,
+                state = executionStatusState,
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .padding(bottom = t.controls.sendButton + t.spacing.xl),
             )
         }
-        if (rightDrawerState.kind != RightDrawerKind.NONE) {
+        if (sidePanelState.kind != SidePanelKind.NONE) {
             Box(
                 modifier = Modifier
                     .fillMaxSize()
@@ -146,16 +131,16 @@ internal fun ToolWindowScreen(
                     .clickable(
                         interactionSource = MutableInteractionSource(),
                         indication = null,
-                        onClick = { onIntent(UiIntent.CloseRightDrawer) },
+                        onClick = { onIntent(UiIntent.CloseSidePanel) },
                     ),
             )
-            val drawerModifier = if (rightDrawerState.kind == RightDrawerKind.SETTINGS) {
+            val drawerModifier = if (sidePanelState.kind == SidePanelKind.SETTINGS) {
                 Modifier.fillMaxSize()
             } else {
                 Modifier.fillMaxSize().padding(t.spacing.md)
             }
             Box(modifier = drawerModifier) {
-                RightDrawerRegion(p = p, state = rightDrawerState, onIntent = onIntent)
+                SidePanelRegion(p = p, state = sidePanelState, onIntent = onIntent)
             }
         }
     }
