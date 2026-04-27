@@ -4,6 +4,7 @@ import com.auracode.assistant.protocol.ItemKind
 import com.auracode.assistant.protocol.ItemStatus
 import com.auracode.assistant.protocol.TurnOutcome
 import com.auracode.assistant.protocol.ProviderEvent
+import com.auracode.assistant.protocol.ProviderRunningPlanPresentation
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
@@ -81,6 +82,7 @@ class CodexProviderEventParserTest {
         assertEquals("Follow the parser refactor", updated.explanation)
         assertEquals(2, updated.steps.size)
         assertTrue(updated.body.contains("Split routers"))
+        assertEquals(ProviderRunningPlanPresentation.SUBMISSION_PANEL, updated.presentation)
     }
 
     @Test

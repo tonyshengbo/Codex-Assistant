@@ -14,7 +14,6 @@ import com.auracode.assistant.settings.mcp.McpServerDraft
 import com.auracode.assistant.settings.mcp.McpTestResult
 import com.auracode.assistant.settings.mcp.McpValidationErrors
 import com.auracode.assistant.settings.mcp.validate
-import com.auracode.assistant.settings.skills.SkillSelector
 import com.auracode.assistant.toolwindow.settings.RuntimeSettingsTab
 import com.auracode.assistant.toolwindow.settings.SettingsSection
 import com.auracode.assistant.toolwindow.shared.UiText
@@ -436,7 +435,7 @@ internal class SettingsAndEnvironmentHandler(
 
     /** Reads the current runtime snapshot and publishes the unified skills page state. */
     private suspend fun publishSkillsSnapshot(forceReload: Boolean) {
-        val snapshot = context.skillsRuntimeService.getSkills(
+        val snapshot = context.engineSkillsService.loadSkills(
             engineId = context.chatService.defaultEngineId(),
             cwd = context.chatService.currentWorkingDirectory(),
             forceReload = forceReload,
@@ -458,10 +457,11 @@ internal class SettingsAndEnvironmentHandler(
         context.eventHub.publish(AppEvent.SkillsLoadingChanged(loading = true, activePath = path))
         context.coroutineLauncher.launch("toggleSkillEnabled($name,$enabled)") {
             runCatching {
-                val snapshot = context.skillsRuntimeService.setSkillEnabled(
+                val snapshot = context.engineSkillsService.setSkillEnabled(
                     engineId = context.chatService.defaultEngineId(),
                     cwd = context.chatService.currentWorkingDirectory(),
-                    selector = SkillSelector.ByPath(path),
+                    name = name,
+                    path = path,
                     enabled = enabled,
                 )
                 context.eventHub.publish(

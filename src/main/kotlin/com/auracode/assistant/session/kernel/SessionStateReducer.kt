@@ -210,15 +210,19 @@ internal class SessionStateReducer {
                 val planEntryId = runningPlanEntryId(planTurnId)
                 state.copy(
                     runtime = updateRuntimeForTurnScopedEvent(state.runtime, planTurnId),
-                    conversation = upsertConversationEntry(
-                        conversation = state.conversation,
-                        entry = SessionConversationEntry.Plan(
-                            id = planEntryId,
-                            turnId = planTurnId,
-                            status = SessionActivityStatus.RUNNING,
-                            body = event.plan.body,
-                        ),
-                    ),
+                    conversation = if (event.plan.presentation == SessionRunningPlanPresentation.TIMELINE) {
+                        upsertConversationEntry(
+                            conversation = state.conversation,
+                            entry = SessionConversationEntry.Plan(
+                                id = planEntryId,
+                                turnId = planTurnId,
+                                status = SessionActivityStatus.RUNNING,
+                                body = event.plan.body,
+                            ),
+                        )
+                    } else {
+                        state.conversation
+                    },
                     execution = state.execution.copy(
                         runningPlan = event.plan,
                     ),

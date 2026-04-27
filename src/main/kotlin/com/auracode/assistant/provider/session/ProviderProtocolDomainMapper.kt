@@ -8,6 +8,7 @@ import com.auracode.assistant.protocol.ProviderApprovalRequest
 import com.auracode.assistant.protocol.ProviderApprovalRequestKind
 import com.auracode.assistant.protocol.ProviderEvent
 import com.auracode.assistant.protocol.ProviderItem
+import com.auracode.assistant.protocol.ProviderRunningPlanPresentation
 import com.auracode.assistant.protocol.ProviderToolUserInputPrompt
 import com.auracode.assistant.session.kernel.SessionActivityStatus
 import com.auracode.assistant.session.kernel.SessionApprovalRequest
@@ -16,6 +17,7 @@ import com.auracode.assistant.session.kernel.SessionDomainEvent
 import com.auracode.assistant.session.kernel.SessionMessageAttachment
 import com.auracode.assistant.session.kernel.SessionMessageRole
 import com.auracode.assistant.session.kernel.SessionRunningPlan
+import com.auracode.assistant.session.kernel.SessionRunningPlanPresentation
 import com.auracode.assistant.session.kernel.SessionRunningPlanStep
 import com.auracode.assistant.session.kernel.SessionSubagentSnapshot
 import com.auracode.assistant.session.kernel.SessionSubagentStatus
@@ -25,6 +27,7 @@ import com.auracode.assistant.session.kernel.SessionToolUserInputRequest
 import com.auracode.assistant.session.normalizer.CommandSemanticClassifier
 import com.auracode.assistant.session.normalizer.FileChangeSemanticParser
 import com.auracode.assistant.session.normalizer.ToolSemanticClassifier
+import java.util.UUID
 
 /**
  * Normalizes provider-local protocol events into the session-kernel domain stream.
@@ -37,7 +40,6 @@ internal class ProviderProtocolDomainMapper(
 ) {
     private var activeThreadId: String? = null
     private var activeTurnId: String? = null
-    private var errorCount: Int = 0
 
     /** Maps one provider protocol event into zero or more session domain events. */
     fun map(event: ProviderEvent): List<SessionDomainEvent> {
@@ -88,6 +90,7 @@ internal class ProviderProtocolDomainMapper(
                                 SessionRunningPlanStep(step = step.step, status = step.status)
                             },
                             body = event.body,
+                            presentation = event.presentation.toSessionPresentation(),
                         ),
                     ),
                 )
@@ -169,7 +172,6 @@ internal class ProviderProtocolDomainMapper(
     fun reset() {
         activeThreadId = null
         activeTurnId = null
-        errorCount = 0
     }
 
     /** Maps one provider protocol item into structured session conversation events. */
@@ -279,6 +281,7 @@ internal class ProviderProtocolDomainMapper(
                                 explanation = null,
                                 steps = parsePlanSteps(body),
                                 body = body,
+                                presentation = SessionRunningPlanPresentation.TIMELINE,
                             ),
                         ),
                     )
@@ -330,6 +333,14 @@ internal class ProviderProtocolDomainMapper(
             "x", "done", "completed", "complete", "success", "succeeded" -> "completed"
             "~", "inprogress", "in_progress", "running", "active" -> "in_progress"
             else -> "pending"
+        }
+    }
+
+    /** Maps provider running-plan presentation into the session-domain presentation enum. */
+    private fun ProviderRunningPlanPresentation.toSessionPresentation(): SessionRunningPlanPresentation {
+        return when (this) {
+            ProviderRunningPlanPresentation.TIMELINE -> SessionRunningPlanPresentation.TIMELINE
+            ProviderRunningPlanPresentation.SUBMISSION_PANEL -> SessionRunningPlanPresentation.SUBMISSION_PANEL
         }
     }
 
@@ -401,10 +412,9 @@ internal class ProviderProtocolDomainMapper(
         }
     }
 
-    /** Allocates a stable error entry id within one mapper lifecycle. */
+    /** Allocates a globally unique error entry id across mapper lifecycles. */
     private fun nextErrorId(): String {
-        errorCount += 1
-        return "session-error-$errorCount"
+        return "session-error:${UUID.randomUUID()}"
     }
 
     /** Converts one provider subagent snapshot into the kernel collaboration model. */

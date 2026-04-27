@@ -17,7 +17,8 @@ import com.auracode.assistant.settings.mcp.McpServerSummary
 import com.auracode.assistant.settings.mcp.McpTestResult
 import com.auracode.assistant.settings.mcp.McpTransportType
 import com.auracode.assistant.settings.mcp.McpValidationErrors
-import com.auracode.assistant.settings.skills.SkillRuntimeEntry
+import com.auracode.assistant.settings.skills.ManagedSkillEntry
+import com.auracode.assistant.settings.skills.SkillManagementMode
 import com.auracode.assistant.provider.codex.CodexEnvironmentCheckResult
 import com.auracode.assistant.provider.codex.CodexEnvironmentStatus
 import com.auracode.assistant.provider.codex.CodexCliUpgradeSource
@@ -409,7 +410,7 @@ class AreaStoresTest {
     @Test
     fun `skills loading keeps cached list stable and scopes busy state to one row`() {
         val store = SidePanelAreaStore()
-        val skill = SkillRuntimeEntry(
+        val skill = ManagedSkillEntry(
             engineId = "codex",
             cwd = ".",
             name = "brainstorming",
@@ -417,6 +418,7 @@ class AreaStoresTest {
             enabled = true,
             path = "/runtime/brainstorming/SKILL.md",
             scopeLabel = "user",
+            managementMode = SkillManagementMode.RUNTIME,
         )
 
         store.onEvent(

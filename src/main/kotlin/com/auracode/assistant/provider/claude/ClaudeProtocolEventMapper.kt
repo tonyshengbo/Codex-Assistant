@@ -9,6 +9,7 @@ import com.auracode.assistant.protocol.ProviderApprovalRequest
 import com.auracode.assistant.protocol.ProviderApprovalRequestKind
 import com.auracode.assistant.protocol.ProviderEvent
 import com.auracode.assistant.protocol.ProviderItem
+import com.auracode.assistant.protocol.ProviderRunningPlanPresentation
 import java.util.Locale
 
 /**
@@ -53,6 +54,7 @@ internal class ClaudeProviderEventMapper(
                                 explanation = null,
                                 steps = plan.steps,
                                 body = plan.body,
+                                presentation = ProviderRunningPlanPresentation.TIMELINE,
                             ),
                         )
                     } else {

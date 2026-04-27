@@ -119,6 +119,14 @@ data class ProviderPlanStep(
     val status: String,
 )
 
+/**
+ * Describes which primary UI surface should render one running-plan update.
+ */
+enum class ProviderRunningPlanPresentation {
+    TIMELINE,
+    SUBMISSION_PANEL,
+}
+
 data class ProviderItem(
     val id: String,
     val kind: ItemKind,
@@ -185,6 +193,7 @@ sealed class ProviderEvent {
         val explanation: String?,
         val steps: List<ProviderPlanStep>,
         val body: String,
+        val presentation: ProviderRunningPlanPresentation = ProviderRunningPlanPresentation.TIMELINE,
     ) : ProviderEvent()
 
     data class TurnCompleted(

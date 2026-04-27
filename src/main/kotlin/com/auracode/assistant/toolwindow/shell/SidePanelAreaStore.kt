@@ -6,7 +6,7 @@ import com.auracode.assistant.settings.SavedAgentDefinition
 import com.auracode.assistant.settings.UiLanguageMode
 import com.auracode.assistant.settings.UiScaleMode
 import com.auracode.assistant.settings.UiThemeMode
-import com.auracode.assistant.settings.skills.SkillRuntimeEntry
+import com.auracode.assistant.settings.skills.ManagedSkillEntry
 import com.auracode.assistant.settings.mcp.McpBusyState
 import com.auracode.assistant.settings.mcp.McpServerDraft
 import com.auracode.assistant.settings.mcp.McpServerSummary
@@ -74,7 +74,7 @@ internal data class SidePanelAreaState(
     val agentDraftPrompt: String = "",
     val skillsEngineId: String = "",
     val skillsCwd: String = "",
-    val skills: List<SkillRuntimeEntry> = emptyList(),
+    val skills: List<ManagedSkillEntry> = emptyList(),
     val skillsRuntimeSupported: Boolean = true,
     val skillsStale: Boolean = false,
     val skillsErrorMessage: String? = null,

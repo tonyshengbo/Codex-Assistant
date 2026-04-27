@@ -10,6 +10,7 @@ import com.auracode.assistant.service.AgentChatService
 import com.auracode.assistant.service.AgentChatService.SessionHistoryReplayPage
 import com.auracode.assistant.session.kernel.SessionDomainEvent
 import com.auracode.assistant.settings.AgentSettingsService
+import com.auracode.assistant.settings.skills.EngineSkillsService
 import com.auracode.assistant.settings.skills.LocalSkillInstallPolicy
 import com.auracode.assistant.settings.skills.SkillsRuntimeService
 import com.auracode.assistant.settings.mcp.McpManagementAdapterRegistry
@@ -39,6 +40,7 @@ internal class ToolWindowCoordinatorContext(
     val sessionAttentionStore: SessionAttentionStore,
     val mcpAdapterRegistry: McpManagementAdapterRegistry,
     val skillsRuntimeService: SkillsRuntimeService,
+    val engineSkillsService: EngineSkillsService,
     val codexEnvironmentDetector: CodexEnvironmentDetector,
     val codexCliVersionService: CodexCliVersionService,
     val claudeCliVersionService: ClaudeCliVersionService,

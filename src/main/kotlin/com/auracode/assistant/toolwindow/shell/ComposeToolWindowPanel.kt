@@ -18,6 +18,7 @@ import com.auracode.assistant.settings.AgentSettingsService
 import com.auracode.assistant.notification.ChatCompletionNotificationService
 import com.auracode.assistant.notification.IdeAttentionState
 import com.auracode.assistant.notification.IdeAttentionStateProvider
+import com.auracode.assistant.settings.skills.EngineSkillsService
 import com.auracode.assistant.settings.skills.SkillsManagementAdapterRegistry
 import com.auracode.assistant.settings.skills.SkillsRuntimeService
 import com.auracode.assistant.toolwindow.execution.ApprovalAreaStore
@@ -84,9 +85,13 @@ class ComposeToolWindowPanel(
     private val skillsRuntimeService = SkillsRuntimeService(
         adapterRegistry = SkillsManagementAdapterRegistry(settingsService),
     )
+    private val engineSkillsService = EngineSkillsService(
+        settings = settingsService,
+        runtimeService = skillsRuntimeService,
+    )
     private val submissionStore = SubmissionAreaStore(
         availableSkillsProvider = {
-            skillsRuntimeService.enabledSlashSkills(
+            engineSkillsService.enabledSlashSkills(
                 engineId = chatService.defaultEngineId(),
                 cwd = chatService.currentWorkingDirectory(),
             )
@@ -125,6 +130,7 @@ class ComposeToolWindowPanel(
         submissionStore = submissionStore,
         sidePanelStore = sidePanelStore,
         approvalStore = approvalStore,
+        engineSkillsService = engineSkillsService,
         toolUserInputPromptStore = toolUserInputPromptStore,
         completionNotificationService = completionNotificationService,
         sessionAttentionStore = sessionAttentionStore,

@@ -12,12 +12,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.AlertDialog
-import androidx.compose.material.DropdownMenu
-import androidx.compose.material.DropdownMenuItem
 import androidx.compose.material.Icon
 import androidx.compose.material.IconButton
 import androidx.compose.material.MaterialTheme
@@ -32,12 +28,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.auracode.assistant.i18n.AuraCodeBundle
 import com.auracode.assistant.settings.skills.LocalSkillInstallPolicy
-import com.auracode.assistant.settings.skills.SkillRuntimeEntry
+import com.auracode.assistant.settings.skills.ManagedSkillEntry
 import com.auracode.assistant.toolwindow.shell.SidePanelAreaState
 import com.auracode.assistant.toolwindow.eventing.UiIntent
 import com.auracode.assistant.toolwindow.shared.DesignPalette
@@ -51,7 +45,7 @@ internal fun SkillsSettingsPage(
 ) {
     val t = assistantUiTokens()
     val uninstallPolicy = remember { LocalSkillInstallPolicy() }
-    var pendingUninstallSkill by remember { mutableStateOf<SkillRuntimeEntry?>(null) }
+    var pendingUninstallSkill by remember { mutableStateOf<ManagedSkillEntry?>(null) }
     var expandedMenuPath by remember { mutableStateOf<String?>(null) }
     val showInitialLoading = state.skillsLoading && !state.skillsHasLoadedSnapshot
     val showNeutralShell = !state.skillsHasLoadedSnapshot && !state.skillsLoading
@@ -92,7 +86,7 @@ internal fun SkillsSettingsPage(
     ) {
         SkillsPageHeader(p = p, state = state, onIntent = onIntent)
 
-        if (!state.skillsRuntimeSupported) {
+        if (!state.skillsRuntimeSupported && state.skillsEngineId == "codex") {
             Text(
                 text = AuraCodeBundle.message("settings.skills.runtime.unsupported"),
                 color = p.textMuted,
@@ -143,6 +137,34 @@ internal fun SkillsSettingsPage(
     }
 }
 
+/** Adapts page state into the standalone row card component. */
+@Composable
+private fun SkillRow(
+    p: DesignPalette,
+    skill: ManagedSkillEntry,
+    busy: Boolean,
+    canUninstall: Boolean,
+    menuExpanded: Boolean,
+    onMenuExpandedChange: (Boolean) -> Unit,
+    onOpen: () -> Unit,
+    onReveal: () -> Unit,
+    onUninstall: () -> Unit,
+    onToggle: (Boolean) -> Unit,
+) {
+    SkillRowCard(
+        p = p,
+        skill = skill,
+        busy = busy,
+        canUninstall = canUninstall,
+        menuExpanded = menuExpanded,
+        onMenuExpandedChange = onMenuExpandedChange,
+        onOpen = onOpen,
+        onReveal = onReveal,
+        onUninstall = onUninstall,
+        onToggle = onToggle,
+    )
+}
+
 /** Header row with title, subtitle, and Refresh action button. */
 @Composable
 private fun SkillsPageHeader(
@@ -182,149 +204,6 @@ private fun SkillsPageHeader(
                 tint = if (!state.skillsLoading) p.textSecondary else p.textMuted,
                 modifier = Modifier.size(18.dp),
             )
-        }
-    }
-}
-
-@Composable
-private fun SkillRow(
-    p: DesignPalette,
-    skill: SkillRuntimeEntry,
-    busy: Boolean,
-    canUninstall: Boolean,
-    menuExpanded: Boolean,
-    onMenuExpandedChange: (Boolean) -> Unit,
-    onOpen: () -> Unit,
-    onReveal: () -> Unit,
-    onUninstall: () -> Unit,
-    onToggle: (Boolean) -> Unit,
-) {
-    val t = assistantUiTokens()
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .heightIn(min = 72.dp)
-            .background(p.topBarBg.copy(alpha = 0.72f), RoundedCornerShape(t.spacing.md))
-            .border(1.dp, p.markdownDivider.copy(alpha = 0.42f), RoundedCornerShape(t.spacing.md))
-            .padding(horizontal = t.spacing.md, vertical = t.spacing.sm),
-        verticalAlignment = Alignment.Top,
-        horizontalArrangement = Arrangement.spacedBy(t.spacing.md),
-    ) {
-        Column(
-            modifier = Modifier.weight(1f),
-            verticalArrangement = Arrangement.spacedBy(t.spacing.xs),
-        ) {
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(t.spacing.sm),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(
-                    text = skill.name,
-                    color = p.textPrimary,
-                    fontWeight = FontWeight.SemiBold,
-                    style = MaterialTheme.typography.body1,
-                )
-                if (skill.scopeLabel.isNotBlank()) {
-                    SkillScopeChip(label = skill.scopeLabel, p = p)
-                }
-            }
-            Text(
-                text = skill.description,
-                color = p.textSecondary,
-                style = MaterialTheme.typography.body2,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
-        SkillRowActionsMenu(
-            p = p,
-            canUninstall = canUninstall,
-            expanded = menuExpanded,
-            enabled = !busy,
-            onExpandedChange = onMenuExpandedChange,
-            onOpen = onOpen,
-            onReveal = onReveal,
-            onUninstall = onUninstall,
-        )
-        SettingsToggle(
-            p = p,
-            checked = skill.enabled,
-            enabled = !busy,
-            onCheckedChange = onToggle,
-        )
-    }
-}
-
-/** Small chip showing the skill's scope/source label (e.g. "local", "superpowers"). */
-@Composable
-private fun SkillScopeChip(
-    label: String,
-    p: DesignPalette,
-) {
-    val t = assistantUiTokens()
-    Text(
-        text = label,
-        color = p.textMuted,
-        fontSize = 10.sp,
-        modifier = Modifier
-            .background(p.topStripBg.copy(alpha = 0.6f), RoundedCornerShape(999.dp))
-            .border(1.dp, p.markdownDivider.copy(alpha = 0.35f), RoundedCornerShape(999.dp))
-            .padding(horizontal = 6.dp, vertical = 2.dp),
-    )
-}
-
-@Composable
-private fun SkillRowActionsMenu(
-    p: DesignPalette,
-    canUninstall: Boolean,
-    expanded: Boolean,
-    enabled: Boolean,
-    onExpandedChange: (Boolean) -> Unit,
-    onOpen: () -> Unit,
-    onReveal: () -> Unit,
-    onUninstall: () -> Unit,
-) {
-    Box(modifier = Modifier.wrapContentSize(Alignment.TopStart)) {
-        IconButton(
-            onClick = { onExpandedChange(true) },
-            enabled = enabled,
-        ) {
-            Icon(
-                painter = painterResource("/icons/more-vert.svg"),
-                contentDescription = null,
-                tint = if (enabled) p.textSecondary else p.textMuted,
-            )
-        }
-        DropdownMenu(
-            expanded = expanded,
-            onDismissRequest = { onExpandedChange(false) },
-        ) {
-            DropdownMenuItem(
-                onClick = {
-                    onExpandedChange(false)
-                    onOpen()
-                },
-            ) {
-                Text(AuraCodeBundle.message("settings.skills.open"))
-            }
-            DropdownMenuItem(
-                onClick = {
-                    onExpandedChange(false)
-                    onReveal()
-                },
-            ) {
-                Text(AuraCodeBundle.message("settings.skills.reveal"))
-            }
-            if (canUninstall) {
-                DropdownMenuItem(
-                    onClick = {
-                        onExpandedChange(false)
-                        onUninstall()
-                    },
-                ) {
-                    Text(AuraCodeBundle.message("settings.skills.uninstall"))
-                }
-            }
         }
     }
 }

@@ -12,6 +12,8 @@ import com.auracode.assistant.provider.EngineDescriptor
 import com.auracode.assistant.provider.ProviderRegistry
 import com.auracode.assistant.service.AgentChatService
 import com.auracode.assistant.settings.AgentSettingsService
+import com.auracode.assistant.settings.skills.EngineSkillsService
+import com.auracode.assistant.settings.skills.LocalSkillCatalog
 import com.auracode.assistant.settings.skills.LocalSkillInstallPolicy
 import com.auracode.assistant.settings.skills.RuntimeSkillRecord
 import com.auracode.assistant.settings.skills.SkillSelector
@@ -75,9 +77,10 @@ class ToolWindowCoordinatorSkillTest {
         kotlinx.coroutines.runBlocking {
             runtimeService.getSkills(engineId = "codex", cwd = ".")
         }
+        val engineSkillsService = EngineSkillsService(settings = settings, runtimeService = runtimeService)
         val submissionStore = SubmissionAreaStore(
             availableSkillsProvider = {
-                runtimeService.enabledSlashSkills(engineId = "codex", cwd = ".")
+                engineSkillsService.enabledSlashSkills(engineId = "codex", cwd = ".")
             },
         )
         val coordinator = ToolWindowCoordinator(
@@ -91,6 +94,7 @@ class ToolWindowCoordinatorSkillTest {
             sidePanelStore = SidePanelAreaStore(),
             approvalStore = ApprovalAreaStore(),
             skillsRuntimeService = runtimeService,
+            engineSkillsService = engineSkillsService,
             runStartupWarmups = false,
             scopeDispatcher = testDispatcher,
         )
@@ -146,9 +150,10 @@ class ToolWindowCoordinatorSkillTest {
         kotlinx.coroutines.runBlocking {
             runtimeService.getSkills(engineId = "codex", cwd = ".")
         }
+        val engineSkillsService = EngineSkillsService(settings = settings, runtimeService = runtimeService)
         val store = SubmissionAreaStore(
             availableSkillsProvider = {
-                runtimeService.enabledSlashSkills(engineId = "codex", cwd = ".")
+                engineSkillsService.enabledSlashSkills(engineId = "codex", cwd = ".")
             },
         )
 
@@ -188,6 +193,7 @@ class ToolWindowCoordinatorSkillTest {
                 defaultEngineId = "codex",
             ),
         )
+        val engineSkillsService = EngineSkillsService(settings = settings, runtimeService = runtimeService)
         val coordinator = ToolWindowCoordinator(
             chatService = service,
             settingsService = settings,
@@ -199,6 +205,7 @@ class ToolWindowCoordinatorSkillTest {
             sidePanelStore = SidePanelAreaStore(),
             approvalStore = ApprovalAreaStore(),
             skillsRuntimeService = runtimeService,
+            engineSkillsService = engineSkillsService,
             runStartupWarmups = false,
             scopeDispatcher = testDispatcher,
         )
@@ -246,6 +253,12 @@ class ToolWindowCoordinatorSkillTest {
         )
         val eventHub = ToolWindowEventHub()
         val sidePanelStore = SidePanelAreaStore()
+        val runtimeService = SkillsRuntimeService(
+            adapterRegistry = SkillsManagementAdapterRegistry(
+                adapters = mapOf("codex" to adapter),
+                defaultEngineId = "codex",
+            ),
+        )
         val coordinator = ToolWindowCoordinator(
             chatService = service,
             settingsService = settings,
@@ -256,12 +269,8 @@ class ToolWindowCoordinatorSkillTest {
             submissionStore = SubmissionAreaStore(),
             sidePanelStore = sidePanelStore,
             approvalStore = ApprovalAreaStore(),
-            skillsRuntimeService = SkillsRuntimeService(
-                adapterRegistry = SkillsManagementAdapterRegistry(
-                    adapters = mapOf("codex" to adapter),
-                    defaultEngineId = "codex",
-                ),
-            ),
+            skillsRuntimeService = runtimeService,
+            engineSkillsService = EngineSkillsService(settings = settings, runtimeService = runtimeService),
             runStartupWarmups = false,
             scopeDispatcher = testDispatcher,
         )
@@ -401,6 +410,132 @@ class ToolWindowCoordinatorSkillTest {
         service.dispose()
     }
 
+    @Test
+    fun `claude skills load from local catalog and hide runtime unsupported banner state`() {
+        val home = createTempDirectory("coordinator-claude-skill-home")
+        val skillDir = home.resolve(".codex/skills/brainstorming").createDirectories()
+        val skillFile = skillDir.resolve("SKILL.md").also {
+            it.writeText(
+                """
+                ---
+                name: brainstorming
+                description: "Explore requirements."
+                ---
+                """.trimIndent(),
+            )
+        }
+        val workingDir = createTempDirectory("coordinator-claude-skill-load")
+        val settings = AgentSettingsService().apply {
+            setDefaultEngineId("claude")
+        }
+        val service = AgentChatService(
+            repository = com.auracode.assistant.persistence.chat.SQLiteChatSessionRepository(workingDir.resolve("chat.db")),
+            registry = registry(defaultEngineId = "claude"),
+            settings = settings,
+        )
+        val sidePanelStore = SidePanelAreaStore()
+        val engineSkillsService = EngineSkillsService(
+            settings = settings,
+            runtimeService = SkillsRuntimeService(SkillsManagementAdapterRegistry(emptyMap(), "codex")),
+            localSkillCatalog = LocalSkillCatalog(settings = settings, homeDir = home),
+        )
+        val coordinator = ToolWindowCoordinator(
+            chatService = service,
+            settingsService = settings,
+            eventHub = ToolWindowEventHub(),
+            sessionTabsStore = SessionTabsAreaStore(),
+            executionStatusStore = ExecutionStatusAreaStore(),
+            conversationStore = ConversationAreaStore(),
+            submissionStore = SubmissionAreaStore(
+                availableSkillsProvider = {
+                    engineSkillsService.enabledSlashSkills("claude", workingDir.toString())
+                },
+            ),
+            sidePanelStore = sidePanelStore,
+            approvalStore = ApprovalAreaStore(),
+            engineSkillsService = engineSkillsService,
+            localSkillInstallPolicy = LocalSkillInstallPolicy(homeDir = home),
+            runStartupWarmups = false,
+            scopeDispatcher = testDispatcher,
+        )
+
+        coordinatorEventHub(coordinator).publishUiIntent(UiIntent.SelectSettingsSection(SettingsSection.SKILLS))
+
+        waitUntil(2_000) { sidePanelStore.state.value.skillsHasLoadedSnapshot }
+
+        assertEquals("claude", sidePanelStore.state.value.skillsEngineId)
+        assertFalse(sidePanelStore.state.value.skillsRuntimeSupported)
+        assertEquals(listOf(skillFile.toString()), sidePanelStore.state.value.skills.map { it.path })
+
+        coordinator.dispose()
+        service.dispose()
+    }
+
+    @Test
+    fun `claude uninstall skill removes local installation and refreshes list`() {
+        val home = createTempDirectory("coordinator-claude-skill-uninstall-home")
+        val skillDir = home.resolve(".codex/skills/brainstorming").createDirectories()
+        val skillFile = skillDir.resolve("SKILL.md").also {
+            it.writeText(
+                """
+                ---
+                name: brainstorming
+                description: "Explore requirements."
+                ---
+                """.trimIndent(),
+            )
+        }
+        val workingDir = createTempDirectory("coordinator-claude-skill-uninstall")
+        val settings = AgentSettingsService().apply {
+            setDefaultEngineId("claude")
+        }
+        val service = AgentChatService(
+            repository = com.auracode.assistant.persistence.chat.SQLiteChatSessionRepository(workingDir.resolve("chat.db")),
+            registry = registry(defaultEngineId = "claude"),
+            settings = settings,
+        )
+        val executionStatusStore = ExecutionStatusAreaStore()
+        val sidePanelStore = SidePanelAreaStore()
+        val engineSkillsService = EngineSkillsService(
+            settings = settings,
+            runtimeService = SkillsRuntimeService(SkillsManagementAdapterRegistry(emptyMap(), "codex")),
+            localSkillCatalog = LocalSkillCatalog(settings = settings, homeDir = home),
+        )
+        val coordinator = ToolWindowCoordinator(
+            chatService = service,
+            settingsService = settings,
+            eventHub = ToolWindowEventHub(),
+            sessionTabsStore = SessionTabsAreaStore(),
+            executionStatusStore = executionStatusStore,
+            conversationStore = ConversationAreaStore(),
+            submissionStore = SubmissionAreaStore(),
+            sidePanelStore = sidePanelStore,
+            approvalStore = ApprovalAreaStore(),
+            engineSkillsService = engineSkillsService,
+            localSkillInstallPolicy = LocalSkillInstallPolicy(homeDir = home),
+            runStartupWarmups = false,
+            scopeDispatcher = testDispatcher,
+        )
+
+        coordinatorEventHub(coordinator).publishUiIntent(UiIntent.SelectSettingsSection(SettingsSection.SKILLS))
+        waitUntil(2_000) { sidePanelStore.state.value.skillsHasLoadedSnapshot }
+
+        coordinatorEventHub(coordinator).publishUiIntent(
+            UiIntent.UninstallSkill(name = "brainstorming", path = skillFile.toString()),
+        )
+
+        waitUntil(2_000) { !skillDir.exists() }
+        waitUntil(2_000) { sidePanelStore.state.value.skills.isEmpty() }
+
+        assertEquals(
+            "Uninstalled local skill 'brainstorming'.",
+            (executionStatusStore.state.value.toast?.text as com.auracode.assistant.toolwindow.shared.UiText.Raw).value,
+        )
+
+        coordinator.dispose()
+        service.dispose()
+    }
+
     private fun waitUntil(timeoutMs: Long, condition: () -> Boolean) {
         val start = System.currentTimeMillis()
         while (!condition()) {
@@ -411,13 +546,30 @@ class ToolWindowCoordinatorSkillTest {
         }
     }
 
-    private fun registry(): ProviderRegistry {
+    private fun coordinatorEventHub(coordinator: ToolWindowCoordinator): ToolWindowEventHub {
+        val field = ToolWindowCoordinator::class.java.getDeclaredField("eventHub")
+        field.isAccessible = true
+        return field.get(coordinator) as ToolWindowEventHub
+    }
+
+    private fun registry(defaultEngineId: String = "codex"): ProviderRegistry {
         return ProviderRegistry(
             descriptors = listOf(
                 EngineDescriptor(
                     id = "codex",
                     displayName = "Codex",
                     models = listOf("gpt-5.3-codex"),
+                    capabilities = EngineCapabilities(
+                        supportsThinking = true,
+                        supportsToolEvents = true,
+                        supportsCommandProposal = false,
+                        supportsDiffProposal = false,
+                    ),
+                ),
+                EngineDescriptor(
+                    id = "claude",
+                    displayName = "Claude",
+                    models = listOf("claude-sonnet-4-6"),
                     capabilities = EngineCapabilities(
                         supportsThinking = true,
                         supportsToolEvents = true,
@@ -437,8 +589,18 @@ class ToolWindowCoordinatorSkillTest {
                         override fun cancel(requestId: String) = Unit
                     }
                 },
+                object : AgentProviderFactory {
+                    override val engineId: String = "claude"
+                    override fun create(): AgentProvider = object : AgentProvider {
+                        override fun stream(request: AgentRequest): Flow<com.auracode.assistant.session.kernel.SessionDomainEvent> = com.auracode.assistant.test.providerEventFlow {
+                            emit(ProviderEvent.TurnCompleted(turnId = "turn-1", outcome = TurnOutcome.SUCCESS))
+                        }
+
+                        override fun cancel(requestId: String) = Unit
+                    }
+                }
             ),
-            defaultEngineId = "codex",
+            defaultEngineId = defaultEngineId,
         )
     }
 

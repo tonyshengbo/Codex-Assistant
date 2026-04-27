@@ -114,7 +114,7 @@ internal class ConversationFlowHandler(
     private fun buildPendingSubmission(
         submissionState: com.auracode.assistant.toolwindow.submission.SubmissionAreaState,
     ): PendingSubmission? {
-        val disabledSkills = context.skillsRuntimeService.findDisabledSkillMentions(
+        val disabledSkills = context.engineSkillsService.findDisabledSkillMentions(
             engineId = submissionState.selectedEngineId,
             cwd = context.chatService.currentWorkingDirectory(),
             text = submissionState.inputText,

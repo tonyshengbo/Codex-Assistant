@@ -85,7 +85,7 @@ internal fun runningPlanHeaderSummary(state: SubmissionRunningPlanState): Runnin
         ?: state.steps.firstOrNull { it.status == SubmissionRunningPlanStepStatus.PENDING }
         ?: state.steps.lastOrNull()
     return RunningPlanHeaderSummary(
-        title = "Running plan",
+        title = AuraCodeBundle.message("submission.runningPlan.title"),
         currentStep = currentStep?.step.orEmpty(),
         progressLabel = if (totalCount > 0) "$completedCount/$totalCount" else "",
     )

@@ -19,6 +19,7 @@ import com.auracode.assistant.session.kernel.SessionMessageRole
 import com.auracode.assistant.session.projection.SessionUiProjectionBuilder
 import com.auracode.assistant.session.projection.execution.ExecutionUiProjection
 import com.auracode.assistant.settings.AgentSettingsService
+import com.auracode.assistant.settings.skills.EngineSkillsService
 import com.auracode.assistant.settings.skills.LocalSkillInstallPolicy
 import com.auracode.assistant.settings.skills.SkillsRuntimeService
 import com.auracode.assistant.settings.mcp.McpManagementAdapterRegistry
@@ -58,13 +59,17 @@ internal class ToolWindowCoordinator(
     private val submissionStore: SubmissionAreaStore,
     private val sidePanelStore: SidePanelAreaStore,
     private val approvalStore: ApprovalAreaStore = ApprovalAreaStore(),
+    private val skillsRuntimeService: SkillsRuntimeService = SkillsRuntimeService(
+        adapterRegistry = com.auracode.assistant.settings.skills.SkillsManagementAdapterRegistry(settingsService),
+    ),
+    private val engineSkillsService: EngineSkillsService = EngineSkillsService(
+        settings = settingsService,
+        runtimeService = skillsRuntimeService,
+    ),
     private val toolUserInputPromptStore: ToolUserInputPromptStore = ToolUserInputPromptStore(),
     private val completionNotificationService: ChatCompletionNotificationService? = null,
     private val sessionAttentionStore: SessionAttentionStore = SessionAttentionStore(),
     private val mcpAdapterRegistry: McpManagementAdapterRegistry = McpManagementAdapterRegistry(settingsService),
-    private val skillsRuntimeService: SkillsRuntimeService = SkillsRuntimeService(
-        adapterRegistry = com.auracode.assistant.settings.skills.SkillsManagementAdapterRegistry(settingsService),
-    ),
     private val codexEnvironmentDetector: CodexEnvironmentDetector = CodexEnvironmentDetector(),
     private val codexCliVersionService: CodexCliVersionService = CodexCliVersionService(settingsService, codexEnvironmentDetector),
     private val claudeCliVersionService: ClaudeCliVersionService = ClaudeCliVersionService(settingsService),
@@ -156,6 +161,7 @@ internal class ToolWindowCoordinator(
         sessionAttentionStore = sessionAttentionStore,
         mcpAdapterRegistry = mcpAdapterRegistry,
         skillsRuntimeService = skillsRuntimeService,
+        engineSkillsService = engineSkillsService,
         codexEnvironmentDetector = codexEnvironmentDetector,
         codexCliVersionService = codexCliVersionService,
         claudeCliVersionService = claudeCliVersionService,

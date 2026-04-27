@@ -8,6 +8,7 @@ import com.auracode.assistant.protocol.ItemKind
 import com.auracode.assistant.protocol.ItemStatus
 import com.auracode.assistant.protocol.TurnOutcome
 import com.auracode.assistant.protocol.ProviderAgentStatus
+import com.auracode.assistant.protocol.ProviderRunningPlanPresentation
 import com.auracode.assistant.protocol.ProviderToolUserInputAnswerDraft
 import com.auracode.assistant.protocol.ProviderEvent
 import com.auracode.assistant.session.kernel.SessionDomainEvent
@@ -310,6 +311,7 @@ class CodexRuntimeProviderTest {
         assertEquals("pending", runningPlan.steps.single().status)
         assertEquals("First step", runningPlan.steps.single().step)
         assertTrue(runningPlan.body.contains("- [pending] First step"))
+        assertEquals(ProviderRunningPlanPresentation.SUBMISSION_PANEL, runningPlan.presentation)
     }
 
     @Test

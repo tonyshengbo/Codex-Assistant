@@ -6,13 +6,17 @@ import com.auracode.assistant.protocol.ProviderEvent
 import com.auracode.assistant.protocol.ProviderItem
 import com.auracode.assistant.protocol.ItemKind
 import com.auracode.assistant.protocol.ItemStatus
+import com.auracode.assistant.protocol.ProviderPlanStep
+import com.auracode.assistant.protocol.ProviderRunningPlanPresentation
 import com.auracode.assistant.protocol.ProviderToolUserInputPrompt
 import com.auracode.assistant.protocol.ProviderToolUserInputQuestion
 import com.auracode.assistant.session.kernel.SessionDomainEvent
+import com.auracode.assistant.session.kernel.SessionRunningPlanPresentation
 import com.auracode.assistant.session.kernel.SessionSubagentStatus
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
+import kotlin.test.assertNotEquals
 import kotlin.test.assertTrue
 
 /**
@@ -110,6 +114,36 @@ class ProviderProtocolDomainMapperTest {
     }
 
     /**
+     * Verifies that separate mapper instances still allocate unique error entry ids.
+     */
+    @Test
+    fun `maps errors with globally unique ids across mapper instances`() {
+        val firstMapper = ProviderProtocolDomainMapper(clock = { 42L })
+        val secondMapper = ProviderProtocolDomainMapper(clock = { 42L })
+
+        val firstEvent = assertIs<SessionDomainEvent.ErrorAppended>(
+            firstMapper.map(
+                ProviderEvent.Error(
+                    message = "Reconnecting",
+                    terminal = false,
+                ),
+            ).single(),
+        )
+        val secondEvent = assertIs<SessionDomainEvent.ErrorAppended>(
+            secondMapper.map(
+                ProviderEvent.Error(
+                    message = "Reconnecting",
+                    terminal = false,
+                ),
+            ).single(),
+        )
+
+        assertTrue(firstEvent.itemId.startsWith("session-error:"))
+        assertTrue(secondEvent.itemId.startsWith("session-error:"))
+        assertNotEquals(firstEvent.itemId, secondEvent.itemId)
+    }
+
+    /**
      * Verifies that provider token usage updates stay on the domain ingress path.
      */
     @Test
@@ -173,6 +207,39 @@ class ProviderProtocolDomainMapperTest {
         assertEquals("Running", event.agents.single().statusText)
         assertEquals("Inspecting the repository", event.agents.single().summary)
         assertEquals(42L, event.agents.single().updatedAt)
+    }
+
+    /**
+     * Verifies that Codex running-plan notifications preserve submission-panel presentation into the kernel.
+     */
+    @Test
+    fun `maps provider running plan update preserving submission presentation`() {
+        val mapper = ProviderProtocolDomainMapper(clock = { 42L })
+
+        val event = assertIs<SessionDomainEvent.RunningPlanUpdated>(
+            mapper.map(
+                ProviderEvent.RunningPlanUpdated(
+                    threadId = "thread-1",
+                    turnId = "turn-1",
+                    explanation = "Working through plan",
+                    steps = listOf(
+                        ProviderPlanStep(step = "Inspect events", status = "completed"),
+                        ProviderPlanStep(step = "Wire composer panel", status = "inProgress"),
+                    ),
+                    body = """
+                        Working through plan
+
+                        - [completed] Inspect events
+                        - [inProgress] Wire composer panel
+                    """.trimIndent(),
+                    presentation = ProviderRunningPlanPresentation.SUBMISSION_PANEL,
+                ),
+            ).single(),
+        )
+
+        assertEquals("turn-1", event.plan.turnId)
+        assertEquals("Working through plan", event.plan.explanation)
+        assertEquals(SessionRunningPlanPresentation.SUBMISSION_PANEL, event.plan.presentation)
     }
 
     /**

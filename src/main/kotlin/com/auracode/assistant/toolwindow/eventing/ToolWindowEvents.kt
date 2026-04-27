@@ -10,7 +10,7 @@ import com.auracode.assistant.settings.SavedAgentDefinition
 import com.auracode.assistant.settings.UiLanguageMode
 import com.auracode.assistant.settings.UiScaleMode
 import com.auracode.assistant.settings.UiThemeMode
-import com.auracode.assistant.settings.skills.SkillRuntimeEntry
+import com.auracode.assistant.settings.skills.ManagedSkillEntry
 import com.auracode.assistant.settings.mcp.McpBusyState
 import com.auracode.assistant.settings.mcp.McpRuntimeStatus
 import com.auracode.assistant.settings.mcp.McpServerDraft
@@ -275,7 +275,7 @@ internal sealed interface AppEvent {
     data class SkillsLoaded(
         val engineId: String,
         val cwd: String,
-        val skills: List<SkillRuntimeEntry>,
+        val skills: List<ManagedSkillEntry>,
         val supportsRuntimeSkills: Boolean,
         val stale: Boolean,
         val errorMessage: String? = null,

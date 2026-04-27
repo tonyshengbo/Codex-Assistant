@@ -313,6 +313,7 @@ internal data class SessionRunningPlan(
     val explanation: String?,
     val steps: List<SessionRunningPlanStep>,
     val body: String,
+    val presentation: SessionRunningPlanPresentation = SessionRunningPlanPresentation.TIMELINE,
 )
 
 /**
@@ -322,3 +323,11 @@ internal data class SessionRunningPlanStep(
     val step: String,
     val status: String,
 )
+
+/**
+ * Describes which primary UI surface should render one session running plan.
+ */
+internal enum class SessionRunningPlanPresentation {
+    TIMELINE,
+    SUBMISSION_PANEL,
+}

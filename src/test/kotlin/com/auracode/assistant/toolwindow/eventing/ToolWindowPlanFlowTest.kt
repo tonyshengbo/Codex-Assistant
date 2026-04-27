@@ -6,6 +6,7 @@ import com.auracode.assistant.model.AgentCollaborationMode
 import com.auracode.assistant.model.AgentRequest
 import com.auracode.assistant.protocol.ItemKind
 import com.auracode.assistant.protocol.ItemStatus
+import com.auracode.assistant.protocol.ProviderRunningPlanPresentation
 import com.auracode.assistant.protocol.TurnOutcome
 import com.auracode.assistant.protocol.ProviderEvent
 import com.auracode.assistant.protocol.ProviderItem
@@ -39,7 +40,7 @@ import kotlin.test.assertTrue
 @OptIn(ExperimentalCoroutinesApi::class)
 class ToolWindowPlanFlowTest {
     @Test
-    fun `running turn plan updates populate timeline plan nodes`() {
+    fun `codex turn plan updates populate submission running plan instead of timeline`() {
         val harness = CoordinatorHarness()
 
         harness.eventHub.publishUiIntent(UiIntent.TogglePlanMode)
@@ -64,14 +65,16 @@ class ToolWindowPlanFlowTest {
                     - [inProgress] Wire composer panel
                     - [pending] Verify flow
                 """.trimIndent(),
+                presentation = ProviderRunningPlanPresentation.SUBMISSION_PANEL,
             ),
         )
 
-        harness.waitUntil { harness.conversationStore.state.value.nodes.any { it is ConversationActivityItem.PlanNode } }
-        val planNode = harness.conversationStore.state.value.nodes.filterIsInstance<ConversationActivityItem.PlanNode>().single()
-        assertEquals("turn-1", planNode.turnId)
-        assertTrue(planNode.body.contains("Wire composer panel"))
-        assertNull(harness.submissionStore.state.value.runningPlan)
+        harness.waitUntil { harness.submissionStore.state.value.runningPlan != null }
+        val runningPlan = harness.submissionStore.state.value.runningPlan
+        assertEquals("turn-1", runningPlan?.turnId)
+        assertEquals("Working through plan", runningPlan?.explanation)
+        assertTrue(runningPlan?.steps?.any { it.step == "Wire composer panel" } == true)
+        assertTrue(harness.conversationStore.state.value.nodes.none { it is ConversationActivityItem.PlanNode })
 
         harness.dispose()
     }
@@ -127,12 +130,14 @@ class ToolWindowPlanFlowTest {
                     com.auracode.assistant.protocol.ProviderPlanStep(step = "Inspect events", status = "inProgress"),
                 ),
                 body = "",
+                presentation = ProviderRunningPlanPresentation.SUBMISSION_PANEL,
             ),
         )
 
-        harness.waitUntil { harness.conversationStore.state.value.nodes.any { it is ConversationActivityItem.PlanNode } }
+        harness.waitUntil { harness.submissionStore.state.value.runningPlan != null }
         harness.provider.completeTurn()
         harness.waitUntil { !harness.conversationStore.state.value.isRunning }
+        assertNull(harness.submissionStore.state.value.runningPlan)
         assertNull(harness.submissionStore.state.value.planCompletion)
 
         harness.dispose()

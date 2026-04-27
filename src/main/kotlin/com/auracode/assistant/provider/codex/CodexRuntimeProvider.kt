@@ -26,6 +26,7 @@ import com.auracode.assistant.protocol.ProviderEvent
 import com.auracode.assistant.protocol.ProviderFileChange
 import com.auracode.assistant.protocol.ProviderItem
 import com.auracode.assistant.protocol.ProviderPlanStep
+import com.auracode.assistant.protocol.ProviderRunningPlanPresentation
 import com.auracode.assistant.protocol.ProviderToolUserInputAnswerDraft
 import com.auracode.assistant.protocol.ProviderToolUserInputOption
 import com.auracode.assistant.protocol.ProviderToolUserInputPrompt
@@ -477,6 +478,7 @@ internal class CodexRuntimeProvider(
                             explanation = explanation.takeIf { it.isNotBlank() },
                             steps = steps,
                             body = body,
+                            presentation = ProviderRunningPlanPresentation.SUBMISSION_PANEL,
                         ),
                     )
                 }

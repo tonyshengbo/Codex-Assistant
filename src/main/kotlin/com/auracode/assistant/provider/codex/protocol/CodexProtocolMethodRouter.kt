@@ -7,6 +7,7 @@ import com.auracode.assistant.protocol.TurnUsage
 import com.auracode.assistant.protocol.ProviderEvent
 import com.auracode.assistant.protocol.ProviderItem
 import com.auracode.assistant.protocol.ProviderPlanStep
+import com.auracode.assistant.protocol.ProviderRunningPlanPresentation
 import kotlinx.serialization.json.JsonObject
 
 internal class CodexProtocolMethodRouter {
@@ -147,6 +148,7 @@ internal class CodexProtocolMethodRouter {
             explanation = explanation,
             steps = steps,
             body = body,
+            presentation = ProviderRunningPlanPresentation.SUBMISSION_PANEL,
         )
     }
 

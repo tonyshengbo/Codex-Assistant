@@ -4,6 +4,7 @@ import com.auracode.assistant.protocol.ItemKind
 import com.auracode.assistant.protocol.ItemStatus
 import com.auracode.assistant.protocol.TurnOutcome
 import com.auracode.assistant.protocol.ProviderEvent
+import com.auracode.assistant.protocol.ProviderRunningPlanPresentation
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
@@ -62,6 +63,7 @@ class CodexProtocolMethodRouterTest {
         assertTrue(updated.body.contains("do work"))
         assertTrue(updated.body.contains("Split parser"))
         assertTrue(updated.body.contains("Add tests"))
+        assertEquals(ProviderRunningPlanPresentation.SUBMISSION_PANEL, updated.presentation)
     }
 
     @Test

@@ -7,10 +7,14 @@ import com.auracode.assistant.protocol.TurnOutcome
 import com.auracode.assistant.session.kernel.SessionActivityStatus
 import com.auracode.assistant.session.kernel.SessionApprovalDecision
 import com.auracode.assistant.session.kernel.SessionDomainEvent
+import com.auracode.assistant.session.kernel.SessionRunningPlanPresentation
 import com.auracode.assistant.session.kernel.SessionTurnOutcome
 import com.auracode.assistant.toolwindow.execution.ApprovalAction
 import com.auracode.assistant.toolwindow.execution.PlanCompletionPromptUiModel
 import com.auracode.assistant.toolwindow.execution.toSubmissionAnswers
+import com.auracode.assistant.toolwindow.submission.SubmissionRunningPlanState
+import com.auracode.assistant.toolwindow.submission.SubmissionRunningPlanStep
+import com.auracode.assistant.toolwindow.submission.SubmissionRunningPlanStepStatus
 
 internal class PlanFlowHandler(
     private val context: ToolWindowCoordinatorContext,
@@ -39,6 +43,12 @@ internal class PlanFlowHandler(
                     context.activePlanRunContexts[sessionId]?.apply {
                         latestPlanBody = event.plan.body.trim().takeIf { it.isNotBlank() } ?: latestPlanBody
                         remoteTurnId = event.plan.turnId?.takeIf { it.isNotBlank() } ?: remoteTurnId
+                    }
+                    if (event.plan.presentation == SessionRunningPlanPresentation.SUBMISSION_PANEL) {
+                        context.dispatchSessionEvent(
+                            sessionId,
+                            AppEvent.RunningPlanUpdated(plan = event.plan.toSubmissionRunningPlanState()),
+                        )
                     }
                 }
 
@@ -231,6 +241,25 @@ internal class PlanFlowHandler(
             SubmissionMode.AUTO -> AgentApprovalMode.AUTO
             SubmissionMode.APPROVAL -> AgentApprovalMode.REQUIRE_CONFIRMATION
         }
+    }
+
+    /** Maps one session running plan into the submission-area running-plan state. */
+    private fun com.auracode.assistant.session.kernel.SessionRunningPlan.toSubmissionRunningPlanState(): SubmissionRunningPlanState {
+        return SubmissionRunningPlanState(
+            threadId = context.activePlanRunContexts[context.activeSessionId()]?.threadId,
+            turnId = turnId.orEmpty(),
+            explanation = explanation,
+            steps = steps.map { step ->
+                SubmissionRunningPlanStep(
+                    step = step.step,
+                    status = when (step.status.trim().lowercase()) {
+                        "completed" -> SubmissionRunningPlanStepStatus.COMPLETED
+                        "inprogress", "in_progress", "running", "active" -> SubmissionRunningPlanStepStatus.IN_PROGRESS
+                        else -> SubmissionRunningPlanStepStatus.PENDING
+                    },
+                )
+            },
+        )
     }
 
     /** Starts one programmatic follow-up turn while keeping the session kernel in sync. */
