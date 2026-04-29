@@ -402,6 +402,7 @@ internal class ToolWindowCoordinator(
             is UiIntent.DeleteMcpServer -> settingsHandler.deleteMcpServer(intent.name)
             is UiIntent.TestMcpServer -> settingsHandler.testMcpServer(intent.name)
             is UiIntent.LoginMcpServer -> settingsHandler.authenticateMcpServer(intent.name, login = true)
+            is UiIntent.CancelMcpLogin -> settingsHandler.cancelMcpServerAuthentication(intent.name)
             is UiIntent.LogoutMcpServer -> settingsHandler.authenticateMcpServer(intent.name, login = false)
             UiIntent.DetectCodexEnvironment -> settingsHandler.detectCodexEnvironment()
             UiIntent.TestCodexEnvironment -> settingsHandler.testCodexEnvironment()

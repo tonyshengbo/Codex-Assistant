@@ -395,8 +395,16 @@ class ToolWindowCoordinatorMcpTest {
             return testResults.getValue(name)
         }
 
-        override suspend fun login(name: String): McpAuthActionResult {
+        override suspend fun login(
+            name: String,
+            onAuthorizationUrl: suspend (String?) -> Unit,
+        ): McpAuthActionResult {
+            onAuthorizationUrl("https://example.com/oauth")
             return McpAuthActionResult(message = "login:$name")
+        }
+
+        override suspend fun cancelLogin(name: String): McpAuthActionResult {
+            return McpAuthActionResult(message = "cancel:$name")
         }
 
         override suspend fun logout(name: String): McpAuthActionResult {

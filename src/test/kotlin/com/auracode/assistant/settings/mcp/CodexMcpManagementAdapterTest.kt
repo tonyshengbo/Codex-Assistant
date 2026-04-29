@@ -2,6 +2,8 @@ package com.auracode.assistant.settings.mcp
 
 import com.auracode.assistant.settings.AgentSettingsService
 import com.auracode.assistant.provider.codex.CodexEnvironmentResolution
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.async
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonArray
@@ -11,6 +13,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
 import kotlin.test.assertNotNull
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 import kotlin.test.assertSame
 
@@ -417,6 +420,98 @@ class CodexMcpManagementAdapterTest {
         assertTrue("mastergo_magic_mcp" !in statuses)
     }
 
+    @Test
+    fun `login keeps app-server alive until OAuth completion arrives`() = runBlocking {
+        val client = FakeCodexMcpAppServerClient().apply {
+            oauthResult = McpAuthActionResult(
+                success = true,
+                message = "OAuth login completed for 'figma'.",
+            )
+        }
+        var openedUrl: String? = null
+        val adapter = CodexMcpManagementAdapter(
+            settings = settings("/usr/local/bin/codex"),
+            launchEnvironmentResolver = environmentResolver(
+                CodexEnvironmentResolution(
+                    codexPath = "/usr/local/bin/codex",
+                    nodePath = null,
+                    shellEnvironment = emptyMap(),
+                    environmentOverrides = emptyMap(),
+                ),
+            ),
+            appServerClientFactory = { _, _ -> client },
+        )
+
+        val result = adapter.login("figma") { openedUrl = it }
+
+        assertEquals("https://example.com/oauth", openedUrl)
+        assertTrue(result.success)
+        assertEquals("OAuth login completed for 'figma'.", result.message)
+        assertEquals(1, client.closeCalls)
+        assertEquals(1, client.initializeCalls)
+    }
+
+    @Test
+    fun `login surfaces OAuth timeout or callback failure cleanly`() = runBlocking {
+        val client = FakeCodexMcpAppServerClient().apply {
+            oauthResult = McpAuthActionResult(
+                success = false,
+                message = "OAuth login failed for 'figma': timed out waiting for OAuth callback",
+            )
+        }
+        val adapter = CodexMcpManagementAdapter(
+            settings = settings("/usr/local/bin/codex"),
+            launchEnvironmentResolver = environmentResolver(
+                CodexEnvironmentResolution(
+                    codexPath = "/usr/local/bin/codex",
+                    nodePath = null,
+                    shellEnvironment = emptyMap(),
+                    environmentOverrides = emptyMap(),
+                ),
+            ),
+            appServerClientFactory = { _, _ -> client },
+        )
+
+        val result = adapter.login("figma")
+
+        assertFalse(result.success)
+        assertTrue(result.message.contains("timed out waiting for OAuth callback"))
+        assertEquals(1, client.closeCalls)
+    }
+
+    @Test
+    fun `cancel login closes active OAuth session and unblocks waiter`() = runBlocking {
+        val client = FakeCodexMcpAppServerClient().apply {
+            autoCompleteOnStart = false
+        }
+        val adapter = CodexMcpManagementAdapter(
+            settings = settings("/usr/local/bin/codex"),
+            launchEnvironmentResolver = environmentResolver(
+                CodexEnvironmentResolution(
+                    codexPath = "/usr/local/bin/codex",
+                    nodePath = null,
+                    shellEnvironment = emptyMap(),
+                    environmentOverrides = emptyMap(),
+                ),
+            ),
+            appServerClientFactory = { _, _ -> client },
+        )
+
+        val loginJob = async { adapter.login("figma") }
+        while (client.startOAuthLoginCalls == 0) {
+            Thread.yield()
+        }
+
+        val cancelResult = adapter.cancelLogin("figma")
+        val loginResult = loginJob.await()
+
+        assertTrue(cancelResult.success)
+        assertEquals("Cancelled OAuth login for 'figma'.", cancelResult.message)
+        assertFalse(loginResult.success)
+        assertTrue(loginResult.message.contains("cancelled"))
+        assertEquals(1, client.closeCalls)
+    }
+
     private fun settings(path: String): AgentSettingsService {
         return AgentSettingsService().apply {
             loadState(
@@ -448,6 +543,14 @@ class CodexMcpManagementAdapterTest {
         var reloadCalls: Int = 0
         var initializeCalls: Int = 0
         var statuses: Map<String, McpRuntimeStatus> = emptyMap()
+        var closeCalls: Int = 0
+        var startOAuthLoginCalls: Int = 0
+        var autoCompleteOnStart: Boolean = true
+        var oauthResult: McpAuthActionResult = McpAuthActionResult(
+            success = true,
+            message = "OAuth login completed for 'figma'.",
+        )
+        private var oauthCompletion: CompletableDeferred<McpAuthActionResult> = CompletableDeferred()
 
         override suspend fun initialize() {
             initializeCalls += 1
@@ -463,8 +566,27 @@ class CodexMcpManagementAdapterTest {
 
         override suspend fun listStatuses(): Map<String, McpRuntimeStatus> = statuses
 
-        override suspend fun startOAuthLogin(name: String): String? = null
+        override suspend fun startOAuthLogin(name: String): McpOAuthLoginHandle {
+            startOAuthLoginCalls += 1
+            oauthCompletion = CompletableDeferred()
+            if (autoCompleteOnStart) {
+                oauthCompletion.complete(oauthResult)
+            }
+            return object : McpOAuthLoginHandle {
+                override val authorizationUrl: String? = "https://example.com/oauth"
 
-        override fun close() = Unit
+                override suspend fun awaitCompletion(): McpAuthActionResult = oauthCompletion.await()
+            }
+        }
+
+        override fun close() {
+            closeCalls += 1
+            oauthCompletion.complete(
+                McpAuthActionResult(
+                    success = false,
+                    message = "OAuth login was cancelled before completion.",
+                ),
+            )
+        }
     }
 }

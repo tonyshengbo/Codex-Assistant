@@ -13,7 +13,11 @@ internal interface McpManagementAdapter {
     suspend fun setServerEnabled(name: String, enabled: Boolean)
     suspend fun refreshStatuses(): Map<String, McpRuntimeStatus>
     suspend fun testServer(name: String): McpTestResult
-    suspend fun login(name: String): McpAuthActionResult
+    suspend fun login(
+        name: String,
+        onAuthorizationUrl: suspend (String?) -> Unit = {},
+    ): McpAuthActionResult
+    suspend fun cancelLogin(name: String): McpAuthActionResult
     suspend fun logout(name: String): McpAuthActionResult
 }
 

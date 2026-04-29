@@ -18,10 +18,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.auracode.assistant.i18n.AuraCodeBundle
+import com.auracode.assistant.settings.mcp.McpAuthState
 import com.auracode.assistant.settings.mcp.McpServerSummary
 import com.auracode.assistant.settings.mcp.McpTransportType
-import com.auracode.assistant.toolwindow.shell.SidePanelAreaState
 import com.auracode.assistant.toolwindow.eventing.UiIntent
+import com.auracode.assistant.toolwindow.shell.SidePanelAreaState
 import com.auracode.assistant.toolwindow.shared.DesignPalette
 import com.auracode.assistant.toolwindow.shared.assistantUiTokens
 
@@ -66,9 +67,23 @@ internal fun McpSettingsListPage(
                         server = server,
                         isUpdating = state.mcpBusyState.loading,
                         isDeleting = state.mcpBusyState.deletingName == server.name,
+                        isAuthenticating = state.mcpBusyState.authenticatingName == server.name,
+                        authState = state.mcpStatusByName[server.name]?.authState ?: server.authState,
                         onOpen = { onIntent(UiIntent.SelectMcpServerForEdit(server.name)) },
                         onToggleEnabled = { enabled ->
                             onIntent(UiIntent.ToggleMcpServerEnabled(server.name, enabled))
+                        },
+                        onAuthenticate = { login ->
+                            onIntent(
+                                if (login) {
+                                    UiIntent.LoginMcpServer(server.name)
+                                } else {
+                                    UiIntent.LogoutMcpServer(server.name)
+                                },
+                            )
+                        },
+                        onCancelAuthentication = {
+                            onIntent(UiIntent.CancelMcpLogin(server.name))
                         },
                         onDelete = { onIntent(UiIntent.DeleteMcpServer(server.name)) },
                     )
@@ -84,8 +99,12 @@ private fun McpServerRow(
     server: McpServerSummary,
     isUpdating: Boolean,
     isDeleting: Boolean,
+    isAuthenticating: Boolean,
+    authState: McpAuthState,
     onOpen: () -> Unit,
     onToggleEnabled: (Boolean) -> Unit,
+    onAuthenticate: (Boolean) -> Unit,
+    onCancelAuthentication: () -> Unit,
     onDelete: () -> Unit,
 ) {
     val t = assistantUiTokens()
@@ -115,7 +134,13 @@ private fun McpServerRow(
                 )
                 TransportBadge(p = p, transportType = server.transportType)
                 EnabledBadge(p = p, enabled = server.enabled)
+                McpAuthStatusBadge(p = p, authState = authState)
             }
+            Text(
+                text = server.displayTarget,
+                color = p.textSecondary,
+                style = MaterialTheme.typography.caption,
+            )
         }
         Row(
             horizontalArrangement = Arrangement.spacedBy(t.spacing.sm),
@@ -124,17 +149,71 @@ private fun McpServerRow(
             SettingsToggle(
                 p = p,
                 checked = server.enabled,
-                enabled = !isUpdating && !isDeleting,
+                enabled = !isUpdating && !isDeleting && !isAuthenticating,
                 onCheckedChange = onToggleEnabled,
+            )
+            AuthActionButton(
+                p = p,
+                authState = authState,
+                isAuthenticating = isAuthenticating,
+                enabled = !isUpdating && !isDeleting,
+                onAuthenticate = onAuthenticate,
+                onCancelAuthentication = onCancelAuthentication,
             )
             SettingsActionButton(
                 p = p,
                 text = AuraCodeBundle.message("common.delete"),
                 emphasized = false,
-                enabled = !isDeleting,
+                enabled = !isDeleting && !isAuthenticating,
                 onClick = onDelete,
             )
         }
+    }
+}
+
+/** Renders the list-level login or logout action for the current MCP server. */
+@Composable
+private fun AuthActionButton(
+    p: DesignPalette,
+    authState: McpAuthState,
+    isAuthenticating: Boolean,
+    enabled: Boolean,
+    onAuthenticate: (Boolean) -> Unit,
+    onCancelAuthentication: () -> Unit,
+) {
+    if (isAuthenticating) {
+        SettingsActionButton(
+            p = p,
+            text = AuraCodeBundle.message("common.cancel"),
+            emphasized = false,
+            enabled = enabled,
+            onClick = onCancelAuthentication,
+        )
+        return
+    }
+    when (authState) {
+        McpAuthState.NOT_LOGGED_IN -> {
+            SettingsActionButton(
+                p = p,
+                text = AuraCodeBundle.message("settings.mcp.auth.login"),
+                enabled = enabled,
+                onClick = { onAuthenticate(true) },
+            )
+        }
+
+        McpAuthState.OAUTH,
+        McpAuthState.BEARER_TOKEN,
+        -> {
+            SettingsActionButton(
+                p = p,
+                text = AuraCodeBundle.message("settings.mcp.auth.logout"),
+                emphasized = false,
+                enabled = enabled,
+                onClick = { onAuthenticate(false) },
+            )
+        }
+
+        else -> Unit
     }
 }
 

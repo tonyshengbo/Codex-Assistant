@@ -839,18 +839,28 @@ internal class SettingsAndEnvironmentHandler(
             runCatching {
                 val adapter = mcpAdapter()
                 logMcpDiagnostic("MCP adapter call begin: label=authenticateMcpServer($name, login=$login) step=${if (login) "login" else "logout"} | ${mcpContextSnapshot(requestedName = name)}")
-                val result: McpAuthActionResult = if (login) adapter.login(name) else adapter.logout(name)
+                val result: McpAuthActionResult = if (login) {
+                    adapter.login(name) { authorizationUrl ->
+                        val openedInBrowser = authorizationUrl?.let(context.openExternalUrl) == true
+                        val suffix = when {
+                            openedInBrowser -> " Opened the authorization page in your browser."
+                            !authorizationUrl.isNullOrBlank() -> " $authorizationUrl"
+                            else -> ""
+                        }
+                        context.eventHub.publish(
+                            AppEvent.StatusTextUpdated(
+                                UiText.raw("Open the authorization URL for '$name'.$suffix"),
+                            ),
+                        )
+                    }
+                } else {
+                    adapter.logout(name)
+                }
                 logMcpDiagnostic("MCP adapter call success: label=authenticateMcpServer($name, login=$login) step=${if (login) "login" else "logout"} | ${mcpContextSnapshot(requestedName = name)}")
                 logMcpDiagnostic("MCP adapter call begin: label=authenticateMcpServer($name, login=$login) step=refreshStatuses | ${mcpContextSnapshot(requestedName = name)}")
                 context.eventHub.publish(AppEvent.McpStatusesUpdated(adapter.refreshStatuses()))
                 logMcpDiagnostic("MCP adapter call success: label=authenticateMcpServer($name, login=$login) step=refreshStatuses | ${mcpContextSnapshot(requestedName = name)}")
-                val openedInBrowser = result.authorizationUrl?.let(context.openExternalUrl) == true
-                val suffix = when {
-                    openedInBrowser -> " Opened the authorization page in your browser."
-                    !result.authorizationUrl.isNullOrBlank() -> " ${result.authorizationUrl}"
-                    else -> ""
-                }
-                context.eventHub.publish(AppEvent.StatusTextUpdated(UiText.raw(result.message + suffix)))
+                context.eventHub.publish(AppEvent.StatusTextUpdated(UiText.raw(result.message)))
             }.onFailure { error ->
                 logMcpDiagnostic(
                     message = "MCP coroutine handled failure: label=authenticateMcpServer($name, login=$login) | ${mcpContextSnapshot(requestedName = name)}",
@@ -864,6 +874,30 @@ internal class SettingsAndEnvironmentHandler(
             }
             updateMcpBusy { copy(authenticatingName = null) }
             logMcpDiagnostic("MCP coroutine finish: label=authenticateMcpServer($name, login=$login) | ${mcpContextSnapshot(requestedName = name)}")
+        }
+    }
+
+    fun cancelMcpServerAuthentication(name: String) {
+        if (name.isBlank()) return
+        logMcpDiagnostic("MCP coroutine scheduled: label=cancelMcpServerAuthentication($name) | ${mcpContextSnapshot(requestedName = name)}")
+        context.coroutineLauncher.launch("cancelMcpServerAuthentication($name)") {
+            logMcpDiagnostic("MCP coroutine start: label=cancelMcpServerAuthentication($name) | ${mcpContextSnapshot(requestedName = name)}")
+            runCatching {
+                val adapter = mcpAdapter()
+                val result = adapter.cancelLogin(name)
+                context.eventHub.publish(AppEvent.StatusTextUpdated(UiText.raw(result.message)))
+            }.onFailure { error ->
+                logMcpDiagnostic(
+                    message = "MCP coroutine handled failure: label=cancelMcpServerAuthentication($name) | ${mcpContextSnapshot(requestedName = name)}",
+                    error = error,
+                )
+                context.eventHub.publish(
+                    AppEvent.StatusTextUpdated(
+                        UiText.raw(error.message ?: "Failed to cancel MCP authentication for '$name'."),
+                    ),
+                )
+            }
+            logMcpDiagnostic("MCP coroutine finish: label=cancelMcpServerAuthentication($name) | ${mcpContextSnapshot(requestedName = name)}")
         }
     }
 
@@ -882,6 +916,7 @@ internal class SettingsAndEnvironmentHandler(
             is UiIntent.DeleteMcpServer,
             is UiIntent.TestMcpServer,
             is UiIntent.LoginMcpServer,
+            is UiIntent.CancelMcpLogin,
             is UiIntent.LogoutMcpServer -> true
             else -> false
         }
@@ -902,6 +937,7 @@ internal class SettingsAndEnvironmentHandler(
             is UiIntent.ToggleMcpServerEnabled -> "ToggleMcpServerEnabled(name=${intent.name}, enabled=${intent.enabled})"
             is UiIntent.DeleteMcpServer -> "DeleteMcpServer(name=${intent.name})"
             is UiIntent.LoginMcpServer -> "LoginMcpServer(name=${intent.name})"
+            is UiIntent.CancelMcpLogin -> "CancelMcpLogin(name=${intent.name})"
             is UiIntent.LogoutMcpServer -> "LogoutMcpServer(name=${intent.name})"
             else -> intent::class.simpleName ?: "UnknownMcpIntent"
         }

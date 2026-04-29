@@ -187,6 +187,7 @@ internal sealed interface UiIntent {
     data class DeleteMcpServer(val name: String) : UiIntent
     data class TestMcpServer(val name: String? = null) : UiIntent
     data class LoginMcpServer(val name: String) : UiIntent
+    data class CancelMcpLogin(val name: String) : UiIntent
     data class LogoutMcpServer(val name: String) : UiIntent
     data object DiscardRuntimeSettingsChanges : UiIntent
     data object SaveSettings : UiIntent

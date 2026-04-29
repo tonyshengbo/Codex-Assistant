@@ -48,6 +48,9 @@ internal class CodexMcpManagementAdapter(
 ) : McpManagementAdapter {
     private val json = Json { ignoreUnknownKeys = true; explicitNulls = false }
     private val prettyJson = Json { ignoreUnknownKeys = true; explicitNulls = false; prettyPrint = true; prettyPrintIndent = "  " }
+    private val oauthLoginLock = Any()
+    @Volatile
+    private var activeOauthLogin: ActiveOauthLoginSession? = null
 
     override suspend fun listServers(): List<McpServerSummary> {
         val response = runCli("mcp", "list", "--json")
@@ -267,24 +270,61 @@ internal class CodexMcpManagementAdapter(
         )
     }
 
-    override suspend fun login(name: String): McpAuthActionResult {
+    override suspend fun login(
+        name: String,
+        onAuthorizationUrl: suspend (String?) -> Unit,
+    ): McpAuthActionResult {
         val binary = binary()
-        val url = withAppServerClient(binary) { client ->
+        val client = appServerClientFactory(binary, launchResolution().environmentOverrides)
+        val session = ActiveOauthLoginSession(name = name.trim(), client = client)
+        synchronized(oauthLoginLock) {
+            val existing = activeOauthLogin
+            if (existing != null && existing.name != session.name) {
+                client.close()
+                return McpAuthActionResult(
+                    success = false,
+                    message = "Another MCP OAuth login is already in progress.",
+                )
+            }
+            if (existing != null && existing.name == session.name) {
+                client.close()
+                return McpAuthActionResult(
+                    success = false,
+                    message = "OAuth login is already in progress for '$name'.",
+                )
+            }
+            activeOauthLogin = session
+        }
+        return try {
             client.initialize()
-            client.startOAuthLogin(name)
+            val handle = client.startOAuthLogin(name)
+            onAuthorizationUrl(handle.authorizationUrl)
+            handle.awaitCompletion()
+        } finally {
+            synchronized(oauthLoginLock) {
+                if (activeOauthLogin === session) {
+                    activeOauthLogin = null
+                }
+            }
+            client.close()
         }
-        return if (url.isNullOrBlank()) {
-            McpAuthActionResult(
-                success = true,
-                message = "OAuth login started for '$name'.",
-            )
-        } else {
-            McpAuthActionResult(
-                success = true,
-                message = "Open the authorization URL for '$name'.",
-                authorizationUrl = url,
+    }
+
+    override suspend fun cancelLogin(name: String): McpAuthActionResult {
+        val session = synchronized(oauthLoginLock) {
+            activeOauthLogin?.takeIf { it.name == name.trim() }
+        }
+        if (session == null) {
+            return McpAuthActionResult(
+                success = false,
+                message = "No OAuth login is in progress for '$name'.",
             )
         }
+        session.client.close()
+        return McpAuthActionResult(
+            success = true,
+            message = "Cancelled OAuth login for '$name'.",
+        )
     }
 
     override suspend fun logout(name: String): McpAuthActionResult {
@@ -414,8 +454,20 @@ internal interface CodexMcpAppServerClient : AutoCloseable {
     suspend fun batchWrite(edits: List<ConfigEditRequest>)
     suspend fun reloadMcpServers()
     suspend fun listStatuses(): Map<String, McpRuntimeStatus>
-    suspend fun startOAuthLogin(name: String): String?
+    suspend fun startOAuthLogin(name: String): McpOAuthLoginHandle
 }
+
+internal interface McpOAuthLoginHandle {
+    val authorizationUrl: String?
+
+    /** Waits for the app-server to report OAuth completion, timeout, or provider failure. */
+    suspend fun awaitCompletion(): McpAuthActionResult
+}
+
+private data class ActiveOauthLoginSession(
+    val name: String,
+    val client: CodexMcpAppServerClient,
+)
 
 @OptIn(ExperimentalSerializationApi::class)
 private class RealCodexMcpAppServerClient(
@@ -435,6 +487,7 @@ private class RealCodexMcpAppServerClient(
     private val writer = process.outputStream.bufferedWriter(Charsets.UTF_8)
     private val nextId = AtomicInteger(1)
     private val pending = ConcurrentHashMap<String, CompletableDeferred<JsonElement>>()
+    private val oauthPending = ConcurrentHashMap<String, CompletableDeferred<McpAuthActionResult>>()
     private val managedScope: ManagedCoroutineScope = AppCoroutineManager.createScope(
         scopeName = "CodexMcpAppServerClient",
         dispatcher = Dispatchers.IO,
@@ -527,17 +580,35 @@ private class RealCodexMcpAppServerClient(
         return statuses
     }
 
-    override suspend fun startOAuthLogin(name: String): String? {
+    override suspend fun startOAuthLogin(name: String): McpOAuthLoginHandle {
+        val completion = CompletableDeferred<McpAuthActionResult>()
+        oauthPending[name] = completion
         val result = request(
             method = "mcpServer/oauth/login",
             params = buildJsonObject {
                 put("name", name)
             },
         )
-        return result.string("authorizationUrl")
+        val authorizationUrl = result.string("authorizationUrl")
+        return object : McpOAuthLoginHandle {
+            override val authorizationUrl: String? = authorizationUrl
+
+            override suspend fun awaitCompletion(): McpAuthActionResult {
+                return completion.await()
+            }
+        }
     }
 
     override fun close() {
+        oauthPending.values.forEach { deferred ->
+            deferred.complete(
+                McpAuthActionResult(
+                    success = false,
+                    message = "OAuth login was cancelled before completion.",
+                ),
+            )
+        }
+        oauthPending.clear()
         managedScope.cancel()
         process.destroy()
     }
@@ -559,6 +630,11 @@ private class RealCodexMcpAppServerClient(
                     if (trimmed.isBlank()) return@forEach
                     diagnosticLogger("Codex MCP app-server recv: ${trimmed.take(4000)}")
                     val obj = runCatching { json.parseToJsonElement(trimmed).jsonObject }.getOrNull() ?: return@forEach
+                    val method = obj.string("method")
+                    if (method == "mcpServer/oauthLogin/completed") {
+                        handleOauthLoginCompleted(obj.objectValue("params"))
+                        return@forEach
+                    }
                     val id = obj.string("id") ?: return@forEach
                     if (obj.containsKey("result") || obj.containsKey("error")) {
                         pending.remove(id)?.complete(obj)
@@ -566,6 +642,24 @@ private class RealCodexMcpAppServerClient(
                 }
             }
         }
+    }
+
+    /** Completes the matching OAuth login waiter when the app-server publishes a final outcome. */
+    private fun handleOauthLoginCompleted(params: JsonObject?) {
+        val name = params?.string("name").orEmpty().trim()
+        if (name.isBlank()) return
+        val success = params?.boolean("success") == true
+        val errorMessage = params?.string("error").orEmpty().trim()
+        oauthPending.remove(name)?.complete(
+            McpAuthActionResult(
+                success = success,
+                message = when {
+                    success -> "OAuth login completed for '$name'."
+                    errorMessage.isNotBlank() -> "OAuth login failed for '$name': $errorMessage"
+                    else -> "OAuth login failed for '$name'."
+                },
+            ),
+        )
     }
 
     private suspend fun request(method: String, params: JsonObject): JsonObject {
