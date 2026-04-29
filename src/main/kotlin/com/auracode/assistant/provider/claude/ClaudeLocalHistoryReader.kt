@@ -152,9 +152,9 @@ internal class ClaudeLocalHistoryReader(
         )
         toolStates[rawEvent.toolUseId] = current.copy(event = updated)
         if (!updated.toolName.equals("TodoWrite", ignoreCase = true)) {
-            events += ProviderEvent.ItemUpdated(
-                toolCallItemMapper.map(ownerId = current.ownerId, event = updated),
-            )
+            toolCallItemMapper.map(ownerId = current.ownerId, event = updated)?.let { item ->
+                events += ProviderEvent.ItemUpdated(item)
+            }
         }
         return nextPendingTurnId
     }
@@ -200,9 +200,9 @@ internal class ClaudeLocalHistoryReader(
             )
             toolStates[content.toolUseId] = HistoryToolState(ownerId = uuid, event = toolEvent)
             if (!content.name.equals("TodoWrite", ignoreCase = true)) {
-                events += ProviderEvent.ItemUpdated(
-                    toolCallItemMapper.map(ownerId = uuid, event = toolEvent),
-                )
+                toolCallItemMapper.map(ownerId = uuid, event = toolEvent)?.let { item ->
+                    events += ProviderEvent.ItemUpdated(item)
+                }
             }
         }
 

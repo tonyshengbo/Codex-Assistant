@@ -229,4 +229,28 @@ class ClaudeLocalHistoryReaderTest {
             ?: error("Missing Edit history item.")
         assertEquals("/tmp/ClaudeCliProvider.kt", editItem.changes.single().path)
     }
+
+    @Test
+    /** Verifies that placeholder write progress without file paths is skipped during Claude history replay. */
+    fun `readHistory ignores placeholder diff apply items without real file paths`() {
+        val projectsDir = Files.createTempDirectory("claude-projects")
+        val projectDir = projectsDir.resolve("-Users-test-Project").also { Files.createDirectory(it) }
+        val sessionId = "placeholder-history-session"
+
+        projectDir.resolve("$sessionId.jsonl").toFile().writeText(
+            """
+            {"parentUuid":null,"isSidechain":false,"type":"user","message":{"role":"user","content":[{"type":"text","text":"继续"}]},"uuid":"user-1","sessionId":"$sessionId"}
+            {"parentUuid":"user-1","isSidechain":false,"type":"assistant","message":{"content":[{"id":"tooluse_write","input":{"content":"class Placeholder"},"name":"Write","type":"tool_use"}],"id":"msg_write","role":"assistant"},"uuid":"assistant-tool-1","sessionId":"$sessionId"}
+            {"parentUuid":"assistant-tool-1","isSidechain":false,"type":"user","message":{"role":"user","content":[{"type":"tool_result","content":"create","tool_use_id":"tooluse_write"}]},"uuid":"tool-result-1","sessionId":"$sessionId"}
+            {"parentUuid":"tool-result-1","isSidechain":false,"type":"assistant","message":{"content":[{"type":"text","text":"完成。"}],"id":"msg_final","role":"assistant"},"uuid":"assistant-final","sessionId":"$sessionId"}
+            """.trimIndent(),
+        )
+
+        val reader = ClaudeLocalHistoryReader(claudeProjectsDir = projectsDir)
+        val result = reader.readHistory(sessionId)
+
+        assertTrue(result.events.none { it is SessionDomainEvent.FileChangesUpdated })
+        val assistantItem = assertIs<SessionDomainEvent.MessageAppended>(result.events.last { it is SessionDomainEvent.MessageAppended })
+        assertEquals("完成。", assistantItem.text)
+    }
 }

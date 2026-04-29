@@ -58,7 +58,9 @@ internal class ClaudeProviderEventMapper(
                             ),
                         )
                     } else {
-                        add(ProviderEvent.ItemUpdated(toolCallItemMapper.map(ownerId = request.requestId, event = event)))
+                        toolCallItemMapper.map(ownerId = request.requestId, event = event)?.let { item ->
+                            add(ProviderEvent.ItemUpdated(item))
+                        }
                     }
                 }
             }

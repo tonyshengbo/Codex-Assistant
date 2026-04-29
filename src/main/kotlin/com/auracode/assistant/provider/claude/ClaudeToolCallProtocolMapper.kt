@@ -20,17 +20,18 @@ internal class ClaudeToolCallProtocolMapper(
     private val json: Json = Json { ignoreUnknownKeys = true },
 ) {
 
-    /** 根据工具名称将 Claude 工具节点转换为对应的 ProviderItem。 */
+    /** Maps one Claude tool-call snapshot into a provider item, or null for placeholder diff progress. */
     fun map(
         ownerId: String,
         event: ClaudeConversationEvent.ToolCallUpdated,
-    ): ProviderItem {
-        return when (event.toolName.trim().lowercase()) {
+    ): ProviderItem? {
+        val mappedItem = when (event.toolName.trim().lowercase()) {
             "read" -> mapRead(ownerId = ownerId, event = event)
             "write" -> mapWrite(ownerId = ownerId, event = event)
             "edit" -> mapEdit(ownerId = ownerId, event = event)
             else -> mapFallback(ownerId = ownerId, event = event)
         }
+        return mappedItem.takeUnless(::isPlaceholderDiffApply)
     }
 
     /** 将 TodoWrite 输入转换为运行态计划快照；解析失败时返回空步骤与兜底正文。 */
@@ -173,6 +174,14 @@ internal class ClaudeToolCallProtocolMapper(
         }
     }
 
+    /** Filters Claude diff-progress placeholders so they never enter the shared file-change pipeline. */
+    private fun isPlaceholderDiffApply(item: ProviderItem): Boolean {
+        if (item.kind != ItemKind.DIFF_APPLY) return false
+        if (item.fileChanges.isNotEmpty()) return false
+        val normalizedText = item.text?.trim()?.lowercase().orEmpty()
+        return normalizedText in PLACEHOLDER_DIFF_ACTIONS
+    }
+
     /** 解析工具输入 JSON；不完整增量会安全返回 null。 */
     private fun parseJsonObject(inputJson: String): JsonObject? {
         val normalized = inputJson.trim()
@@ -232,4 +241,15 @@ internal class ClaudeToolCallProtocolMapper(
         val steps: List<ProviderPlanStep>,
         val body: String,
     )
+
+    private companion object {
+        private val PLACEHOLDER_DIFF_ACTIONS = setOf(
+            "create",
+            "created",
+            "update",
+            "updated",
+            "modify",
+            "modified",
+        )
+    }
 }

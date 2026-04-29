@@ -408,6 +408,40 @@ class ClaudeCliProviderTest {
     }
 
     @Test
+    /** Verifies that Claude placeholder diff actions without file paths never become file-change timeline events. */
+    fun `stream ignores placeholder diff apply items without real file paths`() = runBlocking {
+        val provider = ClaudeCliProvider(
+            settings = AgentSettingsService().apply { loadState(AgentSettingsService.State()) },
+            launcher = FakeClaudeCliLauncher(
+                stdoutLines = listOf(
+                    """{"type":"system","subtype":"init","session_id":"session-123","model":"claude-sonnet-4-6"}""",
+                    """{"type":"assistant","session_id":"session-123","message":{"id":"msg_write","content":[{"id":"tooluse_write","input":{"content":"class Placeholder"},"name":"Write","type":"tool_use"}]}}""",
+                    """{"type":"user","session_id":"session-123","message":{"role":"user","content":[{"tool_use_id":"tooluse_write","type":"tool_result","content":"create"}]}}""",
+                    """{"type":"assistant","session_id":"session-123","message":{"id":"msg_final","content":[{"type":"text","text":"处理完成。"}]}}""",
+                    """{"type":"result","subtype":"success","session_id":"session-123","result":"处理完成。","is_error":false}""",
+                ),
+            ),
+        )
+
+        val events = provider.stream(
+            AgentRequest(
+                engineId = "claude",
+                model = "claude-sonnet-4-6",
+                prompt = "Filter placeholder file changes",
+                contextFiles = emptyList(),
+                workingDirectory = ".",
+            ),
+        ).toList()
+
+        assertFalse(events.any { it is SessionDomainEvent.FileChangesUpdated })
+        assertTrue(events.any { event ->
+            event is SessionDomainEvent.MessageAppended &&
+                event.role == SessionMessageRole.ASSISTANT &&
+                event.text == "处理完成。"
+        })
+    }
+
+    @Test
     /** 验证 Claude provider 声明支持 plan 模式，确保 UI 层能正确启用 Plan 切换按钮。 */
     fun `capabilities reports supportsPlanMode true`() {
         val provider = ClaudeCliProvider(
