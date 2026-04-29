@@ -2,12 +2,14 @@ package com.auracode.assistant.provider.claude
 
 import com.auracode.assistant.model.AgentCollaborationMode
 import com.auracode.assistant.model.AgentRequest
+import com.auracode.assistant.model.ImageAttachment
 import com.auracode.assistant.settings.AgentSettingsService
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.io.OutputStream
 import kotlin.test.Test
 import kotlin.test.assertContains
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 /**
@@ -100,6 +102,48 @@ class ClaudeCliLauncherTest {
         )
 
         assertTrue(stdin.closed, "Claude 启动后应立刻关闭 stdin，避免 CLI 卡在等待输入结束")
+    }
+
+    @Test
+    /** 验证有图片附件时命令包含 --input-format stream-json，且 prompt 不作为 CLI 参数传入。 */
+    fun `build command uses stream-json input format when image attachments present`() {
+        val launcher = DefaultClaudeCliLauncher()
+
+        val command = launcher.buildCommand(
+            request = AgentRequest(
+                engineId = "claude",
+                prompt = "Describe this image",
+                contextFiles = emptyList(),
+                workingDirectory = ".",
+                imageAttachments = listOf(
+                    ImageAttachment(path = "/tmp/test.png", name = "test.png", mimeType = "image/png"),
+                ),
+            ),
+            settings = AgentSettingsService().apply { loadState(AgentSettingsService.State()) },
+        )
+
+        assertContains(command, "--input-format")
+        assertContains(command, "stream-json")
+        assertFalse(command.contains("Describe this image"), "有图片时 prompt 应通过 stdin 发送，不应出现在 CLI 参数中")
+    }
+
+    @Test
+    /** 验证无图片附件时 prompt 仍作为 CLI 参数传入，保持原有行为。 */
+    fun `build command passes prompt as cli arg when no image attachments`() {
+        val launcher = DefaultClaudeCliLauncher()
+
+        val command = launcher.buildCommand(
+            request = AgentRequest(
+                engineId = "claude",
+                prompt = "Say hello",
+                contextFiles = emptyList(),
+                workingDirectory = ".",
+            ),
+            settings = AgentSettingsService().apply { loadState(AgentSettingsService.State()) },
+        )
+
+        assertTrue(command.any { it.contains("Say hello") }, "无图片时 prompt 应作为 CLI 参数传入")
+        assertFalse(command.contains("--input-format"), "无图片时不应添加 --input-format 参数")
     }
 
     /** 记录输出流是否被关闭，便于验证 Claude CLI 的 stdin 生命周期。 */
