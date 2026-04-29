@@ -712,6 +712,73 @@ class ToolWindowCoordinatorSkillTest {
         service.dispose()
     }
 
+    @Test
+    fun `import skill root shows failed dialog when selected directory does not contain skills`() {
+        val home = createTempDirectory("coordinator-skill-import-invalid-home")
+        val importRoot = createTempDirectory("coordinator-skill-import-invalid-root")
+        importRoot.resolve("README.md").writeText("# Cloudview Spec")
+        val workingDir = createTempDirectory("coordinator-skill-import-invalid-working")
+        val settings = AgentSettingsService()
+        val service = AgentChatService(
+            repository = com.auracode.assistant.persistence.chat.SQLiteChatSessionRepository(workingDir.resolve("chat.db")),
+            registry = registry(),
+            settings = settings,
+        )
+        val sidePanelStore = SidePanelAreaStore()
+        val executionStatusStore = ExecutionStatusAreaStore()
+        val resolver = EngineSkillDirectoryResolver(homeDir = home)
+        val runtimeService = SkillsRuntimeService(
+            adapterRegistry = SkillsManagementAdapterRegistry(
+                adapters = mapOf(
+                    "codex" to DirectoryScanningSkillsManagementAdapter("codex", resolver),
+                    "claude" to DirectoryScanningSkillsManagementAdapter("claude", resolver),
+                ),
+                defaultEngineId = "codex",
+            ),
+        )
+        val coordinator = ToolWindowCoordinator(
+            chatService = service,
+            settingsService = settings,
+            eventHub = ToolWindowEventHub(),
+            sessionTabsStore = SessionTabsAreaStore(),
+            executionStatusStore = executionStatusStore,
+            conversationStore = ConversationAreaStore(),
+            submissionStore = SubmissionAreaStore(),
+            sidePanelStore = sidePanelStore,
+            approvalStore = ApprovalAreaStore(),
+            skillsRuntimeService = runtimeService,
+            engineSkillsService = EngineSkillsService(runtimeService = runtimeService),
+            pickSkillImportDirectory = { importRoot.toString() },
+            skillRootScanner = SkillRootScanner(),
+            skillProjectionManager = SkillProjectionManager(resolver),
+            localSkillInstallPolicy = LocalSkillInstallPolicy(homeDir = home),
+            runStartupWarmups = false,
+            scopeDispatcher = testDispatcher,
+        )
+
+        coordinatorEventHub(coordinator).publishUiIntent(UiIntent.SelectSettingsSection(SettingsSection.SKILLS))
+        waitUntil(2_000) { sidePanelStore.state.value.skillsHasLoadedSnapshot }
+        coordinatorEventHub(coordinator).publishUiIntent(UiIntent.OpenSkillImportDirectoryPicker)
+
+        waitUntil(2_000) {
+            sidePanelStore.state.value.skillImportDialogState?.phase ==
+                com.auracode.assistant.toolwindow.shell.SkillImportDialogPhase.FAILED
+        }
+
+        assertFalse(home.resolve(".codex/skills").exists())
+        assertEquals(
+            "The selected directory does not contain any valid skills. Import requires at least one SKILL.md file.",
+            sidePanelStore.state.value.skillImportDialogState?.message,
+        )
+        assertEquals(
+            "The selected directory does not contain any valid skills. Import requires at least one SKILL.md file.",
+            (executionStatusStore.state.value.toast?.text as com.auracode.assistant.toolwindow.shared.UiText.Raw).value,
+        )
+
+        coordinator.dispose()
+        service.dispose()
+    }
+
     private fun waitUntil(timeoutMs: Long, condition: () -> Boolean) {
         val start = System.currentTimeMillis()
         while (!condition()) {

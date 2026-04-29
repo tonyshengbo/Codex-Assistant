@@ -1,6 +1,8 @@
 package com.auracode.assistant.toolwindow.eventing
 
 import com.auracode.assistant.conversation.ConversationSummary
+import com.auracode.assistant.toolwindow.history.HistoryConversationOpenAction
+import com.auracode.assistant.toolwindow.history.HistoryConversationOpenResolver
 import com.auracode.assistant.toolwindow.history.formatConversationExportMarkdown
 import com.auracode.assistant.toolwindow.history.suggestConversationExportFileName
 import com.auracode.assistant.toolwindow.shared.UiText
@@ -9,6 +11,8 @@ internal class ConversationHistoryHandler(
     private val context: ToolWindowCoordinatorContext,
     private val onResetPlanFlowState: () -> Unit,
 ) {
+    private val openResolver = HistoryConversationOpenResolver()
+
     fun loadHistoryConversations(reset: Boolean) {
         val sidePanelState = context.sidePanelStore.state.value
         if (sidePanelState.historyLoading) return
@@ -39,12 +43,44 @@ internal class ConversationHistoryHandler(
     }
 
     fun openRemoteConversation(remoteConversationId: String, title: String) {
-        context.chatService.openRemoteConversation(
-            remoteConversationId = remoteConversationId,
-            suggestedTitle = title,
-        ) ?: return
-        context.publishSessionSnapshot()
-        restoreCurrentSessionHistory()
+        val targetRemoteConversationId = remoteConversationId.trim()
+        if (targetRemoteConversationId.isBlank()) return
+        val currentSessionId = context.activeSessionId()
+        val providerId = context.chatService.sessionProviderId(currentSessionId)
+        val action = openResolver.resolve(
+            remoteConversationId = targetRemoteConversationId,
+            activeSessionId = currentSessionId,
+            sessions = context.chatService.listSessions(),
+            openSessionTabIds = context.openSessionTabIds(),
+        )
+        when (action) {
+            is HistoryConversationOpenAction.SwitchToExistingSession -> {
+                context.activateSessionTab(action.sessionId)
+            }
+
+            HistoryConversationOpenAction.ReuseActiveEmptySession -> {
+                val bound = context.chatService.bindRemoteConversationToEmptySession(
+                    sessionId = currentSessionId,
+                    remoteConversationId = targetRemoteConversationId,
+                    suggestedTitle = title,
+                    providerId = providerId,
+                )
+                if (!bound) return
+                context.publishSessionSnapshot()
+                restoreCurrentSessionHistory()
+            }
+
+            HistoryConversationOpenAction.OpenInNewSessionTab -> {
+                val sessionId = context.chatService.createSessionForRemoteConversation(
+                    remoteConversationId = targetRemoteConversationId,
+                    suggestedTitle = title,
+                    providerId = providerId,
+                ) ?: return
+                if (!context.openSessionInNewTab(sessionId)) return
+            }
+
+            HistoryConversationOpenAction.NoOp -> return
+        }
         context.eventHub.publishUiIntent(UiIntent.CloseSidePanel)
         context.onSessionSnapshotPublished()
     }

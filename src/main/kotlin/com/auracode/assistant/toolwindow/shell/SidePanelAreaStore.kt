@@ -20,6 +20,7 @@ import com.auracode.assistant.provider.runtime.RuntimeExecutableCheckResult
 import com.auracode.assistant.toolwindow.eventing.AppEvent
 import com.auracode.assistant.toolwindow.eventing.UiIntent
 import com.auracode.assistant.toolwindow.settings.EnvironmentDraftState
+import com.auracode.assistant.toolwindow.settings.McpSettingsTab
 import com.auracode.assistant.toolwindow.settings.RuntimeSettingsTab
 import com.auracode.assistant.toolwindow.settings.SettingsSection
 import com.auracode.assistant.toolwindow.settings.SkillsSettingsTab
@@ -83,6 +84,8 @@ internal data class SidePanelAreaState(
     val skillsLoading: Boolean = false,
     val skillsHasLoadedSnapshot: Boolean = false,
     val skillsActiveTogglePath: String? = null,
+    val skillImportDialogState: SkillImportDialogState? = null,
+    val mcpSettingsTab: McpSettingsTab = McpSettingsTab.CODEX,
     val mcpSettingsPage: McpSettingsPage = McpSettingsPage.LIST,
     val mcpServers: List<McpServerSummary> = emptyList(),
     val editingMcpName: String? = null,
@@ -115,7 +118,9 @@ internal data class SidePanelAreaState(
         get() = settingsSection == SettingsSection.AGENTS && agentSettingsPage == AgentSettingsPage.EDITOR
 
     val isMcpEditorDialogVisible: Boolean
-        get() = settingsSection == SettingsSection.MCP && mcpSettingsPage == McpSettingsPage.EDITOR
+        get() = settingsSection == SettingsSection.MCP &&
+            mcpSettingsTab == McpSettingsTab.CODEX &&
+            mcpSettingsPage == McpSettingsPage.EDITOR
 }
 
 internal class SidePanelAreaStore {
@@ -161,6 +166,14 @@ internal class SidePanelAreaStore {
 
                     is UiIntent.SelectSkillsSettingsTab -> {
                         _state.value = _state.value.copy(skillsSettingsTab = event.intent.tab)
+                    }
+
+                    is UiIntent.SelectMcpSettingsTab -> {
+                        _state.value = _state.value.copy(mcpSettingsTab = event.intent.tab)
+                    }
+
+                    UiIntent.DismissSkillImportDialog -> {
+                        _state.value = _state.value.copy(skillImportDialogState = null)
                     }
 
                     UiIntent.CloseSidePanel -> {
@@ -322,6 +335,10 @@ internal class SidePanelAreaStore {
                     skillsLoading = event.loading,
                     skillsActiveTogglePath = event.activePath?.takeIf { event.loading },
                 )
+            }
+
+            is AppEvent.SkillImportDialogStateChanged -> {
+                _state.value = _state.value.copy(skillImportDialogState = event.state)
             }
 
             is AppEvent.SessionSnapshotUpdated -> {

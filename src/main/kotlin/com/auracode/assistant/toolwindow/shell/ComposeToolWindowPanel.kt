@@ -197,6 +197,14 @@ class ComposeToolWindowPanel(
         revealPathInFileManager = { path ->
             revealPathInFileManager(path)
         },
+        openSessionTabIds = {
+            if (::sessionTabCoordinator.isInitialized) sessionTabCoordinator.openSessionTabIds() else emptySet()
+        },
+        activateSessionTab = { sessionId ->
+            if (::sessionTabCoordinator.isInitialized) {
+                sessionTabCoordinator.switchToSession(sessionId)
+            }
+        },
         openSessionInNewTab = { sessionId ->
             sessionTabCoordinator.openExistingSessionInNewTab(sessionId)
         },

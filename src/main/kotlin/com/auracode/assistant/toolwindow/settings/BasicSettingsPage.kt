@@ -71,30 +71,22 @@ internal fun BasicSettingsPage(
                 modifier = Modifier.width(220.dp),
             )
         }
-        SettingsField(
+        SettingsToggleField(
             p = p,
             title = AuraCodeBundle.message("settings.autoContext.label"),
             description = AuraCodeBundle.message("settings.autoContext.hint"),
-        ) {
-            SettingsToggle(
-                p = p,
-                checked = state.autoContextEnabled,
-                onCheckedChange = { onIntent(UiIntent.EditSettingsAutoContextEnabled(it)) },
-            )
-        }
-        SettingsField(
+            checked = state.autoContextEnabled,
+            onCheckedChange = { onIntent(UiIntent.EditSettingsAutoContextEnabled(it)) },
+        )
+        SettingsToggleField(
             p = p,
             title = AuraCodeBundle.message("settings.backgroundNotifications.label"),
             description = AuraCodeBundle.message("settings.backgroundNotifications.hint"),
-        ) {
-            SettingsToggle(
-                p = p,
-                checked = state.backgroundCompletionNotificationsEnabled,
-                onCheckedChange = {
-                    onIntent(UiIntent.EditSettingsBackgroundCompletionNotificationsEnabled(it))
-                },
-            )
-        }
+            checked = state.backgroundCompletionNotificationsEnabled,
+            onCheckedChange = {
+                onIntent(UiIntent.EditSettingsBackgroundCompletionNotificationsEnabled(it))
+            },
+        )
     }
 }
 

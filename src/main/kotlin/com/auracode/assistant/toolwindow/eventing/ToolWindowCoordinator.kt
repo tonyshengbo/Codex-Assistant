@@ -84,6 +84,8 @@ internal class ToolWindowCoordinator(
     private val openConversationFileChange: (ConversationFileChange) -> Unit = {},
     private val openConversationFilePath: (String) -> Unit = {},
     private val revealPathInFileManager: (String) -> Boolean = { false },
+    private val openSessionTabIds: () -> Set<String> = { emptySet() },
+    private val activateSessionTab: (String) -> Unit = {},
     private val openSessionInNewTab: (String) -> Boolean = { true },
     private val localSkillInstallPolicy: LocalSkillInstallPolicy = LocalSkillInstallPolicy(),
     private val skillRootScanner: SkillRootScanner = SkillRootScanner(),
@@ -179,6 +181,9 @@ internal class ToolWindowCoordinator(
         openConversationFileChange = openConversationFileChange,
         openConversationFilePath = openConversationFilePath,
         revealPathInFileManager = revealPathInFileManager,
+        openSessionTabIds = openSessionTabIds,
+        activateSessionTab = activateSessionTab,
+        openSessionInNewTab = openSessionInNewTab,
         localSkillInstallPolicy = localSkillInstallPolicy,
         skillRootScanner = skillRootScanner,
         skillProjectionManager = skillProjectionManager,
@@ -312,6 +317,7 @@ internal class ToolWindowCoordinator(
             is UiIntent.SelectSettingsSection -> settingsHandler.onSettingsSectionSelected(intent.section)
             is UiIntent.SelectRuntimeSettingsTab -> settingsHandler.onRuntimeSettingsTabSelected(intent.tab)
             is UiIntent.SelectSkillsSettingsTab -> settingsHandler.onSkillsSettingsTabSelected(intent.tab)
+            is UiIntent.SelectMcpSettingsTab -> settingsHandler.onMcpSettingsTabSelected(intent.tab)
             UiIntent.DiscardRuntimeSettingsChanges -> {
                 settingsHandler.onRuntimeSettingsTabSelected(sidePanelStore.state.value.runtimeSettingsTab)
             }
@@ -390,7 +396,7 @@ internal class ToolWindowCoordinator(
             is UiIntent.RevealSkillPath -> settingsHandler.revealSkillPath(intent.path)
             is UiIntent.UninstallSkill -> settingsHandler.uninstallSkill(intent.name, intent.path)
             UiIntent.CreateNewMcpDraft -> settingsHandler.loadMcpEditorDraft()
-            is UiIntent.SelectMcpServerForEdit -> settingsHandler.loadMcpEditorDraft()
+            is UiIntent.SelectMcpServerForEdit -> settingsHandler.loadMcpEditorDraft(intent.name)
             UiIntent.SaveMcpDraft -> settingsHandler.saveMcpDraft()
             is UiIntent.ToggleMcpServerEnabled -> settingsHandler.toggleMcpServerEnabled(intent.name, intent.enabled)
             is UiIntent.DeleteMcpServer -> settingsHandler.deleteMcpServer(intent.name)

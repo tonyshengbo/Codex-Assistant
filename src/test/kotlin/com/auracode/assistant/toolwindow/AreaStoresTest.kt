@@ -35,6 +35,8 @@ import com.auracode.assistant.toolwindow.shell.SidePanelAreaStore
 import com.auracode.assistant.toolwindow.shell.AgentSettingsPage
 import com.auracode.assistant.toolwindow.shell.McpSettingsPage
 import com.auracode.assistant.toolwindow.shell.SidePanelKind
+import com.auracode.assistant.toolwindow.shell.SkillImportDialogPhase
+import com.auracode.assistant.toolwindow.shell.SkillImportDialogState
 import com.auracode.assistant.toolwindow.settings.RuntimeSettingsTab
 import com.auracode.assistant.toolwindow.settings.SettingsSection
 import com.auracode.assistant.toolwindow.eventing.AppEvent
@@ -438,6 +440,25 @@ class AreaStoresTest {
         assertTrue(store.state.value.skillsLoading)
         assertEquals(skill.path, store.state.value.skillsActiveTogglePath)
         assertEquals(listOf(skill), store.state.value.skills)
+    }
+
+    @Test
+    fun `skill import dialog state is stored and can be dismissed`() {
+        val store = SidePanelAreaStore()
+        val dialogState = SkillImportDialogState(
+            phase = SkillImportDialogPhase.FAILED,
+            title = "Import failed",
+            message = "No valid skills were found.",
+            sourcePath = "/tmp/cloudview-spec",
+        )
+
+        store.onEvent(AppEvent.SkillImportDialogStateChanged(dialogState))
+
+        assertEquals(dialogState, store.state.value.skillImportDialogState)
+
+        store.onEvent(AppEvent.UiIntentPublished(UiIntent.DismissSkillImportDialog))
+
+        assertNull(store.state.value.skillImportDialogState)
     }
 
     @Test

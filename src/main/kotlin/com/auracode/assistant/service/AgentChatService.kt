@@ -338,6 +338,78 @@ class AgentChatService private constructor(
         return updated
     }
 
+    /** Binds a known-empty session to a remote conversation without applying global session deduplication rules. */
+    fun bindRemoteConversationToEmptySession(
+        sessionId: String,
+        remoteConversationId: String,
+        suggestedTitle: String = "",
+        providerId: String = registry.defaultEngineId(),
+    ): Boolean {
+        val normalizedRemoteId = remoteConversationId.trim()
+        val normalizedProviderId = providerId.trim()
+        if (sessionId.isBlank() || normalizedRemoteId.isBlank() || normalizedProviderId.isBlank()) return false
+        val updated = synchronized(stateLock) {
+            val session = sessions[sessionId] ?: return@synchronized false
+            if (session.messageCount != 0 || session.remoteConversationId.isNotBlank()) {
+                return@synchronized false
+            }
+            session.providerId = normalizedProviderId
+            session.remoteConversationId = normalizedRemoteId
+            session.updatedAt = System.currentTimeMillis()
+            if (suggestedTitle.isNotBlank()) {
+                session.title = suggestedTitle.trim()
+            }
+            if (currentSessionId.isBlank()) {
+                currentSessionId = sessionId
+            }
+            true
+        }
+        if (updated) {
+            repository.markActiveSession(getCurrentSessionId())
+            persistSessionSnapshot(sessionId)
+        }
+        return updated
+    }
+
+    /** Creates a new session already bound to a remote conversation without switching the active session. */
+    fun createSessionForRemoteConversation(
+        remoteConversationId: String,
+        suggestedTitle: String = "",
+        providerId: String = registry.defaultEngineId(),
+    ): String? {
+        val normalizedRemoteId = remoteConversationId.trim()
+        val normalizedProviderId = providerId.trim()
+        if (normalizedRemoteId.isBlank() || normalizedProviderId.isBlank()) return null
+        val id = UUID.randomUUID().toString()
+        val now = System.currentTimeMillis()
+        synchronized(stateLock) {
+            sessions[id] = SessionData(
+                id = id,
+                providerId = normalizedProviderId,
+                createdAt = now,
+                title = suggestedTitle.trim(),
+                updatedAt = now,
+                messageCount = 0,
+                remoteConversationId = normalizedRemoteId,
+            )
+            sessionRuns.ensureSession(id)
+        }
+        repository.upsertSession(
+            PersistedChatSession(
+                id = id,
+                providerId = normalizedProviderId,
+                title = suggestedTitle.trim(),
+                createdAt = now,
+                updatedAt = now,
+                messageCount = 0,
+                remoteConversationId = normalizedRemoteId,
+                usageSnapshot = null,
+                isActive = false,
+            ),
+        )
+        return id
+    }
+
     /**
      * Resets the current session's engine binding so the next submission starts a fresh remote conversation.
      */

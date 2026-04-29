@@ -16,18 +16,16 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
 import com.auracode.assistant.i18n.AuraCodeBundle
 import com.auracode.assistant.toolwindow.shell.SidePanelAreaState
 import com.auracode.assistant.toolwindow.settings.SettingsSection
 import com.auracode.assistant.toolwindow.settings.presentation
+import com.auracode.assistant.toolwindow.shared.AssistantDialogFrame
 import com.auracode.assistant.toolwindow.eventing.UiIntent
 import com.auracode.assistant.toolwindow.shared.DesignPalette
 import com.auracode.assistant.toolwindow.shared.assistantUiTokens
@@ -167,7 +165,13 @@ internal fun SettingsOverlay(
                     }
 
                     SettingsSection.MCP -> {
-                        McpSettingsListPage(p = p, state = state, onIntent = onIntent)
+                        Column(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .verticalScroll(rememberScrollState()),
+                        ) {
+                            McpSettingsPage(p = p, state = state, onIntent = onIntent)
+                        }
                     }
 
                     SettingsSection.TOKEN_USAGE -> PlaceholderSettingsPage(
@@ -213,47 +217,37 @@ private fun McpEditorDialog(
     onIntent: (UiIntent) -> Unit,
 ) {
     val t = assistantUiTokens()
-    Dialog(
+    AssistantDialogFrame(
+        palette = p,
         onDismissRequest = { onIntent(UiIntent.ShowMcpSettingsList) },
-        properties = DialogProperties(
-            dismissOnBackPress = true,
-            dismissOnClickOutside = true,
-            usePlatformDefaultWidth = false,
-        ),
+        modifier = Modifier
+            .widthIn(min = 640.dp, max = 860.dp)
+            .fillMaxWidth(0.9f)
+            .heightIn(max = 720.dp),
     ) {
-        Box(
+        Column(
             modifier = Modifier
-                .widthIn(min = 640.dp, max = 860.dp)
-                .fillMaxWidth(0.9f)
-                .heightIn(max = 720.dp)
-                .background(p.appBg, RoundedCornerShape(t.spacing.lg))
-                .border(1.dp, p.markdownDivider.copy(alpha = 0.45f), RoundedCornerShape(t.spacing.lg))
-                .padding(horizontal = t.spacing.lg, vertical = t.spacing.lg),
+                .fillMaxSize()
+                .padding(top = 4.dp),
         ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(top = 4.dp),
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.Top,
+                horizontalArrangement = Arrangement.spacedBy(t.spacing.md),
             ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.Top,
-                    horizontalArrangement = Arrangement.spacedBy(t.spacing.md),
-                ) {
-                    PanelHeader(
-                        p = p,
-                        title = AuraCodeBundle.message("settings.mcp.editor.title"),
-                        subtitle = AuraCodeBundle.message("settings.mcp.editor.subtitle"),
-                    )
-                    OverlayCloseButton(
-                        p = p,
-                        onClick = { onIntent(UiIntent.ShowMcpSettingsList) },
-                    )
-                }
-                Spacer(Modifier.height(t.spacing.lg))
-                Box(modifier = Modifier.weight(1f)) {
-                    McpSettingsEditorPage(p = p, state = state, onIntent = onIntent)
-                }
+                PanelHeader(
+                    p = p,
+                    title = AuraCodeBundle.message("settings.mcp.editor.title"),
+                    subtitle = AuraCodeBundle.message("settings.mcp.editor.subtitle"),
+                )
+                OverlayCloseButton(
+                    p = p,
+                    onClick = { onIntent(UiIntent.ShowMcpSettingsList) },
+                )
+            }
+            Spacer(Modifier.height(t.spacing.lg))
+            Box(modifier = Modifier.weight(1f)) {
+                McpSettingsEditorPage(p = p, state = state, onIntent = onIntent)
             }
         }
     }

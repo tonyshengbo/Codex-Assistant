@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.OutlinedTextField
@@ -441,4 +442,33 @@ internal fun SettingsToggle(
             uncheckedTrackColor = p.topStripBg,
         ),
     )
+}
+
+/** Toggle 类设置项卡片：左侧标题+描述，右侧 Switch，与 SettingsField 容器样式对齐。 */
+@Composable
+internal fun SettingsToggleField(
+    p: DesignPalette,
+    title: String,
+    description: String,
+    checked: Boolean,
+    enabled: Boolean = true,
+    onCheckedChange: (Boolean) -> Unit,
+) {
+    val t = assistantUiTokens()
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(p.topBarBg.copy(alpha = 0.64f), RoundedCornerShape(t.spacing.lg))
+            .border(1.dp, p.markdownDivider.copy(alpha = 0.48f), RoundedCornerShape(t.spacing.lg))
+            .padding(horizontal = t.spacing.md, vertical = t.spacing.md),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(title, color = p.textPrimary, fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.body2)
+            Spacer(Modifier.height(t.spacing.xs))
+            Text(description, color = p.textMuted, style = MaterialTheme.typography.caption)
+        }
+        Spacer(Modifier.width(t.spacing.md))
+        SettingsToggle(p = p, checked = checked, enabled = enabled, onCheckedChange = onCheckedChange)
+    }
 }

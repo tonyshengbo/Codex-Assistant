@@ -102,6 +102,9 @@ internal class SessionTabCoordinator(
         refresh()
     }
 
+    /** Returns the session ids that are currently represented by open header tabs. */
+    fun openSessionTabIds(): Set<String> = LinkedHashSet(openSessionTabs)
+
     private fun openSessionTab(sessionId: String): Boolean {
         if (openSessionTabs.size >= MAX_OPEN_TABS && !openSessionTabs.contains(sessionId)) {
             onStatus(UiText.bundle("session.warn.maxTabs", MAX_OPEN_TABS))

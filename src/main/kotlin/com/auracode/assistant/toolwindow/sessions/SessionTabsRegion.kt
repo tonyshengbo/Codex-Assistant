@@ -10,10 +10,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.AlertDialog
 import androidx.compose.material.Icon
 import androidx.compose.material.Text
-import androidx.compose.material.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -27,6 +25,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import com.auracode.assistant.i18n.AuraCodeBundle
 import com.auracode.assistant.toolwindow.eventing.UiIntent
+import com.auracode.assistant.toolwindow.shared.AssistantDialogAction
+import com.auracode.assistant.toolwindow.shared.AssistantDialogStatePresentation
+import com.auracode.assistant.toolwindow.shared.AssistantDialogTone
+import com.auracode.assistant.toolwindow.shared.AssistantMessageDialog
 import com.auracode.assistant.toolwindow.shared.DesignPalette
 import com.auracode.assistant.toolwindow.shared.HoverTooltip
 import com.auracode.assistant.toolwindow.shared.assistantUiTokens
@@ -43,48 +45,60 @@ internal fun SessionTabsRegion(
     val displayTitle = state.title.trim().ifBlank { AuraCodeBundle.message("header.newChat") }
 
     if (showConfirmDialog) {
-        AlertDialog(
+        AssistantMessageDialog(
+            palette = p,
+            title = AuraCodeBundle.message("header.newDialog.title"),
+            message = AuraCodeBundle.message("header.newDialog.text"),
+            presentation = AssistantDialogStatePresentation(
+                tone = AssistantDialogTone.NEUTRAL,
+                showsProgressIndicator = false,
+                showsStatusBadge = false,
+                allowsDismiss = true,
+            ),
+            confirmAction = AssistantDialogAction(
+                label = AuraCodeBundle.message("header.newDialog.confirm"),
+                emphasized = true,
+                tone = AssistantDialogTone.ACCENT,
+                onClick = {
+                    showConfirmDialog = false
+                    onIntent(UiIntent.NewSession)
+                },
+            ),
+            dismissAction = AssistantDialogAction(
+                label = AuraCodeBundle.message("common.cancel"),
+                emphasized = false,
+                onClick = { showConfirmDialog = false },
+            ),
             onDismissRequest = { showConfirmDialog = false },
-            title = { Text(AuraCodeBundle.message("header.newDialog.title")) },
-            text = { Text(AuraCodeBundle.message("header.newDialog.text")) },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        showConfirmDialog = false
-                        onIntent(UiIntent.NewSession)
-                    },
-                ) {
-                    Text(AuraCodeBundle.message("header.newDialog.confirm"))
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showConfirmDialog = false }) {
-                    Text(AuraCodeBundle.message("common.cancel"))
-                }
-            },
         )
     }
 
     if (showNewTabConfirmDialog) {
-        AlertDialog(
+        AssistantMessageDialog(
+            palette = p,
+            title = AuraCodeBundle.message("header.newTabDialog.title"),
+            message = AuraCodeBundle.message("header.newTabDialog.text"),
+            presentation = AssistantDialogStatePresentation(
+                tone = AssistantDialogTone.NEUTRAL,
+                showsProgressIndicator = false,
+                showsStatusBadge = false,
+                allowsDismiss = true,
+            ),
+            confirmAction = AssistantDialogAction(
+                label = AuraCodeBundle.message("header.newTabDialog.confirm"),
+                emphasized = true,
+                tone = AssistantDialogTone.ACCENT,
+                onClick = {
+                    showNewTabConfirmDialog = false
+                    onIntent(UiIntent.NewTab)
+                },
+            ),
+            dismissAction = AssistantDialogAction(
+                label = AuraCodeBundle.message("common.cancel"),
+                emphasized = false,
+                onClick = { showNewTabConfirmDialog = false },
+            ),
             onDismissRequest = { showNewTabConfirmDialog = false },
-            title = { Text(AuraCodeBundle.message("header.newTabDialog.title")) },
-            text = { Text(AuraCodeBundle.message("header.newTabDialog.text")) },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        showNewTabConfirmDialog = false
-                        onIntent(UiIntent.NewTab)
-                    },
-                ) {
-                    Text(AuraCodeBundle.message("header.newTabDialog.confirm"))
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showNewTabConfirmDialog = false }) {
-                    Text(AuraCodeBundle.message("common.cancel"))
-                }
-            },
         )
     }
 

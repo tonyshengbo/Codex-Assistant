@@ -54,7 +54,7 @@ internal class ClaudeProviderEventMapper(
                                 explanation = null,
                                 steps = plan.steps,
                                 body = plan.body,
-                                presentation = ProviderRunningPlanPresentation.TIMELINE,
+                                presentation = ProviderRunningPlanPresentation.SUBMISSION_PANEL,
                             ),
                         )
                     } else {

@@ -13,10 +13,8 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.AlertDialog
 import androidx.compose.material.MaterialTheme
 import androidx.compose.material.Text
-import androidx.compose.material.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -31,8 +29,13 @@ import com.auracode.assistant.settings.skills.LocalSkillInstallPolicy
 import com.auracode.assistant.settings.skills.ManagedSkillEntry
 import com.auracode.assistant.toolwindow.shell.SidePanelAreaState
 import com.auracode.assistant.toolwindow.eventing.UiIntent
+import com.auracode.assistant.toolwindow.shared.AssistantDialogAction
+import com.auracode.assistant.toolwindow.shared.AssistantDialogStatePresentation
+import com.auracode.assistant.toolwindow.shared.AssistantDialogTone
 import com.auracode.assistant.toolwindow.shared.DesignPalette
+import com.auracode.assistant.toolwindow.shared.AssistantMessageDialog
 import com.auracode.assistant.toolwindow.shared.assistantUiTokens
+import com.auracode.assistant.toolwindow.shared.skillImportDialogPresentation
 
 @Composable
 internal fun SkillsSettingsPage(
@@ -47,33 +50,52 @@ internal fun SkillsSettingsPage(
     val showInitialLoading = state.skillsLoading && !state.skillsHasLoadedSnapshot
     val showNeutralShell = !state.skillsHasLoadedSnapshot && !state.skillsLoading
 
-    pendingUninstallSkill?.let { skill ->
-        AlertDialog(
-            onDismissRequest = { pendingUninstallSkill = null },
-            title = { Text(AuraCodeBundle.message("settings.skills.uninstall.confirm.title")) },
-            text = {
-                Text(
-                    AuraCodeBundle.message("settings.skills.uninstall.confirm.body", skill.name),
-                    color = p.textSecondary,
-                    style = MaterialTheme.typography.body2,
+    state.skillImportDialogState?.let { dialogState ->
+        AssistantMessageDialog(
+            palette = p,
+            title = dialogState.title,
+            message = dialogState.message,
+            presentation = skillImportDialogPresentation(dialogState.phase),
+            confirmAction = if (dialogState.dismissible) {
+                AssistantDialogAction(
+                    label = AuraCodeBundle.message("common.close"),
+                    emphasized = false,
+                    onClick = { onIntent(UiIntent.DismissSkillImportDialog) },
                 )
+            } else {
+                null
             },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        expandedMenuPath = null
-                        pendingUninstallSkill = null
-                        onIntent(UiIntent.UninstallSkill(name = skill.name, path = skill.path))
-                    },
-                ) {
-                    Text(AuraCodeBundle.message("settings.skills.uninstall"))
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { pendingUninstallSkill = null }) {
-                    Text(AuraCodeBundle.message("common.cancel"))
-                }
-            },
+            onDismissRequest = { onIntent(UiIntent.DismissSkillImportDialog) },
+        )
+    }
+
+    pendingUninstallSkill?.let { skill ->
+        AssistantMessageDialog(
+            palette = p,
+            title = AuraCodeBundle.message("settings.skills.uninstall.confirm.title"),
+            message = AuraCodeBundle.message("settings.skills.uninstall.confirm.body", skill.name),
+            presentation = AssistantDialogStatePresentation(
+                tone = AssistantDialogTone.DANGER,
+                showsProgressIndicator = false,
+                showsStatusBadge = true,
+                allowsDismiss = true,
+            ),
+            confirmAction = AssistantDialogAction(
+                label = AuraCodeBundle.message("settings.skills.uninstall"),
+                emphasized = true,
+                tone = AssistantDialogTone.DANGER,
+                onClick = {
+                    expandedMenuPath = null
+                    pendingUninstallSkill = null
+                    onIntent(UiIntent.UninstallSkill(name = skill.name, path = skill.path))
+                },
+            ),
+            dismissAction = AssistantDialogAction(
+                label = AuraCodeBundle.message("common.cancel"),
+                emphasized = false,
+                onClick = { pendingUninstallSkill = null },
+            ),
+            onDismissRequest = { pendingUninstallSkill = null },
         )
     }
 

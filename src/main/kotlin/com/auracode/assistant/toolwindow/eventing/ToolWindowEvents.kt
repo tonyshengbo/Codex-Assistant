@@ -36,6 +36,7 @@ import com.auracode.assistant.toolwindow.execution.ToolUserInputPromptUiModel
 import com.auracode.assistant.toolwindow.settings.RuntimeSettingsTab
 import com.auracode.assistant.toolwindow.settings.SettingsSection
 import com.auracode.assistant.toolwindow.settings.SkillsSettingsTab
+import com.auracode.assistant.toolwindow.settings.McpSettingsTab
 import com.auracode.assistant.toolwindow.shared.UiText
 import com.auracode.assistant.toolwindow.execution.ExecutionTurnStatusUiState
 import com.auracode.assistant.toolwindow.conversation.ConversationFileChange
@@ -141,6 +142,7 @@ internal sealed interface UiIntent {
     data class SelectSettingsSection(val section: SettingsSection) : UiIntent
     data class SelectRuntimeSettingsTab(val tab: RuntimeSettingsTab) : UiIntent
     data class SelectSkillsSettingsTab(val tab: SkillsSettingsTab) : UiIntent
+    data class SelectMcpSettingsTab(val tab: McpSettingsTab) : UiIntent
     data class EditSettingsCodexCliPath(val value: String) : UiIntent
     data class EditSettingsClaudeCliPath(val value: String) : UiIntent
     data class EditSettingsNodePath(val value: String) : UiIntent
@@ -168,6 +170,7 @@ internal sealed interface UiIntent {
     data object RefreshSkills : UiIntent
     data object OpenSkillImportDirectoryPicker : UiIntent
     data class ImportSkillRoot(val path: String) : UiIntent
+    data object DismissSkillImportDialog : UiIntent
     data class ToggleSkillEnabled(val name: String, val path: String, val enabled: Boolean) : UiIntent
     data class OpenSkillPath(val path: String) : UiIntent
     data class RevealSkillPath(val path: String) : UiIntent
@@ -288,6 +291,7 @@ internal sealed interface AppEvent {
         val loading: Boolean,
         val activePath: String? = null,
     ) : AppEvent
+    data class SkillImportDialogStateChanged(val state: com.auracode.assistant.toolwindow.shell.SkillImportDialogState?) : AppEvent
     data class McpServersLoaded(val servers: List<McpServerSummary>) : AppEvent
     data class McpDraftLoaded(val draft: McpServerDraft) : AppEvent
     data class McpStatusesUpdated(val statuses: Map<String, McpRuntimeStatus>) : AppEvent

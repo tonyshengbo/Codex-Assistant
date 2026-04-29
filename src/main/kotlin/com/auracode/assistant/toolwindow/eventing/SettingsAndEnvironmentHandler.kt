@@ -17,7 +17,11 @@ import com.auracode.assistant.settings.mcp.validate
 import com.auracode.assistant.toolwindow.settings.RuntimeSettingsTab
 import com.auracode.assistant.toolwindow.settings.SettingsSection
 import com.auracode.assistant.toolwindow.settings.SkillsSettingsTab
+import com.auracode.assistant.toolwindow.settings.McpSettingsTab
+import com.auracode.assistant.toolwindow.settings.mcpSettingsTabForEngine
 import com.auracode.assistant.toolwindow.settings.skillsSettingsTabForEngine
+import com.auracode.assistant.toolwindow.shell.SkillImportDialogPhase
+import com.auracode.assistant.toolwindow.shell.SkillImportDialogState
 import com.auracode.assistant.toolwindow.shared.UiText
 import com.intellij.notification.NotificationAction
 import com.intellij.notification.NotificationType
@@ -535,37 +539,57 @@ internal class SettingsAndEnvironmentHandler(
     fun importSkillRoot(path: String) {
         val normalizedPath = path.trim()
         if (normalizedPath.isBlank()) return
+        context.eventHub.publish(
+            AppEvent.SkillImportDialogStateChanged(
+                SkillImportDialogState(
+                    phase = SkillImportDialogPhase.IN_PROGRESS,
+                    title = AuraCodeBundle.message("settings.skills.import.dialog.progress.title"),
+                    message = AuraCodeBundle.message("settings.skills.import.dialog.progress.message", normalizedPath),
+                    sourcePath = normalizedPath,
+                ),
+            ),
+        )
         context.eventHub.publish(AppEvent.SkillsLoadingChanged(loading = true, activePath = normalizedPath))
         context.coroutineLauncher.launch("importSkillRoot($normalizedPath)") {
             runCatching {
                 val targetEngineId = currentSkillsEngineId()
                 val scanResult = context.skillRootScanner.scan(Path.of(normalizedPath))
                 require(scanResult.skills.isNotEmpty()) {
-                    AuraCodeBundle.message("settings.skills.import.empty")
+                    AuraCodeBundle.message("settings.skills.import.empty.detail")
                 }
                 context.skillProjectionManager.projectForEngine(targetEngineId, scanResult.skills)
                 context.skillsRuntimeService.invalidateEngine(targetEngineId)
                 publishSkillsSnapshot(forceReload = true, engineId = targetEngineId)
-                context.eventHub.publish(
-                    AppEvent.StatusTextUpdated(
-                        UiText.raw(
-                            AuraCodeBundle.message(
-                                "settings.skills.import.success",
-                                scanResult.skills.size.toString(),
-                                skillsEngineLabel(targetEngineId),
-                            ),
-                        ),
-                    ),
+                val successMessage = AuraCodeBundle.message(
+                    "settings.skills.import.success",
+                    scanResult.skills.size.toString(),
+                    skillsEngineLabel(targetEngineId),
                 )
+                context.eventHub.publish(AppEvent.SkillImportDialogStateChanged(
+                    SkillImportDialogState(
+                        phase = SkillImportDialogPhase.SUCCEEDED,
+                        title = AuraCodeBundle.message("settings.skills.import.dialog.success.title"),
+                        message = successMessage,
+                        sourcePath = normalizedPath,
+                    ),
+                ))
+                context.eventHub.publish(AppEvent.StatusTextUpdated(UiText.raw(successMessage)))
             }.onFailure { error ->
+                val failureMessage = error.message ?: AuraCodeBundle.message(
+                    "settings.skills.import.failed",
+                    skillsEngineLabel(currentSkillsEngineId()),
+                )
+                context.eventHub.publish(AppEvent.SkillImportDialogStateChanged(
+                    SkillImportDialogState(
+                        phase = SkillImportDialogPhase.FAILED,
+                        title = AuraCodeBundle.message("settings.skills.import.dialog.failed.title"),
+                        message = failureMessage,
+                        sourcePath = normalizedPath,
+                    ),
+                ))
                 context.eventHub.publish(
                     AppEvent.StatusTextUpdated(
-                        UiText.raw(
-                            error.message ?: AuraCodeBundle.message(
-                                "settings.skills.import.failed",
-                                skillsEngineLabel(currentSkillsEngineId()),
-                            ),
-                        ),
+                        UiText.raw(failureMessage),
                     ),
                 )
             }
@@ -626,19 +650,41 @@ internal class SettingsAndEnvironmentHandler(
         }
     }
 
-    fun loadMcpEditorDraft() {
+    fun loadMcpEditorDraft(name: String? = null) {
         updateMcpBusy { copy(loading = true) }
-        logMcpDiagnostic("MCP coroutine scheduled: label=loadMcpEditorDraft | ${mcpContextSnapshot()}")
+        logMcpDiagnostic(
+            "MCP coroutine scheduled: label=loadMcpEditorDraft(name=${name ?: "<all>"}) | " +
+                mcpContextSnapshot(requestedName = name),
+        )
         context.coroutineLauncher.launch("loadMcpEditorDraft") {
-            logMcpDiagnostic("MCP coroutine start: label=loadMcpEditorDraft | ${mcpContextSnapshot()}")
+            logMcpDiagnostic(
+                "MCP coroutine start: label=loadMcpEditorDraft(name=${name ?: "<all>"}) | " +
+                    mcpContextSnapshot(requestedName = name),
+            )
             runCatching {
-                logMcpDiagnostic("MCP adapter call begin: label=loadMcpEditorDraft step=getEditorDraft | ${mcpContextSnapshot()}")
-                val draft = mcpAdapter().getEditorDraft()
-                logMcpDiagnostic("MCP adapter call success: label=loadMcpEditorDraft step=getEditorDraft | ${mcpContextSnapshot()}")
+                val adapter = mcpAdapter()
+                val draft = if (name.isNullOrBlank()) {
+                    logMcpDiagnostic("MCP adapter call begin: label=loadMcpEditorDraft step=getEditorDraft | ${mcpContextSnapshot()}")
+                    adapter.getEditorDraft().also {
+                        logMcpDiagnostic("MCP adapter call success: label=loadMcpEditorDraft step=getEditorDraft | ${mcpContextSnapshot()}")
+                    }
+                } else {
+                    logMcpDiagnostic(
+                        "MCP adapter call begin: label=loadMcpEditorDraft step=getServer | " +
+                            mcpContextSnapshot(requestedName = name),
+                    )
+                    adapter.getServer(name)?.also {
+                        logMcpDiagnostic(
+                            "MCP adapter call success: label=loadMcpEditorDraft step=getServer | " +
+                                mcpContextSnapshot(requestedName = name),
+                        )
+                    } ?: error("Failed to load MCP server '$name'.")
+                }
                 context.eventHub.publish(AppEvent.McpDraftLoaded(draft))
             }.onFailure { error ->
                 logMcpDiagnostic(
-                    message = "MCP coroutine handled failure: label=loadMcpEditorDraft | ${mcpContextSnapshot()}",
+                    message = "MCP coroutine handled failure: label=loadMcpEditorDraft(name=${name ?: "<all>"}) | " +
+                        mcpContextSnapshot(requestedName = name),
                     error = error,
                 )
                 context.eventHub.publish(
@@ -646,7 +692,10 @@ internal class SettingsAndEnvironmentHandler(
                 )
             }
             updateMcpBusy { copy(loading = false) }
-            logMcpDiagnostic("MCP coroutine finish: label=loadMcpEditorDraft | ${mcpContextSnapshot()}")
+            logMcpDiagnostic(
+                "MCP coroutine finish: label=loadMcpEditorDraft(name=${name ?: "<all>"}) | " +
+                    mcpContextSnapshot(requestedName = name),
+            )
         }
     }
 
@@ -673,14 +722,29 @@ internal class SettingsAndEnvironmentHandler(
                 val adapter = mcpAdapter()
                 val drafts = entries.map { entry ->
                     McpServerDraft(
+                        originalName = normalized.originalName,
                         name = entry.name,
                         configJson = McpServerDraft.entryConfigJson(entry.name, entry.config),
                     )
                 }
                 val savedNames = drafts.map { it.name.trim() }
-                logMcpDiagnostic("MCP adapter call begin: label=saveMcpDraft(count=${entries.size}) step=saveServers names=${savedNames.joinToString(",")} | ${mcpContextSnapshot()}")
-                adapter.saveServers(drafts)
-                logMcpDiagnostic("MCP adapter call success: label=saveMcpDraft(count=${entries.size}) step=saveServers names=${savedNames.joinToString(",")} | ${mcpContextSnapshot()}")
+                val isSingleServerEdit = normalized.originalName != null && drafts.size == 1
+                if (isSingleServerEdit) {
+                    val draft = drafts.single()
+                    logMcpDiagnostic(
+                        "MCP adapter call begin: label=saveMcpDraft(count=${entries.size}) step=saveServer name=${draft.name} | " +
+                            mcpContextSnapshot(requestedName = draft.originalName),
+                    )
+                    adapter.saveServer(draft)
+                    logMcpDiagnostic(
+                        "MCP adapter call success: label=saveMcpDraft(count=${entries.size}) step=saveServer name=${draft.name} | " +
+                            mcpContextSnapshot(requestedName = draft.originalName),
+                    )
+                } else {
+                    logMcpDiagnostic("MCP adapter call begin: label=saveMcpDraft(count=${entries.size}) step=saveServers names=${savedNames.joinToString(",")} | ${mcpContextSnapshot()}")
+                    adapter.saveServers(drafts)
+                    logMcpDiagnostic("MCP adapter call success: label=saveMcpDraft(count=${entries.size}) step=saveServers names=${savedNames.joinToString(",")} | ${mcpContextSnapshot()}")
+                }
                 context.eventHub.publish(
                     AppEvent.McpDraftLoaded(
                         normalized.copy(
@@ -811,6 +875,7 @@ internal class SettingsAndEnvironmentHandler(
             UiIntent.ShowMcpSettingsList,
             UiIntent.SaveMcpDraft -> true
             is UiIntent.SelectMcpServerForEdit,
+            is UiIntent.SelectMcpSettingsTab,
             is UiIntent.EditMcpDraftName,
             is UiIntent.EditMcpDraftJson,
             is UiIntent.ToggleMcpServerEnabled,
@@ -829,6 +894,7 @@ internal class SettingsAndEnvironmentHandler(
             UiIntent.CreateNewMcpDraft -> "CreateNewMcpDraft"
             UiIntent.ShowMcpSettingsList -> "ShowMcpSettingsList"
             UiIntent.SaveMcpDraft -> "SaveMcpDraft"
+            is UiIntent.SelectMcpSettingsTab -> "SelectMcpSettingsTab(tab=${intent.tab.name})"
             is UiIntent.TestMcpServer -> "TestMcpServer(name=${intent.name ?: "<draft>"})"
             is UiIntent.SelectMcpServerForEdit -> "SelectMcpServerForEdit(name=${intent.name})"
             is UiIntent.EditMcpDraftName -> "EditMcpDraftName"
@@ -844,7 +910,7 @@ internal class SettingsAndEnvironmentHandler(
     fun onSettingsDrawerOpened() {
         context.publishSettingsSnapshot()
         when (context.sidePanelStore.state.value.settingsSection) {
-            SettingsSection.MCP -> loadMcpServers()
+            SettingsSection.MCP -> selectMcpTabForCurrentEngine()
             SettingsSection.SKILLS -> selectSkillsTabForCurrentEngine()
             SettingsSection.BASIC -> Unit
             SettingsSection.RUNTIME -> refreshRuntimeChecksForCurrentState()
@@ -857,7 +923,7 @@ internal class SettingsAndEnvironmentHandler(
 
     fun onSettingsSectionSelected(section: SettingsSection) {
         when (section) {
-            SettingsSection.MCP -> loadMcpServers()
+            SettingsSection.MCP -> selectMcpTabForCurrentEngine()
             SettingsSection.SKILLS -> selectSkillsTabForCurrentEngine()
             SettingsSection.BASIC -> Unit
             SettingsSection.RUNTIME -> {
@@ -889,6 +955,14 @@ internal class SettingsAndEnvironmentHandler(
     /** Refreshes skills data using the selected Skills settings tab. */
     fun onSkillsSettingsTabSelected(tab: SkillsSettingsTab) {
         loadSkills(forceReload = false, engineIdOverride = tab.engineId)
+    }
+
+    /** Refreshes MCP data only for tabs backed by a real adapter. */
+    fun onMcpSettingsTabSelected(tab: McpSettingsTab) {
+        when (tab) {
+            McpSettingsTab.CODEX -> loadMcpServers()
+            McpSettingsTab.CLAUDE -> Unit
+        }
     }
 
     fun mcpContextSnapshotForLog(): String = mcpContextSnapshot()
@@ -943,6 +1017,12 @@ internal class SettingsAndEnvironmentHandler(
         val tab = skillsSettingsTabForEngine(context.currentEngineId())
         context.eventHub.publishUiIntent(UiIntent.SelectSkillsSettingsTab(tab))
         loadSkills(forceReload = false, engineIdOverride = tab.engineId)
+    }
+
+    /** Aligns the MCP page tab with the current engine before loading that engine's content. */
+    private fun selectMcpTabForCurrentEngine() {
+        val tab = mcpSettingsTabForEngine(context.currentEngineId())
+        context.eventHub.publishUiIntent(UiIntent.SelectMcpSettingsTab(tab))
     }
 
     /** Resolves the engine currently targeted by the Skills settings page. */

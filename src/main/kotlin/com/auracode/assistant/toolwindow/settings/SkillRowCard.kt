@@ -123,15 +123,21 @@ internal fun SkillScopeChip(
     label: String,
     p: DesignPalette,
 ) {
-    Text(
-        text = label,
-        color = p.textMuted,
-        fontSize = 10.sp,
+    Box(
         modifier = Modifier
             .background(p.topStripBg.copy(alpha = 0.6f), RoundedCornerShape(999.dp))
             .border(1.dp, p.markdownDivider.copy(alpha = 0.35f), RoundedCornerShape(999.dp))
+            .heightIn(min = 16.dp)
             .padding(horizontal = 6.dp, vertical = 2.dp),
-    )
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = label,
+            color = p.textMuted,
+            fontSize = 10.sp,
+            lineHeight = 10.sp,
+        )
+    }
 }
 
 /** Renders the overflow actions menu for one skill row. */
