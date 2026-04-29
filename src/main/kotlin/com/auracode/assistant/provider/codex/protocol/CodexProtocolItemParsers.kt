@@ -1,5 +1,6 @@
 package com.auracode.assistant.provider.codex.protocol
 
+import com.auracode.assistant.provider.codex.CodexImageGenerationSupport
 import com.auracode.assistant.diff.FileChangeMetrics
 import com.auracode.assistant.protocol.ItemKind
 import com.auracode.assistant.protocol.ItemStatus
@@ -118,6 +119,24 @@ internal class CodexProviderItemTypeParsers {
             status = status,
             name = server.takeIf { it.isNotBlank() }?.let { "mcp:$it" } ?: "mcp",
             text = CodexMcpToolContentFormatter.formatBody(item),
+        )
+    }
+
+    /**
+     * {"method":"item/started","params":{"item":{"type":"imageGeneration","id":"ig_x","status":"in_progress","revisedPrompt":null,"result":""},"threadId":"x","turnId":"x"}}
+     * {"method":"item/completed","params":{"item":{"type":"imageGeneration","id":"ig_x","status":"generating","revisedPrompt":"Mockup","result":"iVBOR..."},"threadId":"x","turnId":"x"}}
+     */
+    fun parseImageGeneration(
+        item: JsonObject,
+        status: ItemStatus,
+        assetNamespace: String,
+    ): ProviderItem {
+        val itemId = item.string("id") ?: "item-imageGeneration"
+        return CodexImageGenerationSupport.buildProviderItem(
+            item = item,
+            itemId = itemId,
+            status = status,
+            assetNamespace = assetNamespace,
         )
     }
 

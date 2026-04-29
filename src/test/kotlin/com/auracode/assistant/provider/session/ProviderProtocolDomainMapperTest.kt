@@ -6,6 +6,7 @@ import com.auracode.assistant.protocol.ProviderEvent
 import com.auracode.assistant.protocol.ProviderItem
 import com.auracode.assistant.protocol.ItemKind
 import com.auracode.assistant.protocol.ItemStatus
+import com.auracode.assistant.protocol.ProviderMessageAttachment
 import com.auracode.assistant.protocol.ProviderPlanStep
 import com.auracode.assistant.protocol.ProviderRunningPlanPresentation
 import com.auracode.assistant.protocol.ProviderToolUserInputPrompt
@@ -240,6 +241,49 @@ class ProviderProtocolDomainMapperTest {
         assertEquals("turn-1", event.plan.turnId)
         assertEquals("Working through plan", event.plan.explanation)
         assertEquals(SessionRunningPlanPresentation.SUBMISSION_PANEL, event.plan.presentation)
+    }
+
+    @Test
+    fun `maps narrative image attachments into assistant message event`() {
+        val mapper = ProviderProtocolDomainMapper(clock = { 42L })
+        mapper.map(
+            ProviderEvent.TurnStarted(
+                turnId = "turn-1",
+                threadId = "thread-1",
+            ),
+        )
+
+        val event = assertIs<SessionDomainEvent.MessageAppended>(
+            mapper.map(
+                ProviderEvent.ItemUpdated(
+                    ProviderItem(
+                        id = "ig_1",
+                        kind = ItemKind.NARRATIVE,
+                        status = ItemStatus.SUCCESS,
+                        name = "message",
+                        text = "Generated image",
+                        attachments = listOf(
+                            ProviderMessageAttachment(
+                                id = "att_1",
+                                kind = "image",
+                                displayName = "generated.png",
+                                assetPath = "/tmp/generated.png",
+                                originalPath = "/tmp/generated.png",
+                                mimeType = "image/png",
+                                sizeBytes = 123L,
+                                status = ItemStatus.SUCCESS,
+                            ),
+                        ),
+                    ),
+                ),
+            ).single(),
+        )
+
+        assertEquals("turn-1", event.turnId)
+        assertEquals("Generated image", event.text)
+        assertEquals(1, event.attachments.size)
+        assertEquals("image", event.attachments.single().kind)
+        assertEquals("/tmp/generated.png", event.attachments.single().assetPath)
     }
 
     /**

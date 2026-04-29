@@ -16,6 +16,8 @@ import com.auracode.assistant.settings.mcp.McpValidationErrors
 import com.auracode.assistant.settings.mcp.validate
 import com.auracode.assistant.toolwindow.settings.RuntimeSettingsTab
 import com.auracode.assistant.toolwindow.settings.SettingsSection
+import com.auracode.assistant.toolwindow.settings.SkillsSettingsTab
+import com.auracode.assistant.toolwindow.settings.skillsSettingsTabForEngine
 import com.auracode.assistant.toolwindow.shared.UiText
 import com.intellij.notification.NotificationAction
 import com.intellij.notification.NotificationType
@@ -364,11 +366,17 @@ internal class SettingsAndEnvironmentHandler(
         context.publishSettingsSnapshot()
     }
 
-    fun loadSkills(forceReload: Boolean = false) {
+    fun loadSkills(
+        forceReload: Boolean = false,
+        engineIdOverride: String? = null,
+    ) {
         context.eventHub.publish(AppEvent.SkillsLoadingChanged(loading = true))
         context.coroutineLauncher.launch("loadSkills") {
             runCatching {
-                publishSkillsSnapshot(forceReload = forceReload)
+                publishSkillsSnapshot(
+                    forceReload = forceReload,
+                    engineId = engineIdOverride ?: currentSkillsEngineId(),
+                )
             }.onFailure { error ->
                 context.eventHub.publish(
                     AppEvent.StatusTextUpdated(UiText.raw(error.message ?: "Failed to load runtime skills.")),
@@ -382,7 +390,10 @@ internal class SettingsAndEnvironmentHandler(
     fun warmSkillsRuntimeCache() {
         context.coroutineLauncher.launch("warmSkillsRuntimeCache") {
             runCatching {
-                publishSkillsSnapshot(forceReload = false)
+                publishSkillsSnapshot(
+                    forceReload = false,
+                    engineId = currentSkillsEngineId(),
+                )
             }
         }
     }
@@ -435,9 +446,12 @@ internal class SettingsAndEnvironmentHandler(
     }
 
     /** Reads the current runtime snapshot and publishes the unified skills page state. */
-    private suspend fun publishSkillsSnapshot(forceReload: Boolean) {
+    private suspend fun publishSkillsSnapshot(
+        forceReload: Boolean,
+        engineId: String,
+    ) {
         val snapshot = context.engineSkillsService.loadSkills(
-            engineId = context.chatService.defaultEngineId(),
+            engineId = engineId,
             cwd = context.chatService.currentWorkingDirectory(),
             forceReload = forceReload,
         )
@@ -459,7 +473,7 @@ internal class SettingsAndEnvironmentHandler(
         context.coroutineLauncher.launch("toggleSkillEnabled($name,$enabled)") {
             runCatching {
                 val snapshot = context.engineSkillsService.setSkillEnabled(
-                    engineId = context.chatService.defaultEngineId(),
+                    engineId = currentSkillsEngineId(),
                     cwd = context.chatService.currentWorkingDirectory(),
                     name = name,
                     path = path,
@@ -507,7 +521,7 @@ internal class SettingsAndEnvironmentHandler(
         context.coroutineLauncher.launch("uninstallSkill($name)") {
             runCatching {
                 context.localSkillInstallPolicy.uninstall(path).getOrThrow()
-                publishSkillsSnapshot(forceReload = true)
+                publishSkillsSnapshot(forceReload = true, engineId = currentSkillsEngineId())
                 context.eventHub.publish(AppEvent.StatusTextUpdated(UiText.raw("Uninstalled local skill '$name'.")))
             }.onFailure { error ->
                 context.eventHub.publish(
@@ -524,20 +538,21 @@ internal class SettingsAndEnvironmentHandler(
         context.eventHub.publish(AppEvent.SkillsLoadingChanged(loading = true, activePath = normalizedPath))
         context.coroutineLauncher.launch("importSkillRoot($normalizedPath)") {
             runCatching {
+                val targetEngineId = currentSkillsEngineId()
                 val scanResult = context.skillRootScanner.scan(Path.of(normalizedPath))
                 require(scanResult.skills.isNotEmpty()) {
                     AuraCodeBundle.message("settings.skills.import.empty")
                 }
-                context.skillProjectionManager.projectAll(scanResult.skills)
-                context.skillsRuntimeService.invalidateEngine("codex")
-                context.skillsRuntimeService.invalidateEngine("claude")
-                publishSkillsSnapshot(forceReload = true)
+                context.skillProjectionManager.projectForEngine(targetEngineId, scanResult.skills)
+                context.skillsRuntimeService.invalidateEngine(targetEngineId)
+                publishSkillsSnapshot(forceReload = true, engineId = targetEngineId)
                 context.eventHub.publish(
                     AppEvent.StatusTextUpdated(
                         UiText.raw(
                             AuraCodeBundle.message(
                                 "settings.skills.import.success",
                                 scanResult.skills.size.toString(),
+                                skillsEngineLabel(targetEngineId),
                             ),
                         ),
                     ),
@@ -545,7 +560,12 @@ internal class SettingsAndEnvironmentHandler(
             }.onFailure { error ->
                 context.eventHub.publish(
                     AppEvent.StatusTextUpdated(
-                        UiText.raw(error.message ?: AuraCodeBundle.message("settings.skills.import.failed")),
+                        UiText.raw(
+                            error.message ?: AuraCodeBundle.message(
+                                "settings.skills.import.failed",
+                                skillsEngineLabel(currentSkillsEngineId()),
+                            ),
+                        ),
                     ),
                 )
             }
@@ -825,7 +845,7 @@ internal class SettingsAndEnvironmentHandler(
         context.publishSettingsSnapshot()
         when (context.sidePanelStore.state.value.settingsSection) {
             SettingsSection.MCP -> loadMcpServers()
-            SettingsSection.SKILLS -> loadSkills()
+            SettingsSection.SKILLS -> selectSkillsTabForCurrentEngine()
             SettingsSection.BASIC -> Unit
             SettingsSection.RUNTIME -> refreshRuntimeChecksForCurrentState()
             SettingsSection.AGENTS,
@@ -838,7 +858,7 @@ internal class SettingsAndEnvironmentHandler(
     fun onSettingsSectionSelected(section: SettingsSection) {
         when (section) {
             SettingsSection.MCP -> loadMcpServers()
-            SettingsSection.SKILLS -> loadSkills()
+            SettingsSection.SKILLS -> selectSkillsTabForCurrentEngine()
             SettingsSection.BASIC -> Unit
             SettingsSection.RUNTIME -> {
                 if (context.sidePanelStore.state.value.kind == com.auracode.assistant.toolwindow.shell.SidePanelKind.SETTINGS) {
@@ -864,6 +884,11 @@ internal class SettingsAndEnvironmentHandler(
                 refreshClaudeCliVersion(force = false, announceResult = false)
             }
         }
+    }
+
+    /** Refreshes skills data using the selected Skills settings tab. */
+    fun onSkillsSettingsTabSelected(tab: SkillsSettingsTab) {
+        loadSkills(forceReload = false, engineIdOverride = tab.engineId)
     }
 
     fun mcpContextSnapshotForLog(): String = mcpContextSnapshot()
@@ -910,6 +935,24 @@ internal class SettingsAndEnvironmentHandler(
                 refreshClaudeRuntimeCheck()
                 refreshClaudeCliVersion(force = false, announceResult = false)
             }
+        }
+    }
+
+    /** Aligns the Skills page tab with the current engine before loading that engine's skills. */
+    private fun selectSkillsTabForCurrentEngine() {
+        val tab = skillsSettingsTabForEngine(context.currentEngineId())
+        context.eventHub.publishUiIntent(UiIntent.SelectSkillsSettingsTab(tab))
+        loadSkills(forceReload = false, engineIdOverride = tab.engineId)
+    }
+
+    /** Resolves the engine currently targeted by the Skills settings page. */
+    private fun currentSkillsEngineId(): String = context.sidePanelStore.state.value.skillsSettingsTab.engineId
+
+    /** Builds the localized engine label used in Skills import status messages. */
+    private fun skillsEngineLabel(engineId: String): String {
+        return when (engineId.trim().lowercase()) {
+            SkillsSettingsTab.CLAUDE.engineId -> AuraCodeBundle.message("settings.runtime.tab.claude")
+            else -> AuraCodeBundle.message("settings.runtime.tab.codex")
         }
     }
 

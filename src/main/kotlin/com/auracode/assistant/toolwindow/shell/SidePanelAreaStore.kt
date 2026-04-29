@@ -22,6 +22,7 @@ import com.auracode.assistant.toolwindow.eventing.UiIntent
 import com.auracode.assistant.toolwindow.settings.EnvironmentDraftState
 import com.auracode.assistant.toolwindow.settings.RuntimeSettingsTab
 import com.auracode.assistant.toolwindow.settings.SettingsSection
+import com.auracode.assistant.toolwindow.settings.SkillsSettingsTab
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -67,6 +68,7 @@ internal data class SidePanelAreaState(
     val claudeRuntimeCheckResult: RuntimeExecutableCheckResult? = null,
     val settingsSection: SettingsSection = SettingsSection.BASIC,
     val runtimeSettingsTab: RuntimeSettingsTab = RuntimeSettingsTab.CODEX,
+    val skillsSettingsTab: SkillsSettingsTab = SkillsSettingsTab.CODEX,
     val savedAgents: List<SavedAgentDefinition> = emptyList(),
     val agentSettingsPage: AgentSettingsPage = AgentSettingsPage.LIST,
     val editingAgentId: String? = null,
@@ -155,6 +157,10 @@ internal class SidePanelAreaStore {
 
                     is UiIntent.SelectRuntimeSettingsTab -> {
                         _state.value = _state.value.copy(runtimeSettingsTab = event.intent.tab)
+                    }
+
+                    is UiIntent.SelectSkillsSettingsTab -> {
+                        _state.value = _state.value.copy(skillsSettingsTab = event.intent.tab)
                     }
 
                     UiIntent.CloseSidePanel -> {

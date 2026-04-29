@@ -149,6 +149,20 @@ class CodexProviderEventParserTest {
     }
 
     @Test
+    fun parsesImageGenerationCompletionFromActualLogShape() {
+        val event = CodexProviderEventParser.parseLine(
+            """{"method":"item/completed","params":{"item":{"type":"imageGeneration","id":"ig_1","status":"generating","revisedPrompt":"A polished settings mockup","result":"$ONE_PIXEL_PNG_BASE64"},"threadId":"thread-1","turnId":"turn-1"}}""",
+        )
+
+        val item = assertIs<ProviderEvent.ItemUpdated>(event).item
+        assertEquals(ItemKind.NARRATIVE, item.kind)
+        assertEquals(ItemStatus.SUCCESS, item.status)
+        assertEquals("message", item.name)
+        assertEquals("Generated image", item.text)
+        assertEquals(1, item.attachments.size)
+    }
+
+    @Test
     fun parsesFileChangeLifecycleWithDiffSummary() {
         val event = CodexProviderEventParser.parseLine(
             """{"method":"item/completed","params":{"item":{"type":"fileChange","id":"call_fc","status":"completed","changes":[{"path":"/tmp/a.kt","kind":{"type":"update","move_path":null},"old_content":"a\nb\n","new_content":"a\nb2\n"},{"path":"/tmp/b.kt","kind":{"type":"create","move_path":null}}]},"threadId":"thread-1","turnId":"turn-1"}}""",
@@ -241,3 +255,6 @@ class CodexProviderEventParserTest {
         assertNull(CodexProviderEventParser.parseLine("WARNING: partial status"))
     }
 }
+
+private const val ONE_PIXEL_PNG_BASE64 =
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a7mQAAAAASUVORK5CYII="

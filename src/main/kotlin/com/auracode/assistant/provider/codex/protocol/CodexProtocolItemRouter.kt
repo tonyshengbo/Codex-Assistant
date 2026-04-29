@@ -41,6 +41,11 @@ internal class CodexProviderItemTypeRouter(
             }
             CodexProviderItemTypeAliases.WEB_SEARCH -> typeParsers.parseWebSearch(item = item, status = status)
             CodexProviderItemTypeAliases.MCP_TOOL_CALL -> typeParsers.parseMcpToolCall(item = item, status = status)
+            CodexProviderItemTypeAliases.IMAGE_GENERATION -> typeParsers.parseImageGeneration(
+                item = item,
+                status = status,
+                assetNamespace = state.activeThreadId ?: state.activeTurnId ?: "codex",
+            )
             CodexProviderItemTypeAliases.PLAN -> typeParsers.parsePlan(item = item, status = status)
             CodexProviderItemTypeAliases.USER_MESSAGE -> typeParsers.parseUserMessage(item = item, status = status)
             else -> typeParsers.parseFallback(item = item, normalizedType = canonicalType, status = status)

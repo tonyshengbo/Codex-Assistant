@@ -28,6 +28,7 @@ import com.auracode.assistant.toolwindow.execution.ApprovalAreaStore
 import com.auracode.assistant.toolwindow.submission.SubmissionAreaStore
 import com.auracode.assistant.toolwindow.shell.SidePanelAreaStore
 import com.auracode.assistant.toolwindow.settings.SettingsSection
+import com.auracode.assistant.toolwindow.settings.SkillsSettingsTab
 import com.auracode.assistant.toolwindow.sessions.SessionTabsAreaStore
 import com.auracode.assistant.toolwindow.execution.ExecutionStatusAreaStore
 import com.auracode.assistant.toolwindow.conversation.ConversationAreaStore
@@ -469,8 +470,90 @@ class ToolWindowCoordinatorSkillTest {
         waitUntil(2_000) { sidePanelStore.state.value.skillsHasLoadedSnapshot }
 
         assertEquals("claude", sidePanelStore.state.value.skillsEngineId)
+        assertEquals(SkillsSettingsTab.CLAUDE, sidePanelStore.state.value.skillsSettingsTab)
         assertTrue(sidePanelStore.state.value.skillsRuntimeSupported)
         assertEquals(listOf("/runtime/claude/brainstorming/SKILL.md"), sidePanelStore.state.value.skills.map { it.path })
+
+        coordinator.dispose()
+        service.dispose()
+    }
+
+    @Test
+    fun `switching skills tab reloads the selected engine list`() {
+        val workingDir = createTempDirectory("coordinator-skill-tab-switch")
+        val settings = AgentSettingsService().apply {
+            setDefaultEngineId("claude")
+        }
+        val service = AgentChatService(
+            repository = com.auracode.assistant.persistence.chat.SQLiteChatSessionRepository(workingDir.resolve("chat.db")),
+            registry = registry(defaultEngineId = "claude"),
+            settings = settings,
+        )
+        val sidePanelStore = SidePanelAreaStore()
+        val codexAdapter = RecordingSkillsManagementAdapter(
+            records = mutableListOf(
+                RuntimeSkillRecord(
+                    name = "codex-skill",
+                    description = "Codex skill.",
+                    enabled = true,
+                    path = "/runtime/codex/codex-skill/SKILL.md",
+                    scopeLabel = "user",
+                ),
+            ),
+        )
+        val claudeAdapter = RecordingSkillsManagementAdapter(
+            records = mutableListOf(
+                RuntimeSkillRecord(
+                    name = "claude-skill",
+                    description = "Claude skill.",
+                    enabled = true,
+                    path = "/runtime/claude/claude-skill/SKILL.md",
+                    scopeLabel = "user",
+                ),
+            ),
+            adapterEngineId = "claude",
+        )
+        val runtimeService = SkillsRuntimeService(
+            SkillsManagementAdapterRegistry(
+                adapters = mapOf("codex" to codexAdapter, "claude" to claudeAdapter),
+                defaultEngineId = "claude",
+            ),
+        )
+        val engineSkillsService = EngineSkillsService(runtimeService = runtimeService)
+        val coordinator = ToolWindowCoordinator(
+            chatService = service,
+            settingsService = settings,
+            eventHub = ToolWindowEventHub(),
+            sessionTabsStore = SessionTabsAreaStore(),
+            executionStatusStore = ExecutionStatusAreaStore(),
+            conversationStore = ConversationAreaStore(),
+            submissionStore = SubmissionAreaStore(
+                availableSkillsProvider = {
+                    engineSkillsService.enabledSlashSkills("claude", workingDir.toString())
+                },
+            ),
+            sidePanelStore = sidePanelStore,
+            approvalStore = ApprovalAreaStore(),
+            skillsRuntimeService = runtimeService,
+            engineSkillsService = engineSkillsService,
+            runStartupWarmups = false,
+            scopeDispatcher = testDispatcher,
+        )
+
+        coordinatorEventHub(coordinator).publishUiIntent(UiIntent.SelectSettingsSection(SettingsSection.SKILLS))
+        waitUntil(2_000) { sidePanelStore.state.value.skillsHasLoadedSnapshot }
+        assertEquals("claude", sidePanelStore.state.value.skillsEngineId)
+        assertEquals(listOf("claude-skill"), sidePanelStore.state.value.skills.map { it.name })
+
+        coordinatorEventHub(coordinator).publishUiIntent(UiIntent.SelectSkillsSettingsTab(SkillsSettingsTab.CODEX))
+        waitUntil(2_000) {
+            sidePanelStore.state.value.skillsEngineId == "codex" &&
+                sidePanelStore.state.value.skills.map { it.name } == listOf("codex-skill")
+        }
+
+        assertEquals(SkillsSettingsTab.CODEX, sidePanelStore.state.value.skillsSettingsTab)
+        assertEquals("codex", sidePanelStore.state.value.skillsEngineId)
+        assertEquals(listOf("codex-skill"), sidePanelStore.state.value.skills.map { it.name })
 
         coordinator.dispose()
         service.dispose()
@@ -557,7 +640,7 @@ class ToolWindowCoordinatorSkillTest {
     }
 
     @Test
-    fun `import skill root projects skills for all engines and refreshes runtime list`() {
+    fun `import skill root copies skills into the selected engine only and refreshes runtime list`() {
         val home = createTempDirectory("coordinator-skill-import-home")
         val importRoot = createTempDirectory("coordinator-skill-import-root")
         val sourceSkillDir = importRoot.resolve("brainstorming").createDirectories()
@@ -588,6 +671,7 @@ class ToolWindowCoordinatorSkillTest {
                 defaultEngineId = "codex",
             ),
         )
+        home.resolve(".codex/skills/brainstorming").createDirectories().resolve("stale.txt").writeText("old")
         val coordinator = ToolWindowCoordinator(
             chatService = service,
             settingsService = settings,
@@ -602,7 +686,7 @@ class ToolWindowCoordinatorSkillTest {
             engineSkillsService = EngineSkillsService(runtimeService = runtimeService),
             pickSkillImportDirectory = { importRoot.toString() },
             skillRootScanner = SkillRootScanner(),
-            skillProjectionManager = SkillProjectionManager(resolver, "Linux"),
+            skillProjectionManager = SkillProjectionManager(resolver),
             localSkillInstallPolicy = LocalSkillInstallPolicy(homeDir = home),
             runStartupWarmups = false,
             scopeDispatcher = testDispatcher,
@@ -617,9 +701,10 @@ class ToolWindowCoordinatorSkillTest {
         }
 
         assertTrue(home.resolve(".codex/skills/brainstorming").exists())
-        assertTrue(home.resolve(".claude/skills/brainstorming").exists())
+        assertFalse(home.resolve(".claude/skills/brainstorming").exists())
+        assertFalse(home.resolve(".codex/skills/brainstorming/stale.txt").exists())
         assertEquals(
-            "Imported 1 skill(s).",
+            "Imported 1 skill(s) into Codex.",
             (executionStatusStore.state.value.toast?.text as com.auracode.assistant.toolwindow.shared.UiText.Raw).value,
         )
 
@@ -709,8 +794,9 @@ class ToolWindowCoordinatorSkillTest {
 
     private class RecordingSkillsManagementAdapter(
         val records: MutableList<RuntimeSkillRecord>,
+        private val adapterEngineId: String = "codex",
     ) : SkillsManagementAdapter {
-        override val engineId: String = "codex"
+        override val engineId: String = adapterEngineId
         var listCalls: Int = 0
         val toggleCalls = CopyOnWriteArrayList<String>()
 

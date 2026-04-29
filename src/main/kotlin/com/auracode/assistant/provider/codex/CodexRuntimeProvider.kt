@@ -588,6 +588,15 @@ internal class CodexRuntimeProvider(
                     text = extractText(item),
                 )
 
+                normalizedType == "imagegeneration" ||
+                    normalizedType == "image_generation" ||
+                    normalizedType == "image-generation" -> CodexImageGenerationSupport.buildProviderItem(
+                    item = item,
+                    itemId = sourceId,
+                    status = status,
+                    assetNamespace = requestId,
+                )
+
                 isWebSearchType(normalizedType) -> ProviderItem(
                     id = sourceId,
                     kind = ItemKind.TOOL_CALL,

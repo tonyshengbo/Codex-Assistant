@@ -8,6 +8,7 @@ internal object CodexProviderItemTypeAliases {
     const val CONTEXT_COMPACTION = "context_compaction"
     const val WEB_SEARCH = "web_search"
     const val MCP_TOOL_CALL = "mcp_tool_call"
+    const val IMAGE_GENERATION = "image_generation"
     const val PLAN = "plan"
     const val USER_MESSAGE = "user_message"
 
@@ -31,6 +32,9 @@ internal object CodexProviderItemTypeAliases {
         "mcptoolcall" to MCP_TOOL_CALL,
         "mcp_tool_call" to MCP_TOOL_CALL,
         "mcp-tool-call" to MCP_TOOL_CALL,
+        "imagegeneration" to IMAGE_GENERATION,
+        "image_generation" to IMAGE_GENERATION,
+        "image-generation" to IMAGE_GENERATION,
         "plan" to PLAN,
         "usermessage" to USER_MESSAGE,
         "user_message" to USER_MESSAGE,

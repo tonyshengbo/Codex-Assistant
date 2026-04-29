@@ -14,8 +14,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.AlertDialog
-import androidx.compose.material.Icon
-import androidx.compose.material.IconButton
 import androidx.compose.material.MaterialTheme
 import androidx.compose.material.Text
 import androidx.compose.material.TextButton
@@ -26,7 +24,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.auracode.assistant.i18n.AuraCodeBundle
@@ -84,6 +81,21 @@ internal fun SkillsSettingsPage(
         modifier = Modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(t.spacing.md),
     ) {
+        SettingsSegmentTabs(
+            p = p,
+            options = listOf(
+                AuraCodeBundle.message("settings.runtime.tab.codex"),
+                AuraCodeBundle.message("settings.runtime.tab.claude"),
+            ),
+            selectedIndex = if (state.skillsSettingsTab == SkillsSettingsTab.CODEX) 0 else 1,
+            onSelect = { index ->
+                onIntent(
+                    UiIntent.SelectSkillsSettingsTab(
+                        if (index == 0) SkillsSettingsTab.CODEX else SkillsSettingsTab.CLAUDE,
+                    ),
+                )
+            },
+        )
         SkillsPageHeader(p = p, state = state, onIntent = onIntent)
 
         if (!state.skillsRuntimeSupported && state.skillsEngineId == "codex") {
@@ -165,7 +177,7 @@ private fun SkillRow(
     )
 }
 
-/** Header row with title, subtitle, and Refresh action button. */
+/** Header row with title, subtitle, and low-emphasis icon actions. */
 @Composable
 private fun SkillsPageHeader(
     p: DesignPalette,
@@ -198,23 +210,20 @@ private fun SkillsPageHeader(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(t.spacing.xs),
         ) {
-            TextButton(
+            SettingsGhostIconButton(
+                p = p,
+                iconPath = "/icons/import-skill.svg",
+                contentDescription = AuraCodeBundle.message("settings.skills.import"),
+                enabled = !state.skillsLoading,
                 onClick = { onIntent(UiIntent.OpenSkillImportDirectoryPicker) },
+            )
+            SettingsGhostIconButton(
+                p = p,
+                iconPath = "/icons/refresh.svg",
+                contentDescription = AuraCodeBundle.message("settings.skills.refresh"),
                 enabled = !state.skillsLoading,
-            ) {
-                Text(AuraCodeBundle.message("settings.skills.import"))
-            }
-            IconButton(
                 onClick = { onIntent(UiIntent.RefreshSkills) },
-                enabled = !state.skillsLoading,
-            ) {
-                Icon(
-                    painter = painterResource("/icons/swap-vert.svg"),
-                    contentDescription = AuraCodeBundle.message("settings.skills.refresh"),
-                    tint = if (!state.skillsLoading) p.textSecondary else p.textMuted,
-                    modifier = Modifier.size(18.dp),
-                )
-            }
+            )
         }
     }
 }

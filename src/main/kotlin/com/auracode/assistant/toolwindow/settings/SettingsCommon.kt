@@ -3,6 +3,7 @@ package com.auracode.assistant.toolwindow.settings
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -197,6 +198,55 @@ internal fun SettingsActionButton(
         contentAlignment = Alignment.Center,
     ) {
         Text(text = text, color = textColor, style = MaterialTheme.typography.body2, fontWeight = FontWeight.Medium)
+    }
+}
+
+@Composable
+internal fun SettingsGhostIconButton(
+    p: DesignPalette,
+    iconPath: String,
+    contentDescription: String,
+    enabled: Boolean = true,
+    onClick: () -> Unit,
+) {
+    val t = assistantUiTokens()
+    val interactionSource = remember { MutableInteractionSource() }
+    HoverTooltip(text = contentDescription) {
+        Box(
+            modifier = Modifier
+                .size(t.controls.headerActionTouch)
+                .clip(RoundedCornerShape(t.spacing.sm))
+                .background(
+                    if (enabled) {
+                        p.topStripBg.copy(alpha = 0.24f)
+                    } else {
+                        p.topStripBg.copy(alpha = 0.14f)
+                    },
+                )
+                .border(
+                    width = 1.dp,
+                    color = if (enabled) {
+                        p.markdownDivider.copy(alpha = 0.18f)
+                    } else {
+                        p.markdownDivider.copy(alpha = 0.10f)
+                    },
+                    shape = RoundedCornerShape(t.spacing.sm),
+                )
+                .clickable(
+                    enabled = enabled,
+                    interactionSource = interactionSource,
+                    indication = null,
+                    onClick = onClick,
+                ),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                painter = painterResource(iconPath),
+                contentDescription = contentDescription,
+                tint = if (enabled) p.textSecondary.copy(alpha = 0.9f) else p.textMuted.copy(alpha = 0.72f),
+                modifier = Modifier.size(t.controls.iconMd),
+            )
+        }
     }
 }
 

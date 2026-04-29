@@ -95,4 +95,7 @@ internal class ToolWindowCoordinatorContext(
     fun pendingSubmissionQueue(sessionId: String): ArrayDeque<PendingSubmission> {
         return pendingSubmissionsBySessionId.getOrPut(sessionId) { ArrayDeque() }
     }
+
+    /** Returns the engine currently selected by the active session or settings defaults. */
+    fun currentEngineId(): String = chatService.defaultEngineId()
 }

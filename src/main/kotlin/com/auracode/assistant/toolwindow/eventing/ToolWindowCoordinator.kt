@@ -311,6 +311,7 @@ internal class ToolWindowCoordinator(
             UiIntent.LoadOlderMessages -> historyHandler.loadOlderMessages()
             is UiIntent.SelectSettingsSection -> settingsHandler.onSettingsSectionSelected(intent.section)
             is UiIntent.SelectRuntimeSettingsTab -> settingsHandler.onRuntimeSettingsTabSelected(intent.tab)
+            is UiIntent.SelectSkillsSettingsTab -> settingsHandler.onSkillsSettingsTabSelected(intent.tab)
             UiIntent.DiscardRuntimeSettingsChanges -> {
                 settingsHandler.onRuntimeSettingsTabSelected(sidePanelStore.state.value.runtimeSettingsTab)
             }

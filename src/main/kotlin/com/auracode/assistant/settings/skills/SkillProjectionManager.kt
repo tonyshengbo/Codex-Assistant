@@ -2,38 +2,39 @@ package com.auracode.assistant.settings.skills
 
 import java.nio.file.Files
 import java.nio.file.Path
+import java.nio.file.StandardCopyOption
+import java.nio.file.attribute.BasicFileAttributes
 import kotlin.io.path.createDirectories
 import kotlin.io.path.exists
 
-/** Creates engine-visible projections for imported skill directories. */
+/** Copies imported skills into engine-visible directories for the selected engine. */
 internal class SkillProjectionManager(
     private val directoryResolver: EngineSkillDirectoryResolver = EngineSkillDirectoryResolver(),
-    private val operatingSystemName: String = System.getProperty("os.name").orEmpty(),
 ) {
-    /** Projects all scanned skills into every supported engine directory. */
+    /** Copies all scanned skills into every supported engine directory. */
     fun projectAll(skills: List<ScannedSkillRootEntry>) {
         val engines = directoryResolver.supportedProjectionEngines()
-        ensureNoConflicts(skills = skills, engines = engines)
         engines.forEach { engineId ->
             projectForEngine(engineId = engineId, skills = skills)
         }
     }
 
-    /** Projects all scanned skills into one engine directory. */
+    /** Copies all scanned skills into one engine directory. */
     fun projectForEngine(engineId: String, skills: List<ScannedSkillRootEntry>) {
         val targetRoot = directoryResolver.projectionDirectory(engineId)
         targetRoot.createDirectories()
+        ensureNoDuplicateImportedNames(skills)
         skills.forEach { skill ->
             val target = targetRoot.resolve(skill.name)
             if (target.exists()) {
-                error("Skill '${skill.name}' already exists in '${targetRoot}'.")
+                deleteRecursively(target)
             }
-            createDirectoryProjection(source = skill.skillDir, target = target)
+            copyDirectory(source = skill.skillDir, target = target)
         }
     }
 
-    /** Validates that no projection target already exists before creating anything. */
-    fun ensureNoConflicts(skills: List<ScannedSkillRootEntry>, engines: List<String> = directoryResolver.supportedProjectionEngines()) {
+    /** Validates that the imported scan result does not contain duplicate skill names. */
+    fun ensureNoDuplicateImportedNames(skills: List<ScannedSkillRootEntry>) {
         skills.groupBy { it.name }
             .filterValues { it.size > 1 }
             .keys
@@ -41,43 +42,58 @@ internal class SkillProjectionManager(
             ?.let { duplicateName ->
                 error("Duplicate imported skill '$duplicateName' was found in the selected root.")
             }
-        engines.forEach { engineId ->
-            val targetRoot = directoryResolver.projectionDirectory(engineId)
-            skills.firstOrNull { targetRoot.resolve(it.name).exists() }?.let { conflict ->
-                error("Skill '${conflict.name}' already exists in '${targetRoot}'.")
-            }
-        }
     }
 
-    private fun createDirectoryProjection(source: Path, target: Path) {
-        if (isWindows()) {
-            createWindowsJunction(source = source, target = target)
-        } else {
-            Files.createSymbolicLink(target, source)
-        }
+    /** Copies one source skill directory into its destination directory. */
+    private fun copyDirectory(source: Path, target: Path) {
+        Files.walkFileTree(
+            source,
+            object : java.nio.file.SimpleFileVisitor<Path>() {
+                override fun preVisitDirectory(
+                    dir: Path,
+                    attrs: BasicFileAttributes,
+                ): java.nio.file.FileVisitResult {
+                    Files.createDirectories(target.resolve(source.relativize(dir).toString()))
+                    return java.nio.file.FileVisitResult.CONTINUE
+                }
+
+                override fun visitFile(
+                    file: Path,
+                    attrs: BasicFileAttributes,
+                ): java.nio.file.FileVisitResult {
+                    Files.copy(
+                        file,
+                        target.resolve(source.relativize(file).toString()),
+                        StandardCopyOption.REPLACE_EXISTING,
+                    )
+                    return java.nio.file.FileVisitResult.CONTINUE
+                }
+            },
+        )
     }
 
-    private fun createWindowsJunction(source: Path, target: Path) {
-        val process = ProcessBuilder(
-            "cmd",
-            "/c",
-            "mklink",
-            "/J",
-            target.toAbsolutePath().toString(),
-            source.toAbsolutePath().toString(),
-        ).start()
-        val exitCode = process.waitFor()
-        if (exitCode != 0) {
-            val errorText = process.errorStream.bufferedReader().readText().trim()
-            error(
-                if (errorText.isNotBlank()) {
-                    "Failed to create junction '${target}': $errorText"
-                } else {
-                    "Failed to create junction '${target}'."
-                },
-            )
-        }
-    }
+    /** Deletes one existing target skill directory before an overwrite copy. */
+    private fun deleteRecursively(root: Path) {
+        if (!Files.exists(root)) return
+        Files.walkFileTree(
+            root,
+            object : java.nio.file.SimpleFileVisitor<Path>() {
+                override fun visitFile(
+                    file: Path,
+                    attrs: BasicFileAttributes,
+                ): java.nio.file.FileVisitResult {
+                    Files.deleteIfExists(file)
+                    return java.nio.file.FileVisitResult.CONTINUE
+                }
 
-    private fun isWindows(): Boolean = operatingSystemName.contains("win", ignoreCase = true)
+                override fun postVisitDirectory(
+                    dir: Path,
+                    exc: java.io.IOException?,
+                ): java.nio.file.FileVisitResult {
+                    Files.deleteIfExists(dir)
+                    return java.nio.file.FileVisitResult.CONTINUE
+                }
+            },
+        )
+    }
 }

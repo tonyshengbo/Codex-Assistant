@@ -35,6 +35,7 @@ import com.auracode.assistant.toolwindow.execution.PlanCompletionPromptUiModel
 import com.auracode.assistant.toolwindow.execution.ToolUserInputPromptUiModel
 import com.auracode.assistant.toolwindow.settings.RuntimeSettingsTab
 import com.auracode.assistant.toolwindow.settings.SettingsSection
+import com.auracode.assistant.toolwindow.settings.SkillsSettingsTab
 import com.auracode.assistant.toolwindow.shared.UiText
 import com.auracode.assistant.toolwindow.execution.ExecutionTurnStatusUiState
 import com.auracode.assistant.toolwindow.conversation.ConversationFileChange
@@ -139,6 +140,7 @@ internal sealed interface UiIntent {
     data object DismissPlanCompletionPrompt : UiIntent
     data class SelectSettingsSection(val section: SettingsSection) : UiIntent
     data class SelectRuntimeSettingsTab(val tab: RuntimeSettingsTab) : UiIntent
+    data class SelectSkillsSettingsTab(val tab: SkillsSettingsTab) : UiIntent
     data class EditSettingsCodexCliPath(val value: String) : UiIntent
     data class EditSettingsClaudeCliPath(val value: String) : UiIntent
     data class EditSettingsNodePath(val value: String) : UiIntent

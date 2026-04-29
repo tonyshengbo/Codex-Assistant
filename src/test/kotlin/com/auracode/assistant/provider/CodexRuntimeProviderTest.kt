@@ -27,6 +27,7 @@ import kotlinx.serialization.json.put
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.jsonObject
+import java.nio.file.Files
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -1197,6 +1198,80 @@ class CodexRuntimeProviderTest {
     }
 
     @Test
+    fun `image generation completion restores assistant message attachment from base64 result`() {
+        val parser = CodexRuntimeProvider.CodexRuntimeNotificationParser(
+            requestId = "req-1",
+            diagnosticLogger = {},
+        )
+
+        val events = parser.parseNotification(
+            method = "item/completed",
+            params = buildJsonObject {
+                put("threadId", "thread-1")
+                put("turnId", "turn-1")
+                put(
+                    "item",
+                    buildJsonObject {
+                        put("type", "imageGeneration")
+                        put("id", "ig_1")
+                        put("status", "generating")
+                        put("revisedPrompt", "A polished settings mockup")
+                        put("result", ONE_PIXEL_PNG_BASE64)
+                    },
+                )
+            },
+        )
+
+        val item = assertIs<ProviderEvent.ItemUpdated>(events.single()).item
+        assertEquals(ItemKind.NARRATIVE, item.kind)
+        assertEquals(ItemStatus.SUCCESS, item.status)
+        assertEquals("message", item.name)
+        assertEquals("Generated image", item.text)
+        assertEquals(1, item.attachments.size)
+        val attachment = item.attachments.single()
+        assertEquals("image", attachment.kind)
+        assertTrue(attachment.assetPath.endsWith(".png"))
+        assertTrue(Files.exists(java.nio.file.Path.of(attachment.assetPath)))
+        assertEquals("image/png", attachment.mimeType)
+        assertTrue(attachment.sizeBytes > 0L)
+        assertEquals(attachment.assetPath, attachment.originalPath)
+    }
+
+    @Test
+    fun `image generation completion reuses saved path as compatibility fallback`() {
+        val imagePath = Files.createTempFile("codex-image-generation-", ".png")
+        Files.write(imagePath, byteArrayOf(1, 2, 3, 4))
+        val parser = CodexRuntimeProvider.CodexRuntimeNotificationParser(
+            requestId = "req-1",
+            diagnosticLogger = {},
+        )
+
+        val events = parser.parseNotification(
+            method = "item/completed",
+            params = buildJsonObject {
+                put("threadId", "thread-1")
+                put("turnId", "turn-1")
+                put(
+                    "item",
+                    buildJsonObject {
+                        put("type", "imageGeneration")
+                        put("id", "ig_compat_1")
+                        put("status", "generating")
+                        put("revisedPrompt", "A polished settings mockup")
+                        put("result", "")
+                        put("savedPath", imagePath.toAbsolutePath().toString())
+                    },
+                )
+            },
+        )
+
+        val item = assertIs<ProviderEvent.ItemUpdated>(events.single()).item
+        val attachment = item.attachments.single()
+        assertEquals(imagePath.toAbsolutePath().toString(), attachment.assetPath)
+        assertEquals(4L, attachment.sizeBytes)
+    }
+
+    @Test
     fun `request user input response preserves numeric json-rpc id type`() {
         val response = buildRequestUserInputResponseForTest(JsonPrimitive(0))
 
@@ -1628,6 +1703,9 @@ private fun historicalTurn(id: String, message: String) = buildJsonObject {
         },
     )
 }
+
+private const val ONE_PIXEL_PNG_BASE64 =
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a7mQAAAAASUVORK5CYII="
 
 private class FakeCodexRuntimeSession : CodexRuntimeSession {
     val requestMethods = mutableListOf<String>()

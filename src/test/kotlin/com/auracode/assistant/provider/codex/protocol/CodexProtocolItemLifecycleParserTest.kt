@@ -123,6 +123,25 @@ class CodexProviderItemLifecycleParserTest {
     }
 
     @Test
+    fun parsesImageGenerationFromBase64ResultUsingMessageAttachments() {
+        val event = parser.parseItemCompleted(
+            params(
+                """{"item":{"type":"imageGeneration","id":"ig_1","status":"generating","revisedPrompt":"A polished settings mockup","result":"$ONE_PIXEL_PNG_BASE64"},"threadId":"thread-1","turnId":"turn-1"}""",
+            ),
+            state = state,
+        )
+
+        val item = assertIs<ProviderEvent.ItemUpdated>(event).item
+        assertEquals(ItemKind.NARRATIVE, item.kind)
+        assertEquals(ItemStatus.SUCCESS, item.status)
+        assertEquals("message", item.name)
+        assertEquals("Generated image", item.text)
+        assertEquals(1, item.attachments.size)
+        assertEquals("image", item.attachments.single().kind)
+        assertEquals("image/png", item.attachments.single().mimeType)
+    }
+
+    @Test
     fun returnsNullWhenItemOrTypeIsMissing() {
         assertNull(parser.parseItemStarted(params("""{}"""), state))
         assertNull(parser.parseItemStarted(params("""{"item":{"id":"missing_type"}}"""), state))
@@ -142,3 +161,6 @@ class CodexProviderItemLifecycleParserTest {
         return json.parseToJsonElement(raw).jsonObject
     }
 }
+
+private const val ONE_PIXEL_PNG_BASE64 =
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a7mQAAAAASUVORK5CYII="
