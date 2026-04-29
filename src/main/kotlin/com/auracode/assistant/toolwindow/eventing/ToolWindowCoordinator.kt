@@ -21,6 +21,8 @@ import com.auracode.assistant.session.projection.execution.ExecutionUiProjection
 import com.auracode.assistant.settings.AgentSettingsService
 import com.auracode.assistant.settings.skills.EngineSkillsService
 import com.auracode.assistant.settings.skills.LocalSkillInstallPolicy
+import com.auracode.assistant.settings.skills.SkillProjectionManager
+import com.auracode.assistant.settings.skills.SkillRootScanner
 import com.auracode.assistant.settings.skills.SkillsRuntimeService
 import com.auracode.assistant.settings.mcp.McpManagementAdapterRegistry
 import com.auracode.assistant.provider.runtime.RuntimeExecutableCheckService
@@ -63,7 +65,6 @@ internal class ToolWindowCoordinator(
         adapterRegistry = com.auracode.assistant.settings.skills.SkillsManagementAdapterRegistry(settingsService),
     ),
     private val engineSkillsService: EngineSkillsService = EngineSkillsService(
-        settings = settingsService,
         runtimeService = skillsRuntimeService,
     ),
     private val toolUserInputPromptStore: ToolUserInputPromptStore = ToolUserInputPromptStore(),
@@ -75,6 +76,7 @@ internal class ToolWindowCoordinator(
     private val claudeCliVersionService: ClaudeCliVersionService = ClaudeCliVersionService(settingsService),
     private val runtimeExecutableCheckService: RuntimeExecutableCheckService = RuntimeExecutableCheckService(),
     private val pickAttachments: () -> List<String> = { emptyList() },
+    private val pickSkillImportDirectory: () -> String? = { null },
     private val pickExportPath: (String) -> String? = { null },
     private val searchProjectFiles: (String, Int) -> List<String> = { _, _ -> emptyList() },
     private val isMentionCandidateFile: (String) -> Boolean = { path -> MentionFileWhitelist.allowPath(path) },
@@ -84,6 +86,8 @@ internal class ToolWindowCoordinator(
     private val revealPathInFileManager: (String) -> Boolean = { false },
     private val openSessionInNewTab: (String) -> Boolean = { true },
     private val localSkillInstallPolicy: LocalSkillInstallPolicy = LocalSkillInstallPolicy(),
+    private val skillRootScanner: SkillRootScanner = SkillRootScanner(),
+    private val skillProjectionManager: SkillProjectionManager = SkillProjectionManager(),
     private val writeExportFile: (String, String) -> Unit = { path, content ->
         val exportPath = Path.of(path)
         exportPath.parent?.let { Files.createDirectories(it) }
@@ -167,6 +171,7 @@ internal class ToolWindowCoordinator(
         claudeCliVersionService = claudeCliVersionService,
         runtimeExecutableCheckService = runtimeExecutableCheckService,
         pickAttachments = pickAttachments,
+        pickSkillImportDirectory = pickSkillImportDirectory,
         pickExportPath = pickExportPath,
         searchProjectFiles = searchProjectFiles,
         isMentionCandidateFile = isMentionCandidateFile,
@@ -175,6 +180,8 @@ internal class ToolWindowCoordinator(
         openConversationFilePath = openConversationFilePath,
         revealPathInFileManager = revealPathInFileManager,
         localSkillInstallPolicy = localSkillInstallPolicy,
+        skillRootScanner = skillRootScanner,
+        skillProjectionManager = skillProjectionManager,
         writeExportFile = writeExportFile,
         openExternalUrl = openExternalUrl,
         diagnosticLog = diagnosticLog,
@@ -313,6 +320,12 @@ internal class ToolWindowCoordinator(
                     eventHub.publishUiIntent(UiIntent.AddAttachments(selected))
                 }
             }
+            UiIntent.OpenSkillImportDirectoryPicker -> {
+                val selected = pickSkillImportDirectory()
+                if (!selected.isNullOrBlank()) {
+                    eventHub.publishUiIntent(UiIntent.ImportSkillRoot(selected))
+                }
+            }
             UiIntent.PasteImageFromClipboard -> workspaceHandler.pasteImageFromClipboard()
             is UiIntent.OpenEditedFileDiff -> workspaceHandler.openEditedFileDiff(intent.path)
             is UiIntent.RevertEditedFile -> workspaceHandler.revertEditedFile(intent.path)
@@ -370,6 +383,7 @@ internal class ToolWindowCoordinator(
             is UiIntent.DeleteSavedAgent -> settingsHandler.deleteSavedAgent(intent.id)
             UiIntent.LoadSkills -> settingsHandler.loadSkills()
             UiIntent.RefreshSkills -> settingsHandler.loadSkills(forceReload = true)
+            is UiIntent.ImportSkillRoot -> settingsHandler.importSkillRoot(intent.path)
             is UiIntent.ToggleSkillEnabled -> settingsHandler.toggleSkillEnabled(intent.name, intent.path, intent.enabled)
             is UiIntent.OpenSkillPath -> settingsHandler.openSkillPath(intent.path)
             is UiIntent.RevealSkillPath -> settingsHandler.revealSkillPath(intent.path)

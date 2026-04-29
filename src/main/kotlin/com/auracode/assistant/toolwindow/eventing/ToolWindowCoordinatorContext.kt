@@ -12,6 +12,8 @@ import com.auracode.assistant.session.kernel.SessionDomainEvent
 import com.auracode.assistant.settings.AgentSettingsService
 import com.auracode.assistant.settings.skills.EngineSkillsService
 import com.auracode.assistant.settings.skills.LocalSkillInstallPolicy
+import com.auracode.assistant.settings.skills.SkillProjectionManager
+import com.auracode.assistant.settings.skills.SkillRootScanner
 import com.auracode.assistant.settings.skills.SkillsRuntimeService
 import com.auracode.assistant.settings.mcp.McpManagementAdapterRegistry
 import com.auracode.assistant.toolwindow.execution.ApprovalAreaStore
@@ -46,6 +48,7 @@ internal class ToolWindowCoordinatorContext(
     val claudeCliVersionService: ClaudeCliVersionService,
     val runtimeExecutableCheckService: RuntimeExecutableCheckService,
     val pickAttachments: () -> List<String>,
+    val pickSkillImportDirectory: () -> String?,
     val pickExportPath: (String) -> String?,
     val searchProjectFiles: (String, Int) -> List<String>,
     val isMentionCandidateFile: (String) -> Boolean,
@@ -54,6 +57,8 @@ internal class ToolWindowCoordinatorContext(
     val openConversationFilePath: (String) -> Unit,
     val revealPathInFileManager: (String) -> Boolean,
     val localSkillInstallPolicy: LocalSkillInstallPolicy,
+    val skillRootScanner: SkillRootScanner,
+    val skillProjectionManager: SkillProjectionManager,
     val writeExportFile: (String, String) -> Unit,
     val openExternalUrl: (String) -> Boolean,
     val diagnosticLog: (String, Throwable?) -> Unit,

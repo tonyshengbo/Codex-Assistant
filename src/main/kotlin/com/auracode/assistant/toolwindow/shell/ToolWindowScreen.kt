@@ -34,6 +34,7 @@ import com.auracode.assistant.toolwindow.execution.ExecutionStatusToastOverlay
 import com.auracode.assistant.toolwindow.execution.ExecutionTurnStatusRegion
 import com.auracode.assistant.toolwindow.conversation.ConversationAreaState
 import com.auracode.assistant.toolwindow.conversation.ConversationActivityRegion
+import com.auracode.assistant.toolwindow.conversation.ConversationScrollSnapshot
 import com.intellij.openapi.wm.ToolWindowAnchor
 
 @Composable
@@ -48,6 +49,7 @@ internal fun ToolWindowScreen(
     anchor: ToolWindowAnchor,
     themeMode: UiThemeMode,
     onIntent: (UiIntent) -> Unit,
+    onConversationScrollSnapshotChanged: (ConversationScrollSnapshot) -> Unit,
 ) {
     val p = assistantPalette(themeMode)
     val t = assistantUiTokens()
@@ -93,6 +95,7 @@ internal fun ToolWindowScreen(
                 p = p,
                 state = conversationState,
                 onIntent = onIntent,
+                onScrollSnapshotChanged = onConversationScrollSnapshotChanged,
             )
             ExecutionTurnStatusRegion(p = p, state = executionStatusState)
             Box(

@@ -19,6 +19,7 @@ import com.auracode.assistant.toolwindow.settings.SettingsSection
 import com.auracode.assistant.toolwindow.shared.UiText
 import com.intellij.notification.NotificationAction
 import com.intellij.notification.NotificationType
+import java.nio.file.Path
 import java.util.UUID
 
 internal class SettingsAndEnvironmentHandler(
@@ -511,6 +512,41 @@ internal class SettingsAndEnvironmentHandler(
             }.onFailure { error ->
                 context.eventHub.publish(
                     AppEvent.StatusTextUpdated(UiText.raw(error.message ?: "Failed to uninstall skill '$name'.")),
+                )
+            }
+            context.eventHub.publish(AppEvent.SkillsLoadingChanged(loading = false))
+        }
+    }
+
+    fun importSkillRoot(path: String) {
+        val normalizedPath = path.trim()
+        if (normalizedPath.isBlank()) return
+        context.eventHub.publish(AppEvent.SkillsLoadingChanged(loading = true, activePath = normalizedPath))
+        context.coroutineLauncher.launch("importSkillRoot($normalizedPath)") {
+            runCatching {
+                val scanResult = context.skillRootScanner.scan(Path.of(normalizedPath))
+                require(scanResult.skills.isNotEmpty()) {
+                    AuraCodeBundle.message("settings.skills.import.empty")
+                }
+                context.skillProjectionManager.projectAll(scanResult.skills)
+                context.skillsRuntimeService.invalidateEngine("codex")
+                context.skillsRuntimeService.invalidateEngine("claude")
+                publishSkillsSnapshot(forceReload = true)
+                context.eventHub.publish(
+                    AppEvent.StatusTextUpdated(
+                        UiText.raw(
+                            AuraCodeBundle.message(
+                                "settings.skills.import.success",
+                                scanResult.skills.size.toString(),
+                            ),
+                        ),
+                    ),
+                )
+            }.onFailure { error ->
+                context.eventHub.publish(
+                    AppEvent.StatusTextUpdated(
+                        UiText.raw(error.message ?: AuraCodeBundle.message("settings.skills.import.failed")),
+                    ),
                 )
             }
             context.eventHub.publish(AppEvent.SkillsLoadingChanged(loading = false))

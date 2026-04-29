@@ -12,7 +12,6 @@ import kotlin.io.path.exists
 import kotlin.io.path.isDirectory
 import kotlin.io.path.isRegularFile
 import kotlin.io.path.name
-import kotlin.io.path.readLines
 
 internal enum class SkillSource {
     LOCAL,
@@ -175,32 +174,6 @@ internal class LocalSkillCatalog(
     private fun isDeletable(location: SkillLocation): Boolean {
         if (location.source == SkillSource.SUPERPOWERS) return false
         return Files.isWritable(location.skillDir.parent ?: location.skillDir)
-    }
-
-    private data class ParsedSkillDescriptor(
-        val name: String,
-        val description: String,
-    )
-
-    private fun parseSkillDescriptor(skillFile: Path): ParsedSkillDescriptor? {
-        val lines = runCatching { skillFile.readLines() }.getOrNull() ?: return null
-        val frontMatter = extractFrontMatter(lines) ?: return null
-        val name = frontMatter["name"]?.trim()?.trim('"')?.takeIf(String::isNotBlank) ?: return null
-        val description = frontMatter["description"]?.trim()?.trim('"').orEmpty()
-        return ParsedSkillDescriptor(name = name, description = description)
-    }
-
-    private fun extractFrontMatter(lines: List<String>): Map<String, String>? {
-        if (lines.firstOrNull()?.trim() != "---") return null
-        val fields = linkedMapOf<String, String>()
-        for (line in lines.drop(1)) {
-            val trimmed = line.trim()
-            if (trimmed == "---") return fields
-            val separatorIndex = trimmed.indexOf(':')
-            if (separatorIndex <= 0) continue
-            fields[trimmed.substring(0, separatorIndex).trim()] = trimmed.substring(separatorIndex + 1).trim()
-        }
-        return null
     }
 
     private fun copyDirectory(source: Path, target: Path) {

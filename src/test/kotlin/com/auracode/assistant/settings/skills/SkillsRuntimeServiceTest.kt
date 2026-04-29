@@ -4,9 +4,20 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertFailsWith
+import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 class SkillsRuntimeServiceTest {
+    @Test
+    fun `registry exposes claude adapter`() {
+        val registry = SkillsManagementAdapterRegistry(
+            adapters = mapOf("claude" to FakeSkillsManagementAdapter(records = emptyList(), engineId = "claude")),
+            defaultEngineId = "claude",
+        )
+
+        assertNotNull(registry.adapterFor("claude"))
+    }
+
     @Test
     fun `get skills returns runtime records only and caches result`() = kotlinx.coroutines.runBlocking {
         val adapter = FakeSkillsManagementAdapter(
@@ -111,8 +122,8 @@ class SkillsRuntimeServiceTest {
 
     private class FakeSkillsManagementAdapter(
         var records: List<RuntimeSkillRecord>,
+        override val engineId: String = "codex",
     ) : SkillsManagementAdapter {
-        override val engineId: String = "codex"
         var listCalls: Int = 0
         val toggleCalls = mutableListOf<String>()
 

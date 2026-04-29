@@ -1,8 +1,10 @@
 package com.auracode.assistant.settings.skills
 
 import com.auracode.assistant.provider.CodexProviderFactory
+import com.auracode.assistant.provider.claude.ClaudeProviderFactory
 import com.auracode.assistant.settings.AgentSettingsService
 import com.auracode.assistant.provider.codex.CodexSkillsManagementAdapter
+import com.auracode.assistant.provider.claude.ClaudeSkillsManagementAdapter
 
 /** Selects which skill should be updated by a runtime management adapter. */
 internal sealed interface SkillSelector {
@@ -53,6 +55,7 @@ internal class SkillsManagementAdapterRegistry(
     constructor(settings: AgentSettingsService) : this(
         adapters = mapOf(
             CodexProviderFactory.ENGINE_ID to CodexSkillsManagementAdapter(settings),
+            ClaudeProviderFactory.ENGINE_ID to ClaudeSkillsManagementAdapter(settings),
         ),
     )
 

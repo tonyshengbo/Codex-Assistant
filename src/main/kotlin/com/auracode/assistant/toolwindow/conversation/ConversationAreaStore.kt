@@ -21,11 +21,14 @@ internal data class ConversationAreaState(
     val isLoadingOlder: Boolean = false,
     val isRunning: Boolean = false,
     val expandedNodeIds: Set<String> = emptySet(),
+    val scrollSnapshot: ConversationScrollSnapshot? = null,
     val renderVersion: Long = 0L,
     val renderCause: ConversationRenderCause = ConversationRenderCause.IDLE,
     val prependedCount: Int = 0,
     val latestError: String? = null,
     val promptScrollRequestVersion: Long = 0L,
+    val pendingScrollRestoreSnapshot: ConversationScrollSnapshot? = null,
+    val scrollRestoreRequestVersion: Long = 0L,
 )
 
 internal class ConversationAreaStore {
@@ -91,6 +94,22 @@ internal class ConversationAreaStore {
 
     fun restoreState(state: ConversationAreaState) {
         _state.value = state
+    }
+
+    /** Persists the currently visible viewport snapshot so session switches can capture it later. */
+    fun updateScrollSnapshot(snapshot: ConversationScrollSnapshot) {
+        val previous = _state.value
+        if (previous.scrollSnapshot == snapshot) return
+        _state.value = previous.copy(scrollSnapshot = snapshot)
+    }
+
+    /** Queues a one-shot viewport restore request after the session projection becomes visible again. */
+    fun requestScrollRestore(snapshot: ConversationScrollSnapshot) {
+        val previous = _state.value
+        _state.value = previous.copy(
+            pendingScrollRestoreSnapshot = snapshot,
+            scrollRestoreRequestVersion = previous.scrollRestoreRequestVersion + 1,
+        )
     }
 
     /** Restores the session-local expanded node state after projection/history rebuilt the visible nodes. */

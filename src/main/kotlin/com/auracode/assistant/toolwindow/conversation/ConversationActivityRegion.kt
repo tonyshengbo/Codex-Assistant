@@ -30,6 +30,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
@@ -43,6 +44,7 @@ import com.auracode.assistant.toolwindow.shared.AttachmentPreviewPayload
 import com.auracode.assistant.toolwindow.shared.DesignPalette
 import com.auracode.assistant.toolwindow.shared.assistantUiTokens
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 
 private const val TIMELINE_QUICK_SCROLL_OVERLAY_DELAY_MS: Long = 900L
@@ -135,6 +137,12 @@ internal fun conversationHasPendingPromptScrollRequest(
     handledVersion: Long,
 ): Boolean = requestVersion > handledVersion
 
+internal fun conversationHasPendingScrollRestoreRequest(
+    requestVersion: Long,
+    handledVersion: Long,
+    snapshot: ConversationScrollSnapshot?,
+): Boolean = snapshot != null && requestVersion > handledVersion
+
 internal fun conversationBottomScrollStrategy(
     snapshot: ConversationBottomSnapshot,
 ): ConversationBottomScrollStrategy {
@@ -206,6 +214,7 @@ internal fun ConversationActivityRegion(
     p: DesignPalette,
     state: ConversationAreaState,
     onIntent: (UiIntent) -> Unit,
+    onScrollSnapshotChanged: (ConversationScrollSnapshot) -> Unit,
 ) {
     val t = assistantUiTokens()
     var previewAttachment by remember { mutableStateOf<ConversationMessageAttachment?>(null) }
@@ -213,6 +222,7 @@ internal fun ConversationActivityRegion(
     var autoFollowEnabled by remember { mutableStateOf(true) }
     var hadProgrammaticScroll by remember { mutableStateOf(false) }
     var handledPromptScrollVersion by remember { mutableStateOf(0L) }
+    var handledScrollRestoreRequestVersion by remember { mutableStateOf(0L) }
     val scope = rememberCoroutineScope()
     val listState = rememberLazyListState()
     val rowCount = state.nodes.size
@@ -231,6 +241,23 @@ internal fun ConversationActivityRegion(
         canScrollToTop = !nearTop.value,
         canScrollToBottom = !nearBottom.value,
     )
+    val hasPendingScrollRestore = conversationHasPendingScrollRestoreRequest(
+        requestVersion = state.scrollRestoreRequestVersion,
+        handledVersion = handledScrollRestoreRequestVersion,
+        snapshot = state.pendingScrollRestoreSnapshot,
+    )
+
+    LaunchedEffect(listState) {
+        snapshotFlow {
+            ConversationScrollSnapshot(
+                firstVisibleItemIndex = listState.firstVisibleItemIndex,
+                firstVisibleItemScrollOffset = listState.firstVisibleItemScrollOffset,
+                autoFollowEnabled = autoFollowEnabled,
+            )
+        }
+            .distinctUntilChanged()
+            .collect(onScrollSnapshotChanged)
+    }
 
     LaunchedEffect(state.renderVersion) {
         when (state.renderCause) {
@@ -247,7 +274,7 @@ internal fun ConversationActivityRegion(
             ConversationRenderCause.HISTORY_RESET,
             ConversationRenderCause.LIVE_UPDATE,
             -> {
-                if (autoFollowEnabled) {
+                if (!hasPendingScrollRestore && autoFollowEnabled) {
                     hadProgrammaticScroll = true
                     scrollTimelineToBottom(
                         listState = listState,
@@ -259,6 +286,30 @@ internal fun ConversationActivityRegion(
 
             ConversationRenderCause.IDLE -> Unit
         }
+    }
+
+    LaunchedEffect(state.scrollRestoreRequestVersion, state.renderVersion, rowCount) {
+        val snapshot = state.pendingScrollRestoreSnapshot
+        if (!conversationHasPendingScrollRestoreRequest(
+                requestVersion = state.scrollRestoreRequestVersion,
+                handledVersion = handledScrollRestoreRequestVersion,
+                snapshot = snapshot,
+            )
+        ) {
+            return@LaunchedEffect
+        }
+        if (rowCount <= 0 || snapshot == null) {
+            return@LaunchedEffect
+        }
+
+        autoFollowEnabled = snapshot.autoFollowEnabled
+        hadProgrammaticScroll = true
+        withFrameNanos { }
+        listState.scrollToItem(
+            index = snapshot.firstVisibleItemIndex.coerceIn(0, rowCount - 1),
+            scrollOffset = snapshot.firstVisibleItemScrollOffset.coerceAtLeast(0),
+        )
+        handledScrollRestoreRequestVersion = state.scrollRestoreRequestVersion
     }
 
     LaunchedEffect(state.promptScrollRequestVersion, state.renderVersion, rowCount) {

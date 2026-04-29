@@ -194,16 +194,27 @@ private fun SkillsPageHeader(
                 style = MaterialTheme.typography.caption,
             )
         }
-        IconButton(
-            onClick = { onIntent(UiIntent.RefreshSkills) },
-            enabled = !state.skillsLoading,
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(t.spacing.xs),
         ) {
-            Icon(
-                painter = painterResource("/icons/swap-vert.svg"),
-                contentDescription = AuraCodeBundle.message("settings.skills.refresh"),
-                tint = if (!state.skillsLoading) p.textSecondary else p.textMuted,
-                modifier = Modifier.size(18.dp),
-            )
+            TextButton(
+                onClick = { onIntent(UiIntent.OpenSkillImportDirectoryPicker) },
+                enabled = !state.skillsLoading,
+            ) {
+                Text(AuraCodeBundle.message("settings.skills.import"))
+            }
+            IconButton(
+                onClick = { onIntent(UiIntent.RefreshSkills) },
+                enabled = !state.skillsLoading,
+            ) {
+                Icon(
+                    painter = painterResource("/icons/swap-vert.svg"),
+                    contentDescription = AuraCodeBundle.message("settings.skills.refresh"),
+                    tint = if (!state.skillsLoading) p.textSecondary else p.textMuted,
+                    modifier = Modifier.size(18.dp),
+                )
+            }
         }
     }
 }

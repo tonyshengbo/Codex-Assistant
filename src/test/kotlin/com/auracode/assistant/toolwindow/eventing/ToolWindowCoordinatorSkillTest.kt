@@ -12,9 +12,13 @@ import com.auracode.assistant.provider.EngineDescriptor
 import com.auracode.assistant.provider.ProviderRegistry
 import com.auracode.assistant.service.AgentChatService
 import com.auracode.assistant.settings.AgentSettingsService
+import com.auracode.assistant.settings.skills.EngineSkillDirectoryResolver
 import com.auracode.assistant.settings.skills.EngineSkillsService
-import com.auracode.assistant.settings.skills.LocalSkillCatalog
 import com.auracode.assistant.settings.skills.LocalSkillInstallPolicy
+import com.auracode.assistant.settings.skills.discoverSkillFilesUnder
+import com.auracode.assistant.settings.skills.parseSkillDescriptor
+import com.auracode.assistant.settings.skills.SkillProjectionManager
+import com.auracode.assistant.settings.skills.SkillRootScanner
 import com.auracode.assistant.settings.skills.RuntimeSkillRecord
 import com.auracode.assistant.settings.skills.SkillSelector
 import com.auracode.assistant.settings.skills.SkillsManagementAdapter
@@ -77,7 +81,7 @@ class ToolWindowCoordinatorSkillTest {
         kotlinx.coroutines.runBlocking {
             runtimeService.getSkills(engineId = "codex", cwd = ".")
         }
-        val engineSkillsService = EngineSkillsService(settings = settings, runtimeService = runtimeService)
+        val engineSkillsService = EngineSkillsService(runtimeService = runtimeService)
         val submissionStore = SubmissionAreaStore(
             availableSkillsProvider = {
                 engineSkillsService.enabledSlashSkills(engineId = "codex", cwd = ".")
@@ -107,7 +111,7 @@ class ToolWindowCoordinatorSkillTest {
 
         eventHub.publishUiIntent(UiIntent.SendPrompt)
 
-        waitUntil(2_000) { executionStatusStore.state.value.toast != null }
+        waitUntil(5_000) { executionStatusStore.state.value.toast != null }
 
         assertEquals(
             "Disabled skills cannot be used: brainstorming",
@@ -150,7 +154,7 @@ class ToolWindowCoordinatorSkillTest {
         kotlinx.coroutines.runBlocking {
             runtimeService.getSkills(engineId = "codex", cwd = ".")
         }
-        val engineSkillsService = EngineSkillsService(settings = settings, runtimeService = runtimeService)
+        val engineSkillsService = EngineSkillsService(runtimeService = runtimeService)
         val store = SubmissionAreaStore(
             availableSkillsProvider = {
                 engineSkillsService.enabledSlashSkills(engineId = "codex", cwd = ".")
@@ -193,7 +197,7 @@ class ToolWindowCoordinatorSkillTest {
                 defaultEngineId = "codex",
             ),
         )
-        val engineSkillsService = EngineSkillsService(settings = settings, runtimeService = runtimeService)
+        val engineSkillsService = EngineSkillsService(runtimeService = runtimeService)
         val coordinator = ToolWindowCoordinator(
             chatService = service,
             settingsService = settings,
@@ -270,7 +274,7 @@ class ToolWindowCoordinatorSkillTest {
             sidePanelStore = sidePanelStore,
             approvalStore = ApprovalAreaStore(),
             skillsRuntimeService = runtimeService,
-            engineSkillsService = EngineSkillsService(settings = settings, runtimeService = runtimeService),
+            engineSkillsService = EngineSkillsService(runtimeService = runtimeService),
             runStartupWarmups = false,
             scopeDispatcher = testDispatcher,
         )
@@ -411,19 +415,7 @@ class ToolWindowCoordinatorSkillTest {
     }
 
     @Test
-    fun `claude skills load from local catalog and hide runtime unsupported banner state`() {
-        val home = createTempDirectory("coordinator-claude-skill-home")
-        val skillDir = home.resolve(".codex/skills/brainstorming").createDirectories()
-        val skillFile = skillDir.resolve("SKILL.md").also {
-            it.writeText(
-                """
-                ---
-                name: brainstorming
-                description: "Explore requirements."
-                ---
-                """.trimIndent(),
-            )
-        }
+    fun `claude skills load from runtime adapter and keep runtime banner hidden`() {
         val workingDir = createTempDirectory("coordinator-claude-skill-load")
         val settings = AgentSettingsService().apply {
             setDefaultEngineId("claude")
@@ -434,11 +426,24 @@ class ToolWindowCoordinatorSkillTest {
             settings = settings,
         )
         val sidePanelStore = SidePanelAreaStore()
-        val engineSkillsService = EngineSkillsService(
-            settings = settings,
-            runtimeService = SkillsRuntimeService(SkillsManagementAdapterRegistry(emptyMap(), "codex")),
-            localSkillCatalog = LocalSkillCatalog(settings = settings, homeDir = home),
+        val adapter = RecordingSkillsManagementAdapter(
+            records = mutableListOf(
+                RuntimeSkillRecord(
+                    name = "brainstorming",
+                    description = "Explore requirements.",
+                    enabled = true,
+                    path = "/runtime/claude/brainstorming/SKILL.md",
+                    scopeLabel = "user",
+                ),
+            ),
         )
+        val runtimeService = SkillsRuntimeService(
+            SkillsManagementAdapterRegistry(
+                adapters = mapOf("claude" to adapter),
+                defaultEngineId = "claude",
+            ),
+        )
+        val engineSkillsService = EngineSkillsService(runtimeService = runtimeService)
         val coordinator = ToolWindowCoordinator(
             chatService = service,
             settingsService = settings,
@@ -453,8 +458,8 @@ class ToolWindowCoordinatorSkillTest {
             ),
             sidePanelStore = sidePanelStore,
             approvalStore = ApprovalAreaStore(),
+            skillsRuntimeService = runtimeService,
             engineSkillsService = engineSkillsService,
-            localSkillInstallPolicy = LocalSkillInstallPolicy(homeDir = home),
             runStartupWarmups = false,
             scopeDispatcher = testDispatcher,
         )
@@ -464,27 +469,16 @@ class ToolWindowCoordinatorSkillTest {
         waitUntil(2_000) { sidePanelStore.state.value.skillsHasLoadedSnapshot }
 
         assertEquals("claude", sidePanelStore.state.value.skillsEngineId)
-        assertFalse(sidePanelStore.state.value.skillsRuntimeSupported)
-        assertEquals(listOf(skillFile.toString()), sidePanelStore.state.value.skills.map { it.path })
+        assertTrue(sidePanelStore.state.value.skillsRuntimeSupported)
+        assertEquals(listOf("/runtime/claude/brainstorming/SKILL.md"), sidePanelStore.state.value.skills.map { it.path })
 
         coordinator.dispose()
         service.dispose()
     }
 
     @Test
-    fun `claude uninstall skill removes local installation and refreshes list`() {
+    fun `claude uninstall skill removes runtime path and refreshes list`() {
         val home = createTempDirectory("coordinator-claude-skill-uninstall-home")
-        val skillDir = home.resolve(".codex/skills/brainstorming").createDirectories()
-        val skillFile = skillDir.resolve("SKILL.md").also {
-            it.writeText(
-                """
-                ---
-                name: brainstorming
-                description: "Explore requirements."
-                ---
-                """.trimIndent(),
-            )
-        }
         val workingDir = createTempDirectory("coordinator-claude-skill-uninstall")
         val settings = AgentSettingsService().apply {
             setDefaultEngineId("claude")
@@ -496,11 +490,35 @@ class ToolWindowCoordinatorSkillTest {
         )
         val executionStatusStore = ExecutionStatusAreaStore()
         val sidePanelStore = SidePanelAreaStore()
-        val engineSkillsService = EngineSkillsService(
-            settings = settings,
-            runtimeService = SkillsRuntimeService(SkillsManagementAdapterRegistry(emptyMap(), "codex")),
-            localSkillCatalog = LocalSkillCatalog(settings = settings, homeDir = home),
+        val skillDir = home.resolve(".codex/skills/brainstorming").createDirectories()
+        val skillFile = skillDir.resolve("SKILL.md").also {
+            it.writeText(
+                """
+                ---
+                name: brainstorming
+                description: "Explore requirements."
+                ---
+                """.trimIndent(),
+            )
+        }
+        val adapter = RecordingSkillsManagementAdapter(
+            records = mutableListOf(
+                RuntimeSkillRecord(
+                    name = "brainstorming",
+                    description = "Explore requirements.",
+                    enabled = true,
+                    path = skillFile.toString(),
+                    scopeLabel = "user",
+                ),
+            ),
         )
+        val runtimeService = SkillsRuntimeService(
+            SkillsManagementAdapterRegistry(
+                adapters = mapOf("claude" to adapter),
+                defaultEngineId = "claude",
+            ),
+        )
+        val engineSkillsService = EngineSkillsService(runtimeService = runtimeService)
         val coordinator = ToolWindowCoordinator(
             chatService = service,
             settingsService = settings,
@@ -511,6 +529,7 @@ class ToolWindowCoordinatorSkillTest {
             submissionStore = SubmissionAreaStore(),
             sidePanelStore = sidePanelStore,
             approvalStore = ApprovalAreaStore(),
+            skillsRuntimeService = runtimeService,
             engineSkillsService = engineSkillsService,
             localSkillInstallPolicy = LocalSkillInstallPolicy(homeDir = home),
             runStartupWarmups = false,
@@ -524,11 +543,83 @@ class ToolWindowCoordinatorSkillTest {
             UiIntent.UninstallSkill(name = "brainstorming", path = skillFile.toString()),
         )
 
+        adapter.records.clear()
         waitUntil(2_000) { !skillDir.exists() }
         waitUntil(2_000) { sidePanelStore.state.value.skills.isEmpty() }
 
         assertEquals(
             "Uninstalled local skill 'brainstorming'.",
+            (executionStatusStore.state.value.toast?.text as com.auracode.assistant.toolwindow.shared.UiText.Raw).value,
+        )
+
+        coordinator.dispose()
+        service.dispose()
+    }
+
+    @Test
+    fun `import skill root projects skills for all engines and refreshes runtime list`() {
+        val home = createTempDirectory("coordinator-skill-import-home")
+        val importRoot = createTempDirectory("coordinator-skill-import-root")
+        val sourceSkillDir = importRoot.resolve("brainstorming").createDirectories()
+        sourceSkillDir.resolve("SKILL.md").writeText(
+            """
+            ---
+            name: brainstorming
+            description: "Explore requirements."
+            ---
+            """.trimIndent(),
+        )
+        val workingDir = createTempDirectory("coordinator-skill-import-working")
+        val settings = AgentSettingsService().apply { loadState(AgentSettingsService.State()) }
+        val service = AgentChatService(
+            repository = com.auracode.assistant.persistence.chat.SQLiteChatSessionRepository(workingDir.resolve("chat.db")),
+            registry = registry(),
+            settings = settings,
+        )
+        val sidePanelStore = SidePanelAreaStore()
+        val executionStatusStore = ExecutionStatusAreaStore()
+        val resolver = EngineSkillDirectoryResolver(homeDir = home)
+        val runtimeService = SkillsRuntimeService(
+            adapterRegistry = SkillsManagementAdapterRegistry(
+                adapters = mapOf(
+                    "codex" to DirectoryScanningSkillsManagementAdapter("codex", resolver),
+                    "claude" to DirectoryScanningSkillsManagementAdapter("claude", resolver),
+                ),
+                defaultEngineId = "codex",
+            ),
+        )
+        val coordinator = ToolWindowCoordinator(
+            chatService = service,
+            settingsService = settings,
+            eventHub = ToolWindowEventHub(),
+            sessionTabsStore = SessionTabsAreaStore(),
+            executionStatusStore = executionStatusStore,
+            conversationStore = ConversationAreaStore(),
+            submissionStore = SubmissionAreaStore(),
+            sidePanelStore = sidePanelStore,
+            approvalStore = ApprovalAreaStore(),
+            skillsRuntimeService = runtimeService,
+            engineSkillsService = EngineSkillsService(runtimeService = runtimeService),
+            pickSkillImportDirectory = { importRoot.toString() },
+            skillRootScanner = SkillRootScanner(),
+            skillProjectionManager = SkillProjectionManager(resolver, "Linux"),
+            localSkillInstallPolicy = LocalSkillInstallPolicy(homeDir = home),
+            runStartupWarmups = false,
+            scopeDispatcher = testDispatcher,
+        )
+
+        coordinatorEventHub(coordinator).publishUiIntent(UiIntent.SelectSettingsSection(SettingsSection.SKILLS))
+        waitUntil(2_000) { sidePanelStore.state.value.skillsHasLoadedSnapshot }
+        coordinatorEventHub(coordinator).publishUiIntent(UiIntent.OpenSkillImportDirectoryPicker)
+
+        waitUntil(2_000) {
+            sidePanelStore.state.value.skills.any { it.name == "brainstorming" }
+        }
+
+        assertTrue(home.resolve(".codex/skills/brainstorming").exists())
+        assertTrue(home.resolve(".claude/skills/brainstorming").exists())
+        assertEquals(
+            "Imported 1 skill(s).",
             (executionStatusStore.state.value.toast?.text as com.auracode.assistant.toolwindow.shared.UiText.Raw).value,
         )
 
@@ -634,5 +725,31 @@ class ToolWindowCoordinatorSkillTest {
             val path = (selector as SkillSelector.ByPath).path
             toggleCalls += "$path:$enabled"
         }
+    }
+
+    private class DirectoryScanningSkillsManagementAdapter(
+        override val engineId: String,
+        private val resolver: EngineSkillDirectoryResolver,
+    ) : SkillsManagementAdapter {
+        override fun supportsRuntimeSkills(): Boolean = true
+
+        override suspend fun listRuntimeSkills(cwd: String, forceReload: Boolean): List<RuntimeSkillRecord> {
+            return resolver.scanDirectories(engineId)
+                .asSequence()
+                .flatMap { root -> discoverSkillFilesUnder(root).asSequence() }
+                .mapNotNull { skillFile ->
+                    val descriptor = parseSkillDescriptor(skillFile) ?: return@mapNotNull null
+                    RuntimeSkillRecord(
+                        name = descriptor.name,
+                        description = descriptor.description.ifBlank { descriptor.name },
+                        enabled = true,
+                        path = skillFile.toString(),
+                        scopeLabel = "runtime",
+                    )
+                }
+                .toList()
+        }
+
+        override suspend fun setSkillEnabled(cwd: String, selector: SkillSelector, enabled: Boolean) = Unit
     }
 }

@@ -499,4 +499,35 @@ class ConversationActivityRegionLogicTest {
             ),
         )
     }
+
+    @Test
+    fun `timeline restore request only remains pending while snapshot exists and version is newer`() {
+        val snapshot = ConversationScrollSnapshot(
+            firstVisibleItemIndex = 3,
+            firstVisibleItemScrollOffset = 12,
+            autoFollowEnabled = false,
+        )
+
+        assertTrue(
+            conversationHasPendingScrollRestoreRequest(
+                requestVersion = 2L,
+                handledVersion = 1L,
+                snapshot = snapshot,
+            ),
+        )
+        assertFalse(
+            conversationHasPendingScrollRestoreRequest(
+                requestVersion = 2L,
+                handledVersion = 2L,
+                snapshot = snapshot,
+            ),
+        )
+        assertFalse(
+            conversationHasPendingScrollRestoreRequest(
+                requestVersion = 2L,
+                handledVersion = 1L,
+                snapshot = null,
+            ),
+        )
+    }
 }

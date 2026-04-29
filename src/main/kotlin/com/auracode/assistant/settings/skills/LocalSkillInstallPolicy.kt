@@ -16,6 +16,7 @@ internal class LocalSkillInstallPolicy(
 ) {
     private val managedRoots: List<Path> = listOf(
         homeDir.resolve(".codex/skills").normalize(),
+        homeDir.resolve(".claude/skills").normalize(),
         homeDir.resolve(".agents/skills").normalize(),
     )
 

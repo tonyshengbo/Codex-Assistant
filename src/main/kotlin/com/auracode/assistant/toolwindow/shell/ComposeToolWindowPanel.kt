@@ -86,7 +86,6 @@ class ComposeToolWindowPanel(
         adapterRegistry = SkillsManagementAdapterRegistry(settingsService),
     )
     private val engineSkillsService = EngineSkillsService(
-        settings = settingsService,
         runtimeService = skillsRuntimeService,
     )
     private val submissionStore = SubmissionAreaStore(
@@ -141,6 +140,20 @@ class ComposeToolWindowPanel(
             val chooserAction = Runnable {
                 val descriptor = FileChooserDescriptorFactory.createMultipleFilesNoJarsDescriptor()
                 selected = FileChooser.chooseFiles(descriptor, project, null).map { it.path }
+            }
+            if (app.isDispatchThread) {
+                chooserAction.run()
+            } else {
+                app.invokeAndWait(chooserAction)
+            }
+            selected
+        },
+        pickSkillImportDirectory = {
+            val app = ApplicationManager.getApplication()
+            var selected: String? = null
+            val chooserAction = Runnable {
+                val descriptor = FileChooserDescriptorFactory.createSingleFolderDescriptor()
+                selected = FileChooser.chooseFile(descriptor, project, null)?.path
             }
             if (app.isDispatchThread) {
                 chooserAction.run()
@@ -269,6 +282,7 @@ class ComposeToolWindowPanel(
                             anchor = toolWindowAnchor,
                             themeMode = themeMode,
                             onIntent = ::dispatchIntent,
+                            onConversationScrollSnapshotChanged = conversationStore::updateScrollSnapshot,
                         )
                     }
                 }

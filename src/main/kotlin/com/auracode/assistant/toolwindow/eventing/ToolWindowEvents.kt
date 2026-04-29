@@ -164,6 +164,8 @@ internal sealed interface UiIntent {
     data class DeleteSavedAgent(val id: String) : UiIntent
     data object LoadSkills : UiIntent
     data object RefreshSkills : UiIntent
+    data object OpenSkillImportDirectoryPicker : UiIntent
+    data class ImportSkillRoot(val path: String) : UiIntent
     data class ToggleSkillEnabled(val name: String, val path: String, val enabled: Boolean) : UiIntent
     data class OpenSkillPath(val path: String) : UiIntent
     data class RevealSkillPath(val path: String) : UiIntent

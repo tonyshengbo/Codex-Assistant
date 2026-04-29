@@ -48,6 +48,7 @@ import com.auracode.assistant.toolwindow.conversation.ConversationFileChange
 import com.auracode.assistant.toolwindow.conversation.ConversationFileChangeKind
 import com.auracode.assistant.toolwindow.conversation.ConversationActivityItem
 import com.auracode.assistant.toolwindow.conversation.ConversationRenderCause
+import com.auracode.assistant.toolwindow.conversation.ConversationScrollSnapshot
 import com.auracode.assistant.toolwindow.execution.ExecutionTurnStatusUiState
 import com.auracode.assistant.toolwindow.shared.UiText
 import kotlin.test.Test
@@ -1116,6 +1117,23 @@ class AreaStoresTest {
         )
 
         assertFalse(store.state.value.isRunning)
+    }
+
+    @Test
+    fun `timeline store records viewport snapshot and queues restore request independently`() {
+        val store = ConversationAreaStore()
+        val snapshot = ConversationScrollSnapshot(
+            firstVisibleItemIndex = 7,
+            firstVisibleItemScrollOffset = 24,
+            autoFollowEnabled = false,
+        )
+
+        store.updateScrollSnapshot(snapshot)
+        store.requestScrollRestore(snapshot)
+
+        assertEquals(snapshot, store.state.value.scrollSnapshot)
+        assertEquals(snapshot, store.state.value.pendingScrollRestoreSnapshot)
+        assertEquals(1L, store.state.value.scrollRestoreRequestVersion)
     }
 
     @Test
