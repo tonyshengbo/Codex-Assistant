@@ -31,6 +31,7 @@ internal enum class SubmissionRegionBodyKind {
  */
 internal data class SubmissionRegionContent(
     val showSubagentTray: Boolean,
+    val showRunningPlan: Boolean,
     val bodyKind: SubmissionRegionBodyKind,
 )
 
@@ -40,6 +41,7 @@ internal data class SubmissionRegionContent(
 internal fun resolveSubmissionRegionContent(state: SubmissionAreaState): SubmissionRegionContent {
     return SubmissionRegionContent(
         showSubagentTray = state.subagentTrayVisible,
+        showRunningPlan = state.runningPlan != null && state.activeInteractionCard == null,
         bodyKind = when (state.activeInteractionCard?.kind) {
             SubmissionInteractionCardKind.APPROVAL -> SubmissionRegionBodyKind.APPROVAL
             SubmissionInteractionCardKind.TOOL_USER_INPUT -> SubmissionRegionBodyKind.TOOL_USER_INPUT
@@ -88,6 +90,17 @@ internal fun SubmissionRegion(
                 state = state,
                 onIntent = onIntent,
             )
+            Spacer(Modifier.height(t.spacing.xs))
+        }
+        if (content.showRunningPlan) {
+            state.runningPlan?.let { runningPlan ->
+                SubmissionRunningPlanSection(
+                    p = p,
+                    state = runningPlan,
+                    expanded = state.runningPlanExpanded,
+                    onIntent = onIntent,
+                )
+            }
             Spacer(Modifier.height(t.spacing.xs))
         }
         when (content.bodyKind) {

@@ -226,18 +226,18 @@ internal class ClaudeCliProvider(
             diagnosticLogger("Claude CLI ignored $channel line: requestId=${request.requestId}")
             return
         }
-        diagnosticLogger(
-            "Claude CLI parsed event: requestId=${request.requestId} channel=$channel event=${rawEvent.toLogSummary()}",
-        )
+        // diagnosticLogger(
+        //     "Claude CLI parsed event: requestId=${request.requestId} channel=$channel event=${rawEvent.toLogSummary()}",
+        // )
         val semanticEvents = accumulator.accumulate(rawEvent)
         if (semanticEvents.isEmpty()) {
             diagnosticLogger("Claude CLI emitted no semantic events: requestId=${request.requestId} channel=$channel")
             return
         }
         semanticEvents.forEach { semanticEvent ->
-            diagnosticLogger(
-                "Claude CLI semantic event: requestId=${request.requestId} channel=$channel event=${semanticEvent.toLogSummary()}",
-            )
+            // diagnosticLogger(
+            //     "Claude CLI semantic event: requestId=${request.requestId} channel=$channel event=${semanticEvent.toLogSummary()}",
+            // )
             mapper.map(semanticEvent).forEach { unified ->
                 emitProviderEvent(unified)
             }
@@ -251,9 +251,9 @@ internal class ClaudeCliProvider(
         sessionEventMapper: ProviderProtocolDomainMapper,
         emitDomain: suspend (SessionDomainEvent) -> Unit,
     ) {
-        diagnosticLogger(
-            "Claude CLI emit unified event: requestId=${request.requestId} event=${event.toLogSummary()}",
-        )
+        // diagnosticLogger(
+        //     "Claude CLI emit unified event: requestId=${request.requestId} event=${event.toLogSummary()}",
+        // )
         sessionEventMapper.map(event).forEach { domainEvent ->
             emitDomain(domainEvent)
         }
