@@ -3,6 +3,7 @@ package com.auracode.assistant.provider.claude
 import com.auracode.assistant.conversation.ConversationCapabilities
 import com.auracode.assistant.conversation.ConversationHistoryPage
 import com.auracode.assistant.conversation.ConversationRef
+import com.auracode.assistant.conversation.ConversationSummaryPage
 import com.auracode.assistant.model.AgentRequest
 import com.auracode.assistant.provider.AgentProvider
 import com.auracode.assistant.provider.session.ProviderProtocolDomainMapper
@@ -173,6 +174,24 @@ internal class ClaudeCliProvider(
         return historyReader.readHistory(ref.remoteConversationId)
     }
 
+    /**
+     * 枚举本地 Claude CLI 会话列表，通过扫描 ~/.claude/projects/<encoded-cwd>/ 下的 JSONL 文件实现。
+     * 支持按 cwd 过滤、关键词搜索和分页。
+     */
+    override suspend fun listRemoteConversations(
+        pageSize: Int,
+        cursor: String?,
+        cwd: String?,
+        searchTerm: String?,
+    ): ConversationSummaryPage {
+        return historyReader.listSessions(
+            cwd = cwd,
+            pageSize = pageSize,
+            cursor = cursor,
+            searchTerm = searchTerm,
+        )
+    }
+
     /** 取消指定请求对应的 Claude CLI 进程。 */
     override fun cancel(requestId: String) {
         pendingApprovals.remove(requestId)?.values?.forEach { it.complete(ApprovalAction.REJECT) }
@@ -319,6 +338,10 @@ internal class ClaudeCliProvider(
             is ClaudeStreamEvent.ControlRequest -> {
                 "control-request sessionId=${sessionId.orEmpty()} requestId=$requestId toolName=$toolName"
             }
+
+            is ClaudeStreamEvent.TaskNotification -> {
+                "task-notification sessionId=${sessionId.orEmpty()} toolUseId=$toolUseId status=$status"
+            }
         }
     }
 
@@ -363,6 +386,10 @@ internal class ClaudeCliProvider(
 
             is ClaudeConversationEvent.PermissionRequested -> {
                 "permission-requested requestId=$requestId toolName=$toolName"
+            }
+
+            is ClaudeConversationEvent.SubagentUpdated -> {
+                "subagent-updated toolUseId=$toolUseId displayName=$displayName status=$status"
             }
         }
     }

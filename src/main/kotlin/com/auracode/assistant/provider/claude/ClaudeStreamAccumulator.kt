@@ -1,7 +1,14 @@
 package com.auracode.assistant.provider.claude
 
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.contentOrNull
+
 /**
  * 将 Claude 原始流事件聚合为可直接映射到 Aura 时间线的语义事件。
+ * 同时负责将子 Agent 事件（parent_tool_use_id 非 null）从主 timeline 分流，
+ * 转换为 SubagentUpdated 事件供 Tray 消费。
  */
 internal class ClaudeStreamAccumulator {
     private var emittedSessionId: String? = null
@@ -10,6 +17,14 @@ internal class ClaudeStreamAccumulator {
     private var latestAssistantSnapshotText: String? = null
     private val blockStates = linkedMapOf<Int, BlockState>()
     private val toolStates = linkedMapOf<String, ToolCallState>()
+
+    /** 已注册的子 Agent toolUseId 集合，用于快速判断事件归属。 */
+    private val subagentToolUseIds = mutableSetOf<String>()
+
+    /** 每个子 Agent 的当前显示状态，key 为 toolUseId。 */
+    private val subagentStates = linkedMapOf<String, SubagentState>()
+
+    private val json = Json { ignoreUnknownKeys = true }
 
     /** 接收一条原始 Claude 事件，并返回本次新增的语义事件。 */
     fun accumulate(event: ClaudeStreamEvent): List<ClaudeConversationEvent> {
@@ -26,15 +41,34 @@ internal class ClaudeStreamAccumulator {
                     ),
                 )
                 is ClaudeStreamEvent.SessionStarted -> Unit
-                is ClaudeStreamEvent.MessageStart -> handleMessageStart(event, this)
-                is ClaudeStreamEvent.ContentBlockStarted -> handleContentBlockStarted(event, this)
-                is ClaudeStreamEvent.ContentBlockDelta -> handleContentBlockDelta(event, this)
-                is ClaudeStreamEvent.ContentBlockStopped -> handleContentBlockStopped(event, this)
-                is ClaudeStreamEvent.MessageDelta -> handleMessageDelta(event, this)
-                is ClaudeStreamEvent.MessageStopped -> handleMessageStopped(event)
-                is ClaudeStreamEvent.AssistantSnapshot -> handleAssistantSnapshot(event, this)
-                is ClaudeStreamEvent.UserToolResult -> handleUserToolResult(event, this)
-                is ClaudeStreamEvent.Result -> handleResult(event, this)
+                is ClaudeStreamEvent.TaskNotification -> handleTaskNotification(event, this)
+                is ClaudeStreamEvent.MessageStart -> {
+                    if (event.parentToolUseId == null) handleMessageStart(event, this)
+                }
+                is ClaudeStreamEvent.ContentBlockStarted -> {
+                    if (event.parentToolUseId == null) handleContentBlockStarted(event, this)
+                }
+                is ClaudeStreamEvent.ContentBlockDelta -> {
+                    if (event.parentToolUseId == null) handleContentBlockDelta(event, this)
+                }
+                is ClaudeStreamEvent.ContentBlockStopped -> {
+                    if (event.parentToolUseId == null) handleContentBlockStopped(event, this)
+                }
+                is ClaudeStreamEvent.MessageDelta -> {
+                    if (event.parentToolUseId == null) handleMessageDelta(event, this)
+                }
+                is ClaudeStreamEvent.MessageStopped -> {
+                    if (event.parentToolUseId == null) handleMessageStopped(event)
+                }
+                is ClaudeStreamEvent.AssistantSnapshot -> {
+                    if (event.parentToolUseId == null) handleAssistantSnapshot(event, this)
+                }
+                is ClaudeStreamEvent.UserToolResult -> {
+                    if (event.parentToolUseId == null) handleUserToolResult(event, this)
+                }
+                is ClaudeStreamEvent.Result -> {
+                    if (event.parentToolUseId == null) handleResult(event, this)
+                }
                 is ClaudeStreamEvent.Error -> add(ClaudeConversationEvent.Error(message = event.message))
                 is ClaudeStreamEvent.ControlRequest -> add(
                     ClaudeConversationEvent.PermissionRequested(
@@ -90,6 +124,18 @@ internal class ClaudeStreamAccumulator {
                         inputJson = block.inputJson,
                 )
                 toolStates[block.toolUseId] = toolState
+                // Agent 工具调用：注册子 Agent 并 emit SubagentUpdated(ACTIVE)
+                if (block.name.trim().equals("Agent", ignoreCase = true)) {
+                    subagentToolUseIds.add(block.toolUseId)
+                    val (displayName, subagentType) = parseAgentInput(block.inputJson)
+                    subagentStates[block.toolUseId] = SubagentState(
+                        toolUseId = block.toolUseId,
+                        displayName = displayName,
+                        subagentType = subagentType,
+                        status = ClaudeConversationEvent.SubagentStatus.ACTIVE,
+                    )
+                    events.add(subagentStates[block.toolUseId]!!.toConversationEvent())
+                }
                 if (toolState.inputJson.isNotBlank() && toolState.inputJson != "{}") {
                     events.add(toolState.toConversationEvent())
                 }
@@ -145,6 +191,16 @@ internal class ClaudeStreamAccumulator {
                         inputJson = block.inputJson,
                     )
                 toolStates[block.toolUseId] = updated
+                // 如果是 Agent 工具调用，随着 inputJson 增量更新 displayName
+                if (block.toolUseId in subagentToolUseIds) {
+                    val (displayName, subagentType) = parseAgentInput(block.inputJson)
+                    val current = subagentStates[block.toolUseId]
+                    if (current != null && (current.displayName != displayName || current.subagentType != subagentType)) {
+                        val refreshed = current.copy(displayName = displayName, subagentType = subagentType)
+                        subagentStates[block.toolUseId] = refreshed
+                        events.add(refreshed.toConversationEvent())
+                    }
+                }
                 events.add(updated.toConversationEvent())
             }
 
@@ -448,6 +504,43 @@ internal class ClaudeStreamAccumulator {
         )
     }
 
+    /**
+     * 处理子 Agent 完成通知，将对应子 Agent 状态更新为 COMPLETED 或 FAILED，
+     * 并附上 task_notification 提供的 summary。
+     */
+    private fun handleTaskNotification(
+        event: ClaudeStreamEvent.TaskNotification,
+        events: MutableList<ClaudeConversationEvent>,
+    ) {
+        val current = subagentStates[event.toolUseId] ?: return
+        val newStatus = when (event.status.trim().lowercase()) {
+            "completed", "success", "done" -> ClaudeConversationEvent.SubagentStatus.COMPLETED
+            "error", "failed", "errored" -> ClaudeConversationEvent.SubagentStatus.FAILED
+            else -> ClaudeConversationEvent.SubagentStatus.COMPLETED
+        }
+        val updated = current.copy(
+            status = newStatus,
+            summary = event.summary,
+            toolUses = event.toolUses,
+            durationMs = event.durationMs,
+        )
+        subagentStates[event.toolUseId] = updated
+        events.add(updated.toConversationEvent())
+    }
+
+    /** 从 Agent 工具调用的 inputJson 中提取 description 和 subagent_type。 */
+    private fun parseAgentInput(inputJson: String): Pair<String, String?> {
+        val trimmed = inputJson.trim()
+        if (trimmed.isBlank()) return Pair("Agent", null)
+        val obj = runCatching { json.parseToJsonElement(trimmed).jsonObject }.getOrNull()
+            ?: return Pair("Agent", null)
+        val description = obj["description"]?.jsonPrimitive?.contentOrNull?.trim()
+            ?.takeIf { it.isNotBlank() } ?: "Agent"
+        val subagentType = obj["subagent_type"]?.jsonPrimitive?.contentOrNull?.trim()
+            ?.takeIf { it.isNotBlank() }
+        return Pair(description, subagentType)
+    }
+
     /** 返回当前原始事件可能携带的 sessionId。 */
     private fun ClaudeStreamEvent.sessionIdOrNull(): String? {
         return when (this) {
@@ -464,6 +557,7 @@ internal class ClaudeStreamAccumulator {
             is ClaudeStreamEvent.SessionStarted -> sessionId
             is ClaudeStreamEvent.UserToolResult -> sessionId
             is ClaudeStreamEvent.ControlRequest -> sessionId
+            is ClaudeStreamEvent.TaskNotification -> sessionId
         }
     }
 
@@ -523,5 +617,29 @@ internal class ClaudeStreamAccumulator {
             val blockIndex: Int,
             var text: String,
         ) : BlockState
+    }
+
+    /** 表示一个子 Agent 的当前状态快照。 */
+    private data class SubagentState(
+        val toolUseId: String,
+        val displayName: String,
+        val subagentType: String?,
+        val status: ClaudeConversationEvent.SubagentStatus,
+        val summary: String? = null,
+        val toolUses: Int = 0,
+        val durationMs: Long = 0L,
+    ) {
+        /** 将子 Agent 状态转换为语义层事件。 */
+        fun toConversationEvent(): ClaudeConversationEvent.SubagentUpdated {
+            return ClaudeConversationEvent.SubagentUpdated(
+                toolUseId = toolUseId,
+                displayName = displayName,
+                subagentType = subagentType,
+                status = status,
+                summary = summary,
+                toolUses = toolUses,
+                durationMs = durationMs,
+            )
+        }
     }
 }

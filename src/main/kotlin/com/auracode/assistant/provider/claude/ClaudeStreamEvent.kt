@@ -122,6 +122,8 @@ internal sealed interface ClaudeStreamEvent {
         val messageId: String,
         val model: String? = null,
         val usage: ClaudeTokenUsage? = null,
+        /** 非 null 时表示该消息属于某个子 Agent 的执行上下文。 */
+        val parentToolUseId: String? = null,
     ) : ClaudeStreamEvent
 
     /** 表示内容块开始。 */
@@ -129,6 +131,8 @@ internal sealed interface ClaudeStreamEvent {
         val sessionId: String? = null,
         val index: Int,
         val block: ClaudeContentBlockStart,
+        /** 非 null 时表示该块属于某个子 Agent 的执行上下文。 */
+        val parentToolUseId: String? = null,
     ) : ClaudeStreamEvent
 
     /** 表示内容块增量。 */
@@ -136,12 +140,16 @@ internal sealed interface ClaudeStreamEvent {
         val sessionId: String? = null,
         val index: Int,
         val delta: ClaudeContentDelta,
+        /** 非 null 时表示该增量属于某个子 Agent 的执行上下文。 */
+        val parentToolUseId: String? = null,
     ) : ClaudeStreamEvent
 
     /** 表示内容块结束。 */
     data class ContentBlockStopped(
         val sessionId: String? = null,
         val index: Int,
+        /** 非 null 时表示该块属于某个子 Agent 的执行上下文。 */
+        val parentToolUseId: String? = null,
     ) : ClaudeStreamEvent
 
     /** 表示消息级 delta，例如 stop_reason 与 usage。 */
@@ -149,11 +157,15 @@ internal sealed interface ClaudeStreamEvent {
         val sessionId: String? = null,
         val stopReason: String? = null,
         val usage: ClaudeTokenUsage? = null,
+        /** 非 null 时表示该 delta 属于某个子 Agent 的执行上下文。 */
+        val parentToolUseId: String? = null,
     ) : ClaudeStreamEvent
 
     /** 表示消息级 stop。 */
     data class MessageStopped(
         val sessionId: String? = null,
+        /** 非 null 时表示该 stop 属于某个子 Agent 的执行上下文。 */
+        val parentToolUseId: String? = null,
     ) : ClaudeStreamEvent
 
     /** 表示 Claude 返回的一帧 assistant 快照。 */
@@ -162,6 +174,8 @@ internal sealed interface ClaudeStreamEvent {
         val messageId: String? = null,
         val content: List<ClaudeMessageContent>,
         val errorType: String? = null,
+        /** 非 null 时表示该快照属于某个子 Agent 的执行上下文。 */
+        val parentToolUseId: String? = null,
     ) : ClaudeStreamEvent
 
     /** 表示 user 消息里的工具结果。 */
@@ -170,6 +184,8 @@ internal sealed interface ClaudeStreamEvent {
         val toolUseId: String,
         val content: String,
         val isError: Boolean,
+        /** 非 null 时表示该结果属于某个子 Agent 的执行上下文。 */
+        val parentToolUseId: String? = null,
     ) : ClaudeStreamEvent
 
     /** 表示 Claude CLI 返回的一帧结果收尾事件。 */
@@ -180,6 +196,19 @@ internal sealed interface ClaudeStreamEvent {
         val isError: Boolean = false,
         val usage: ClaudeTokenUsage? = null,
         val modelUsage: Map<String, ClaudeModelUsage> = emptyMap(),
+        /** 非 null 时表示该结果属于某个子 Agent 的执行上下文。 */
+        val parentToolUseId: String? = null,
+    ) : ClaudeStreamEvent
+
+    /** 表示子 Agent 任务完成通知（system/task_notification）。 */
+    data class TaskNotification(
+        val sessionId: String? = null,
+        /** 对应触发该子 Agent 的 Agent 工具调用 id。 */
+        val toolUseId: String,
+        val status: String,
+        val summary: String? = null,
+        val toolUses: Int = 0,
+        val durationMs: Long = 0L,
     ) : ClaudeStreamEvent
 
     /** 表示 Claude CLI 返回的显式错误事件。 */

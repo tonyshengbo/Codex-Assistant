@@ -6,7 +6,6 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
-import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 
@@ -57,6 +56,19 @@ internal class ClaudeStreamEventParser(
                 error = payload.string("error"),
             )
 
+            "task_notification" -> {
+                val toolUseId = payload.string("tool_use_id", "toolUseId") ?: return null
+                val usage = payload.objectValue("usage")
+                ClaudeStreamEvent.TaskNotification(
+                    sessionId = payload.string("session_id", "sessionId"),
+                    toolUseId = toolUseId,
+                    status = payload.string("status").orEmpty(),
+                    summary = payload.string("summary")?.trim()?.takeIf { it.isNotBlank() },
+                    toolUses = usage?.int("tool_uses", "toolUses") ?: 0,
+                    durationMs = usage?.double("duration_ms", "durationMs")?.toLong() ?: 0L,
+                )
+            }
+
             else -> null
         }
     }
@@ -65,6 +77,7 @@ internal class ClaudeStreamEventParser(
     private fun parseStreamEvent(payload: JsonObject): ClaudeStreamEvent? {
         val event = payload.objectValue("event") ?: return null
         val sessionId = payload.string("session_id", "sessionId")
+        val parentToolUseId = payload.string("parent_tool_use_id", "parentToolUseId")
         return when (event.string("type")) {
             "message_start" -> {
                 val message = event.objectValue("message") ?: return null
@@ -74,6 +87,7 @@ internal class ClaudeStreamEventParser(
                     messageId = messageId,
                     model = message.string("model"),
                     usage = message.objectValue("usage")?.toTokenUsage(),
+                    parentToolUseId = parentToolUseId,
                 )
             }
 
@@ -104,6 +118,7 @@ internal class ClaudeStreamEventParser(
                     sessionId = sessionId,
                     index = index,
                     block = parsedBlock,
+                    parentToolUseId = parentToolUseId,
                 )
             }
 
@@ -133,22 +148,26 @@ internal class ClaudeStreamEventParser(
                     sessionId = sessionId,
                     index = index,
                     delta = parsedDelta,
+                    parentToolUseId = parentToolUseId,
                 )
             }
 
             "content_block_stop" -> ClaudeStreamEvent.ContentBlockStopped(
                 sessionId = sessionId,
                 index = event.int("index"),
+                parentToolUseId = parentToolUseId,
             )
 
             "message_delta" -> ClaudeStreamEvent.MessageDelta(
                 sessionId = sessionId,
                 stopReason = event.objectValue("delta")?.string("stop_reason"),
                 usage = event.objectValue("usage")?.toTokenUsage(),
+                parentToolUseId = parentToolUseId,
             )
 
             "message_stop" -> ClaudeStreamEvent.MessageStopped(
                 sessionId = sessionId,
+                parentToolUseId = parentToolUseId,
             )
 
             else -> null
@@ -163,6 +182,7 @@ internal class ClaudeStreamEventParser(
             messageId = message.string("id"),
             content = parseMessageContent(message["content"]),
             errorType = payload.string("error"),
+            parentToolUseId = payload.string("parent_tool_use_id", "parentToolUseId"),
         )
     }
 
@@ -176,6 +196,7 @@ internal class ClaudeStreamEventParser(
             toolUseId = toolResult.toolUseId,
             content = toolResult.content,
             isError = toolResult.isError,
+            parentToolUseId = payload.string("parent_tool_use_id", "parentToolUseId"),
         )
     }
 
@@ -195,6 +216,7 @@ internal class ClaudeStreamEventParser(
                 }
                 ?.toMap()
                 .orEmpty(),
+            parentToolUseId = payload.string("parent_tool_use_id", "parentToolUseId"),
         )
     }
 

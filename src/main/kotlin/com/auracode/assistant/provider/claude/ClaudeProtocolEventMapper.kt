@@ -3,6 +3,8 @@ package com.auracode.assistant.provider.claude
 import com.auracode.assistant.model.AgentRequest
 import com.auracode.assistant.protocol.ItemKind
 import com.auracode.assistant.protocol.ItemStatus
+import com.auracode.assistant.protocol.ProviderAgentSnapshot
+import com.auracode.assistant.protocol.ProviderAgentStatus
 import com.auracode.assistant.protocol.TurnOutcome
 import com.auracode.assistant.protocol.TurnUsage
 import com.auracode.assistant.protocol.ProviderApprovalRequest
@@ -29,6 +31,8 @@ internal class ClaudeProviderEventMapper(
     private var latestAssistantText: String = ""
     private var latestAssistantMessageId: String? = null
     private var latestErrorMessage: String? = null
+    /** 维护当前 turn 内所有子 Agent 的快照，按 toolUseId 有序存储。 */
+    private val subagentSnapshots: LinkedHashMap<String, ProviderAgentSnapshot> = LinkedHashMap()
 
     /** 将 Claude 语义事件映射为统一事件。 */
     fun map(event: ClaudeConversationEvent): List<ProviderEvent> {
@@ -225,6 +229,38 @@ internal class ClaudeProviderEventMapper(
                     add(
                         ProviderEvent.ApprovalRequested(
                             request = buildApprovalRequest(event),
+                        ),
+                    )
+                }
+            }
+
+            is ClaudeConversationEvent.SubagentUpdated -> {
+                val agentStatus = when (event.status) {
+                    ClaudeConversationEvent.SubagentStatus.ACTIVE -> ProviderAgentStatus.ACTIVE
+                    ClaudeConversationEvent.SubagentStatus.COMPLETED -> ProviderAgentStatus.COMPLETED
+                    ClaudeConversationEvent.SubagentStatus.FAILED -> ProviderAgentStatus.FAILED
+                }
+                val statusText = when (event.status) {
+                    ClaudeConversationEvent.SubagentStatus.ACTIVE -> "Running..."
+                    ClaudeConversationEvent.SubagentStatus.COMPLETED -> "Completed"
+                    ClaudeConversationEvent.SubagentStatus.FAILED -> "Failed"
+                }
+                subagentSnapshots[event.toolUseId] = ProviderAgentSnapshot(
+                    threadId = event.toolUseId,
+                    displayName = event.displayName,
+                    mentionSlug = event.toolUseId,
+                    status = agentStatus,
+                    statusText = statusText,
+                    summary = event.summary,
+                )
+                buildList {
+                    maybeEmitThreadStarted(this)
+                    maybeEmitTurnStarted(this)
+                    add(
+                        ProviderEvent.SubagentsUpdated(
+                            threadId = threadId,
+                            turnId = turnId,
+                            agents = subagentSnapshots.values.toList(),
                         ),
                     )
                 }

@@ -79,4 +79,29 @@ internal sealed interface ClaudeConversationEvent {
         val toolName: String,
         val toolInput: Map<String, String>,
     ) : ClaudeConversationEvent
+
+    /**
+     * 表示一个子 Agent 的状态快照更新。
+     * 由 Agent 工具调用开始时（ACTIVE）和 task_notification 完成时（COMPLETED/FAILED）触发。
+     */
+    data class SubagentUpdated(
+        /** 对应 Agent 工具调用的 toolUseId，用作子 Agent 的唯一标识。 */
+        val toolUseId: String,
+        /** 来自 inputJson.description 的人类可读名称。 */
+        val displayName: String,
+        /** 来自 inputJson.subagent_type，如 "Explore"、"Plan"。 */
+        val subagentType: String?,
+        val status: SubagentStatus,
+        /** 来自 task_notification.summary，完成后填充。 */
+        val summary: String? = null,
+        val toolUses: Int = 0,
+        val durationMs: Long = 0L,
+    ) : ClaudeConversationEvent
+
+    /** 子 Agent 的生命周期状态。 */
+    enum class SubagentStatus {
+        ACTIVE,
+        COMPLETED,
+        FAILED,
+    }
 }

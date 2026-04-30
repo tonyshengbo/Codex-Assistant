@@ -1,6 +1,8 @@
 package com.auracode.assistant.provider.claude
 
 import com.auracode.assistant.conversation.ConversationHistoryPage
+import com.auracode.assistant.conversation.ConversationSummary
+import com.auracode.assistant.conversation.ConversationSummaryPage
 import com.auracode.assistant.protocol.ItemKind
 import com.auracode.assistant.protocol.ItemStatus
 import com.auracode.assistant.protocol.TurnOutcome
@@ -16,6 +18,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import java.nio.file.Files
 import java.nio.file.Path
+import java.time.Instant
 
 /**
  * 从 Claude CLI 本地 JSONL 文件中读取历史会话记录。
@@ -30,6 +33,164 @@ internal class ClaudeLocalHistoryReader(
 ) {
     private val parser: ClaudeStreamEventParser = ClaudeStreamEventParser(json = json)
     private val toolCallItemMapper: ClaudeToolCallProtocolMapper = ClaudeToolCallProtocolMapper(json = json)
+
+    /**
+     * 枚举指定工作目录下的所有 Claude 会话，返回分页摘要列表。
+     *
+     * 每个 .jsonl 文件对应一个会话，文件名（去掉 .jsonl）即为 sessionId。
+     * 全量提取所有摘要后按 updatedAt 倒序排列，再做内存分页。
+     * cursor 为上一页最后一条的 remoteConversationId。
+     *
+     * @param cwd 工作目录路径，用于定位对应的 encoded-cwd 子目录；为 null 时搜索所有子目录
+     * @param pageSize 每页最多返回的会话数
+     * @param cursor 分页游标，值为上一页最后一个 sessionId
+     * @param searchTerm 在 title 中过滤的关键词（大小写不敏感）
+     */
+    fun listSessions(
+        cwd: String?,
+        pageSize: Int,
+        cursor: String?,
+        searchTerm: String?,
+    ): ConversationSummaryPage {
+        if (!Files.exists(claudeProjectsDir)) return ConversationSummaryPage(emptyList(), null)
+
+        val encodedCwd = cwd?.replace("/", "-")
+
+        val jsonlFiles = Files.list(claudeProjectsDir).use { stream ->
+            stream.filter { Files.isDirectory(it) }
+                .filter { dir -> encodedCwd == null || dir.fileName.toString() == encodedCwd }
+                .flatMap { dir ->
+                    runCatching {
+                        Files.list(dir).filter { it.toString().endsWith(".jsonl") }
+                    }.getOrElse { java.util.stream.Stream.empty() }
+                }
+                .toList()
+        }
+
+        // 全量提取摘要（每个文件只读头部若干行 + 尾部若干字节），按 updatedAt 倒序
+        val allSummaries = jsonlFiles
+            .mapNotNull { file ->
+                val sessionId = file.fileName.toString().removeSuffix(".jsonl")
+                extractSessionSummary(file, sessionId)
+            }
+            .let { list ->
+                if (searchTerm != null) list.filter { it.title.contains(searchTerm, ignoreCase = true) }
+                else list
+            }
+            .sortedByDescending { it.updatedAt }
+
+        // cursor 定位：找到 cursor 对应条目的下一个位置
+        val startIndex = if (cursor == null) {
+            0
+        } else {
+            val idx = allSummaries.indexOfFirst { it.remoteConversationId == cursor }
+            if (idx == -1) 0 else idx + 1
+        }
+
+        val page = allSummaries.subList(startIndex, minOf(startIndex + pageSize, allSummaries.size))
+        val nextCursor = if (startIndex + pageSize < allSummaries.size) page.last().remoteConversationId else null
+
+        return ConversationSummaryPage(conversations = page, nextCursor = nextCursor)
+    }
+
+    /**
+     * 从单个 JSONL 文件中提取会话摘要，只读头部和尾部，避免全量扫描。
+     *
+     * - createdAt：从文件头部读取第一条有效行的 timestamp
+     * - updatedAt：从文件尾部反向扫描最后一条有效行的 timestamp
+     * - title：从文件头部读取第一条真实 user 消息内容（前 50 字符）
+     */
+    private fun extractSessionSummary(file: Path, sessionId: String): ConversationSummary? {
+        val headLines = readHeadLines(file, HEAD_SCAN_LINES)
+        val tailLines = readTailLines(file, TAIL_SCAN_BYTES)
+
+        var title = ""
+        var createdAtSeconds = 0L
+
+        // 从头部提取 createdAt 和 title
+        for (line in headLines) {
+            val payload = parseJsonLine(line) ?: continue
+            if (payload["isSidechain"]?.jsonPrimitive?.booleanOrNull == true) continue
+
+            val type = payload["type"]?.jsonPrimitive?.contentOrNull ?: continue
+            val timestamp = payload["timestamp"]?.jsonPrimitive?.contentOrNull
+
+            if (createdAtSeconds == 0L && timestamp != null) {
+                createdAtSeconds = parseIsoTimestampToSeconds(timestamp)
+            }
+
+            if (title.isEmpty() && type == "user") {
+                val isMeta = payload["isMeta"]?.jsonPrimitive?.booleanOrNull == true
+                if (!isMeta) {
+                    title = extractPlainMessageText(payload)?.take(TITLE_MAX_LENGTH)?.trim().orEmpty()
+                }
+            }
+
+            if (createdAtSeconds != 0L && title.isNotEmpty()) break
+        }
+
+        if (createdAtSeconds == 0L) return null
+
+        // 从尾部反向扫描最后一条有效行的 timestamp 作为 updatedAt
+        val updatedAtSeconds = tailLines.asReversed().firstNotNullOfOrNull { line ->
+            val payload = parseJsonLine(line) ?: return@firstNotNullOfOrNull null
+            if (payload["isSidechain"]?.jsonPrimitive?.booleanOrNull == true) return@firstNotNullOfOrNull null
+            payload["timestamp"]?.jsonPrimitive?.contentOrNull?.let { parseIsoTimestampToSeconds(it) }
+                ?.takeIf { it > 0L }
+        } ?: createdAtSeconds
+
+        return ConversationSummary(
+            remoteConversationId = sessionId,
+            title = title,
+            createdAt = createdAtSeconds,
+            updatedAt = updatedAtSeconds,
+            status = "completed",
+        )
+    }
+
+    /** 读取文件头部最多 [maxLines] 行。 */
+    private fun readHeadLines(file: Path, maxLines: Int): List<String> {
+        return runCatching {
+            file.toFile().bufferedReader().useLines { seq ->
+                seq.take(maxLines).toList()
+            }
+        }.getOrDefault(emptyList())
+    }
+
+    /**
+     * 从文件尾部读取最后 [tailBytes] 字节，返回其中的完整行列表。
+     * 使用 RandomAccessFile 定位到文件末尾附近，避免读取整个文件。
+     */
+    private fun readTailLines(file: Path, tailBytes: Long): List<String> {
+        return runCatching {
+            java.io.RandomAccessFile(file.toFile(), "r").use { raf ->
+                val fileSize = raf.length()
+                val seekPos = maxOf(0L, fileSize - tailBytes)
+                raf.seek(seekPos)
+                // 如果不是从文件头开始，跳过可能截断的第一行
+                if (seekPos > 0L) raf.readLine()
+                val lines = mutableListOf<String>()
+                var line = raf.readLine()
+                while (line != null) {
+                    lines += line
+                    line = raf.readLine()
+                }
+                lines
+            }
+        }.getOrDefault(emptyList())
+    }
+
+    /** 解析单行 JSON，失败返回 null。 */
+    private fun parseJsonLine(line: String): JsonObject? {
+        val trimmed = line.trim()
+        if (!trimmed.startsWith("{")) return null
+        return runCatching { json.parseToJsonElement(trimmed).jsonObject }.getOrNull()
+    }
+
+    /** 将 ISO 8601 时间字符串（如 "2026-04-19T02:10:07.730Z"）转换为秒级 epoch。 */
+    private fun parseIsoTimestampToSeconds(iso: String): Long {
+        return runCatching { Instant.parse(iso).epochSecond }.getOrDefault(0L)
+    }
 
     /**
      * 根据 sessionId 在所有项目目录中查找对应的 JSONL 文件。
@@ -307,4 +468,13 @@ internal class ClaudeLocalHistoryReader(
         val ownerId: String,
         val event: ClaudeConversationEvent.ToolCallUpdated,
     )
+
+    companion object {
+        /** 会话 title 最大截取长度。 */
+        private const val TITLE_MAX_LENGTH = 50
+        /** 从文件头部扫描的最大行数，用于提取 createdAt 和 title。 */
+        private const val HEAD_SCAN_LINES = 30
+        /** 从文件尾部读取的字节数，用于提取 updatedAt。 */
+        private const val TAIL_SCAN_BYTES = 4096L
+    }
 }
