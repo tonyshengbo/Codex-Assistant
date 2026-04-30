@@ -29,6 +29,10 @@ internal class ClaudeToolCallProtocolMapper(
             "read" -> mapRead(ownerId = ownerId, event = event)
             "write" -> mapWrite(ownerId = ownerId, event = event)
             "edit" -> mapEdit(ownerId = ownerId, event = event)
+            "bash" -> mapBash(ownerId = ownerId, event = event)
+            "glob" -> mapGlob(ownerId = ownerId, event = event)
+            "grep" -> mapGrep(ownerId = ownerId, event = event)
+            "agent" -> mapAgent(ownerId = ownerId, event = event)
             else -> mapFallback(ownerId = ownerId, event = event)
         }
         return mappedItem.takeUnless(::isPlaceholderDiffApply)
@@ -134,6 +138,99 @@ internal class ClaudeToolCallProtocolMapper(
             name = "File Changes",
             text = "update $filePath".trim(),
             fileChanges = filePath.takeIf { it.isNotBlank() }?.let { listOf(fileChange) }.orEmpty(),
+        )
+    }
+
+    /** 将 Bash 映射为命令执行卡片，提取 command 字段作为展示命令。 */
+    private fun mapBash(
+        ownerId: String,
+        event: ClaudeConversationEvent.ToolCallUpdated,
+    ): ProviderItem {
+        val input = parseJsonObject(event.inputJson)
+        val command = input?.string("command").orEmpty()
+        return ProviderItem(
+            id = toolItemId(ownerId = ownerId, toolUseId = event.toolUseId),
+            kind = ItemKind.COMMAND_EXEC,
+            status = unifiedStatus(event),
+            name = "Bash",
+            text = event.outputText,
+            command = command.takeIf { it.isNotBlank() },
+        )
+    }
+
+    /** 将 Glob 映射为命令执行卡片，展示 pattern 与搜索路径。 */
+    private fun mapGlob(
+        ownerId: String,
+        event: ClaudeConversationEvent.ToolCallUpdated,
+    ): ProviderItem {
+        val input = parseJsonObject(event.inputJson)
+        val pattern = input?.string("pattern").orEmpty()
+        val path = input?.string("path").orEmpty()
+        val command = buildString {
+            append("glob $pattern")
+            if (path.isNotBlank()) append(" in $path")
+        }
+        return ProviderItem(
+            id = toolItemId(ownerId = ownerId, toolUseId = event.toolUseId),
+            kind = ItemKind.COMMAND_EXEC,
+            status = unifiedStatus(event),
+            name = "Glob",
+            text = event.outputText,
+            command = command.takeIf { pattern.isNotBlank() },
+        )
+    }
+
+    /** 将 Grep 映射为命令执行卡片，展示搜索模式与范围。 */
+    private fun mapGrep(
+        ownerId: String,
+        event: ClaudeConversationEvent.ToolCallUpdated,
+    ): ProviderItem {
+        val input = parseJsonObject(event.inputJson)
+        val pattern = input?.string("pattern").orEmpty()
+        val path = input?.string("path").orEmpty()
+        val glob = input?.string("glob").orEmpty()
+        val command = buildString {
+            append("rg ${pattern.take(80)}")
+            if (glob.isNotBlank()) append(" --glob $glob")
+            if (path.isNotBlank()) append(" $path")
+        }
+        return ProviderItem(
+            id = toolItemId(ownerId = ownerId, toolUseId = event.toolUseId),
+            kind = ItemKind.COMMAND_EXEC,
+            status = unifiedStatus(event),
+            name = "Grep",
+            text = event.outputText,
+            command = command.takeIf { pattern.isNotBlank() },
+        )
+    }
+
+    /** 将 Agent 映射为工具卡片，只展示 description 与 subagent_type，省略完整 prompt。 */
+    private fun mapAgent(
+        ownerId: String,
+        event: ClaudeConversationEvent.ToolCallUpdated,
+    ): ProviderItem {
+        val input = parseJsonObject(event.inputJson)
+        val description = input?.string("description").orEmpty()
+        val subagentType = input?.string("subagent_type", "subagentType").orEmpty()
+        val body = buildString {
+            if (subagentType.isNotBlank()) append("Type: $subagentType")
+            if (description.isNotBlank()) {
+                if (isNotEmpty()) append("\n")
+                append(description)
+            }
+            val result = event.outputText?.trim().orEmpty()
+            if (result.isNotBlank()) {
+                if (isNotEmpty()) append("\n\n")
+                append("Result\n\n")
+                append(result)
+            }
+        }
+        return ProviderItem(
+            id = toolItemId(ownerId = ownerId, toolUseId = event.toolUseId),
+            kind = ItemKind.TOOL_CALL,
+            status = unifiedStatus(event),
+            name = "Agent",
+            text = body.ifBlank { null },
         )
     }
 
