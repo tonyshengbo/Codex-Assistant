@@ -75,6 +75,13 @@ internal class ClaudeStreamAccumulator {
                         requestId = event.requestId,
                         toolName = event.toolName,
                         toolInput = event.toolInput,
+                        permissionSuggestions = event.permissionSuggestions,
+                    ),
+                )
+                is ClaudeStreamEvent.ContextCompaction -> add(
+                    ClaudeConversationEvent.ContextCompactionUpdated(
+                        isCompleted = !event.isStarting,
+                        isSuccess = event.compactResult == "success",
                     ),
                 )
             }
@@ -549,6 +556,7 @@ internal class ClaudeStreamAccumulator {
             is ClaudeStreamEvent.ContentBlockDelta -> sessionId
             is ClaudeStreamEvent.ContentBlockStarted -> sessionId
             is ClaudeStreamEvent.ContentBlockStopped -> sessionId
+            is ClaudeStreamEvent.ContextCompaction -> sessionId
             is ClaudeStreamEvent.Error -> sessionId
             is ClaudeStreamEvent.MessageDelta -> sessionId
             is ClaudeStreamEvent.MessageStart -> sessionId

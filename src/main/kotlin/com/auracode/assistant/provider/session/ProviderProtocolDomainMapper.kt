@@ -288,7 +288,20 @@ internal class ProviderProtocolDomainMapper(
                 }
             }
 
-            ItemKind.CONTEXT_COMPACTION,
+            ItemKind.CONTEXT_COMPACTION -> {
+                val title = item.name ?: "Context Compaction"
+                val body = item.text ?: ""
+                listOf(
+                    SessionDomainEvent.ContextCompactionUpdated(
+                        itemId = item.id,
+                        turnId = turnId,
+                        status = item.status.toSessionStatus(),
+                        title = title,
+                        body = body,
+                    ),
+                )
+            }
+
             ItemKind.UNKNOWN,
             -> emptyList()
 

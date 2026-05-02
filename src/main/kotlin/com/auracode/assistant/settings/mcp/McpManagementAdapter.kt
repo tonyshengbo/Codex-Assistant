@@ -11,7 +11,8 @@ internal interface McpManagementAdapter {
     suspend fun saveServer(draft: McpServerDraft)
     suspend fun deleteServer(name: String): Boolean
     suspend fun setServerEnabled(name: String, enabled: Boolean)
-    suspend fun refreshStatuses(): Map<String, McpRuntimeStatus>
+    /** 若调用方已持有 serverNames，可直接传入以避免内部重复调用 listServers() */
+    suspend fun refreshStatuses(serverNames: List<String>? = null): Map<String, McpRuntimeStatus>
     suspend fun testServer(name: String): McpTestResult
     suspend fun login(
         name: String,

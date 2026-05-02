@@ -11,6 +11,7 @@ import com.auracode.assistant.model.AgentCollaborationMode
 import com.auracode.assistant.model.AgentRequest
 import com.auracode.assistant.provider.AgentProvider
 import com.auracode.assistant.provider.CodexProviderFactory
+import com.auracode.assistant.provider.PromptContextStripper
 import com.auracode.assistant.provider.session.ProviderProtocolDomainMapper
 import com.auracode.assistant.provider.codex.protocol.CodexMcpToolContentFormatter
 import com.auracode.assistant.protocol.ApprovalDecision
@@ -545,11 +546,22 @@ internal class CodexRuntimeProvider(
         }
 
         private fun parseHistoricalItem(item: JsonObject): List<ProviderEvent> {
-            return parseItemLifecycle(
+            val events = parseItemLifecycle(
                 item = item,
                 method = "item/completed",
                 includeUserMessages = true,
             )
+            // Strip context suffix blocks that CodexRuntimeLaunchSupport.buildPrompt appends
+            // to user messages. Only applies to historical items — live stream text is unaffected.
+            return events.map { event ->
+                if (event !is ProviderEvent.ItemUpdated) return@map event
+                val providerItem = event.item
+                if (providerItem.name != "user_message") return@map event
+                val strippedText = providerItem.text?.let {
+                    PromptContextStripper.stripCodexContextSuffixes(it).takeIf { s -> s.isNotBlank() }
+                } ?: return@map event
+                event.copy(item = providerItem.copy(text = strippedText))
+            }
         }
 
         private fun parseItemLifecycle(

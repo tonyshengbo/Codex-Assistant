@@ -269,6 +269,20 @@ internal class SessionStateReducer {
                 ),
             )
 
+            is SessionDomainEvent.ContextCompactionUpdated -> state.copy(
+                runtime = updateRuntimeForTurnScopedEvent(state.runtime, event.turnId),
+                conversation = upsertConversationEntry(
+                    conversation = state.conversation,
+                    entry = SessionConversationEntry.ContextCompaction(
+                        id = event.itemId,
+                        turnId = event.turnId,
+                        status = event.status,
+                        title = event.title,
+                        body = event.body,
+                    ),
+                ),
+            )
+
             is SessionDomainEvent.ErrorAppended -> state.copy(
                 runtime = state.runtime.copy(
                     runStatus = if (event.terminal) SessionRunStatus.IDLE else state.runtime.runStatus,

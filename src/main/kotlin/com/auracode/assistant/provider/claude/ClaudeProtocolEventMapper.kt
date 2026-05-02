@@ -265,6 +265,29 @@ internal class ClaudeProviderEventMapper(
                     )
                 }
             }
+
+            is ClaudeConversationEvent.ContextCompactionUpdated -> {
+                val status = when {
+                    !event.isCompleted -> ItemStatus.RUNNING
+                    event.isSuccess -> ItemStatus.SUCCESS
+                    else -> ItemStatus.FAILED
+                }
+                buildList {
+                    maybeEmitThreadStarted(this)
+                    maybeEmitTurnStarted(this)
+                    add(
+                        ProviderEvent.ItemUpdated(
+                            ProviderItem(
+                                id = "${request.requestId}:context-compaction",
+                                kind = ItemKind.CONTEXT_COMPACTION,
+                                status = status,
+                                name = "Context Compaction",
+                                text = contextCompactionText(status),
+                            ),
+                        ),
+                    )
+                }
+            }
         }
     }
 
@@ -292,6 +315,7 @@ internal class ClaudeProviderEventMapper(
             body = body,
             command = command,
             allowForSession = true,
+            permissionSuggestions = event.permissionSuggestions,
         )
     }
 
@@ -418,6 +442,16 @@ internal class ClaudeProviderEventMapper(
             val thinking = text.substring(startIdx + startTag.length, endIdx)
             val main = text.substring(endIdx + endTag.length).trim()
             Pair(thinking, main)
+        }
+    }
+
+    /** 将 ItemStatus 映射为上下文压缩的展示文本。 */
+    private fun contextCompactionText(status: ItemStatus): String {
+        return when (status) {
+            ItemStatus.RUNNING -> "Compacting context"
+            ItemStatus.SUCCESS -> "Context compacted"
+            ItemStatus.FAILED -> "Context compaction interrupted"
+            ItemStatus.SKIPPED -> "Context compaction skipped"
         }
     }
 }

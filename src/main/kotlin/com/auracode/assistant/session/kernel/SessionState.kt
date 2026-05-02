@@ -136,6 +136,15 @@ internal sealed interface SessionConversationEntry {
         val body: String,
     ) : SessionConversationEntry
 
+    /** Stores one normalized context compaction activity entry. */
+    data class ContextCompaction(
+        override val id: String,
+        val turnId: String?,
+        val status: SessionActivityStatus,
+        val title: String,
+        val body: String,
+    ) : SessionConversationEntry
+
     /** Stores one terminal error entry. */
     data class Error(
         override val id: String,

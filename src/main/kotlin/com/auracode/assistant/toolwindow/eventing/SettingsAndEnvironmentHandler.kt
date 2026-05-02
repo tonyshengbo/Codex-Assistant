@@ -608,7 +608,7 @@ internal class SettingsAndEnvironmentHandler(
                 val servers = adapter.listServers()
                 logMcpDiagnostic("MCP adapter call success: label=loadMcpServers step=listServers count=${servers.size} | ${mcpContextSnapshot()}")
                 logMcpDiagnostic("MCP adapter call begin: label=loadMcpServers step=refreshStatuses | ${mcpContextSnapshot()}")
-                val statuses = adapter.refreshStatuses()
+                val statuses = adapter.refreshStatuses(servers.map { it.name })
                 logMcpDiagnostic("MCP adapter call success: label=loadMcpServers step=refreshStatuses count=${statuses.size} | ${mcpContextSnapshot()}")
                 context.eventHub.publish(AppEvent.McpServersLoaded(servers))
                 context.eventHub.publish(AppEvent.McpStatusesUpdated(statuses))

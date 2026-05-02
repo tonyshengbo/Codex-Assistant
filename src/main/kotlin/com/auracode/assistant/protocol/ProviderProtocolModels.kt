@@ -50,6 +50,8 @@ data class ProviderApprovalRequest(
     val fileChanges: List<ProviderFileChange> = emptyList(),
     val permissions: List<String> = emptyList(),
     val allowForSession: Boolean = true,
+    /** Claude CLI 建议的权限更新列表，原始 JSON 字符串，Allow 时需回传给 CLI。 */
+    val permissionSuggestions: List<String> = emptyList(),
 )
 
 data class ProviderToolUserInputOption(

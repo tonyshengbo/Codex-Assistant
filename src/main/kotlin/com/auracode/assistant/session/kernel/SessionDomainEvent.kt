@@ -123,6 +123,15 @@ internal sealed interface SessionDomainEvent {
         val timestamp: Long,
     ) : SessionDomainEvent
 
+    /** Upserts one context compaction activity in the conversation stream. */
+    data class ContextCompactionUpdated(
+        val itemId: String,
+        val turnId: String?,
+        val status: SessionActivityStatus,
+        val title: String,
+        val body: String,
+    ) : SessionDomainEvent
+
     /** Appends one terminal provider error to the conversation stream. */
     data class ErrorAppended(
         val itemId: String,

@@ -58,6 +58,7 @@ internal class ConversationUiProjectionBuilder {
                     is SessionConversationEntry.Approval -> add(entry.toNode())
                     is SessionConversationEntry.Plan -> add(entry.toNode())
                     is SessionConversationEntry.ToolUserInput -> add(entry.toNode())
+                    is SessionConversationEntry.ContextCompaction -> add(entry.toNode())
                     is SessionConversationEntry.Error -> add(entry.toNode())
                     is SessionConversationEntry.EngineSwitched -> add(entry.toNode())
                 }
@@ -236,6 +237,18 @@ internal class ConversationUiProjectionBuilder {
             id = activityNodeId(prefix = "plan", turnId = turnId, sourceId = id),
             sourceId = id,
             title = AuraCodeBundle.message("timeline.plan.title"),
+            body = body,
+            status = status.toItemStatus(),
+            turnId = turnId,
+        )
+    }
+
+    /** Converts one context compaction entry into a projected context compaction node. */
+    private fun SessionConversationEntry.ContextCompaction.toNode(): ConversationActivityItem.ContextCompactionNode {
+        return ConversationActivityItem.ContextCompactionNode(
+            id = activityNodeId(prefix = "context-compaction", turnId = turnId, sourceId = id),
+            sourceId = id,
+            title = title,
             body = body,
             status = status.toItemStatus(),
             turnId = turnId,

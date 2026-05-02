@@ -223,5 +223,17 @@ internal sealed interface ClaudeStreamEvent {
         val toolName: String,
         val toolInput: Map<String, String>,
         val sessionId: String? = null,
+        /** Claude CLI 建议的权限更新列表，原始 JSON 字符串，Allow 时需回传给 CLI。 */
+        val permissionSuggestions: List<String> = emptyList(),
+    ) : ClaudeStreamEvent
+
+    /**
+     * 表示 Claude CLI 发出的上下文压缩状态事件（system/status）。
+     * isStarting=true 对应 status="compacting"，false 对应压缩结束（compact_result 非空）。
+     */
+    data class ContextCompaction(
+        val isStarting: Boolean,
+        val compactResult: String? = null,
+        val sessionId: String? = null,
     ) : ClaudeStreamEvent
 }

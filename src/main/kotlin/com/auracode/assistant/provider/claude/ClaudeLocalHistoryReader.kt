@@ -8,6 +8,8 @@ import com.auracode.assistant.protocol.ItemStatus
 import com.auracode.assistant.protocol.TurnOutcome
 import com.auracode.assistant.protocol.ProviderEvent
 import com.auracode.assistant.protocol.ProviderItem
+import com.auracode.assistant.protocol.ProviderMessageAttachment
+import com.auracode.assistant.provider.PromptContextStripper
 import com.auracode.assistant.provider.session.ProviderProtocolDomainMapper
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
@@ -19,6 +21,8 @@ import kotlinx.serialization.json.jsonPrimitive
 import java.nio.file.Files
 import java.nio.file.Path
 import java.time.Instant
+import java.util.Base64
+import java.util.UUID
 
 /**
  * 从 Claude CLI 本地 JSONL 文件中读取历史会话记录。
@@ -273,6 +277,7 @@ internal class ClaudeLocalHistoryReader(
 
     /**
      * 处理历史里的 user 行，既恢复真实用户消息，也回放工具结果更新。
+     * 图片 content block 会被解码并写入临时文件，以 ProviderMessageAttachment 形式附加到消息。
      */
     private fun appendUserEvents(
         sessionId: String,
@@ -284,6 +289,7 @@ internal class ClaudeLocalHistoryReader(
         events: MutableList<ProviderEvent>,
     ): String? {
         val nextPendingTurnId = extractPlainMessageText(payload)?.let { text ->
+            val imageAttachments = extractImageAttachments(payload)
             events += ProviderEvent.TurnStarted(turnId = uuid, threadId = sessionId)
             events += ProviderEvent.ItemUpdated(
                 item = ProviderItem(
@@ -292,6 +298,7 @@ internal class ClaudeLocalHistoryReader(
                     status = ItemStatus.SUCCESS,
                     name = "user_message",
                     text = text,
+                    attachments = imageAttachments,
                 ),
             )
             uuid
@@ -408,9 +415,9 @@ internal class ClaudeLocalHistoryReader(
     }
 
     /**
-     * 从 message.content 中提取纯文本内容。
+     * 从 message.content 中提取纯文本内容，并剥离 ClaudeCliLauncher 注入的 Context files 前缀。
      * 支持数组格式（[{"type":"text","text":"..."}]）和字符串格式（"..."）。
-     * 忽略 tool_use、tool_result 等非文本块。
+     * 忽略 tool_use、tool_result、image 等非文本块。
      */
     private fun extractPlainMessageText(payload: JsonObject): String? {
         val messageObj = payload["message"]?.jsonObject ?: return null
@@ -438,7 +445,63 @@ internal class ClaudeLocalHistoryReader(
             }
         }
 
-        return text.trim().takeIf { it.isNotBlank() }
+        val trimmed = text.trim().takeIf { it.isNotBlank() } ?: return null
+        // Strip "Context files:" prefix block injected by ClaudeCliLauncher.buildPromptText
+        return PromptContextStripper.stripClaudeContextPrefix(trimmed).takeIf { it.isNotBlank() }
+    }
+
+    /**
+     * Extracts image content blocks from a user message payload and writes each image to a
+     * temp file so the UI can load it via a regular file path.
+     *
+     * Temp files are written to the system temp directory under "aura-history-images/" and
+     * are not cleaned up automatically — the OS will reclaim them on reboot. Each file is
+     * named by a stable UUID derived from the message uuid + index to avoid duplicates on
+     * repeated history loads.
+     */
+    private fun extractImageAttachments(payload: JsonObject): List<ProviderMessageAttachment> {
+        val messageObj = payload["message"]?.jsonObject ?: return emptyList()
+        val contentArray = runCatching {
+            messageObj["content"]?.jsonArray
+        }.getOrNull() ?: return emptyList()
+
+        val tempDir = Path.of(System.getProperty("java.io.tmpdir"), "aura-history-images")
+        val attachments = mutableListOf<ProviderMessageAttachment>()
+
+        contentArray.forEachIndexed { index, element ->
+            val obj = runCatching { element.jsonObject }.getOrNull() ?: return@forEachIndexed
+            if (obj["type"]?.jsonPrimitive?.contentOrNull != "image") return@forEachIndexed
+
+            val source = obj["source"]?.jsonObject ?: return@forEachIndexed
+            if (source["type"]?.jsonPrimitive?.contentOrNull != "base64") return@forEachIndexed
+
+            val mimeType = source["media_type"]?.jsonPrimitive?.contentOrNull ?: return@forEachIndexed
+            val base64Data = source["data"]?.jsonPrimitive?.contentOrNull ?: return@forEachIndexed
+
+            runCatching {
+                val ext = mimeType.substringAfter("/").substringBefore(";").ifBlank { "png" }
+                // Use a stable name so repeated loads don't create duplicate files
+                val stableId = UUID.nameUUIDFromBytes("${payload["uuid"]?.jsonPrimitive?.contentOrNull}:$index".toByteArray())
+                Files.createDirectories(tempDir)
+                val tempFile = tempDir.resolve("$stableId.$ext")
+                if (!Files.exists(tempFile)) {
+                    val bytes = Base64.getDecoder().decode(base64Data)
+                    Files.write(tempFile, bytes)
+                }
+                attachments += ProviderMessageAttachment(
+                    id = stableId.toString(),
+                    kind = "image",
+                    displayName = "image.$ext",
+                    assetPath = tempFile.toString(),
+                    originalPath = tempFile.toString(),
+                    mimeType = mimeType,
+                    sizeBytes = Files.size(tempFile),
+                    status = ItemStatus.SUCCESS,
+                )
+            }
+        }
+
+        return attachments
     }
 
     /**

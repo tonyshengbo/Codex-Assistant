@@ -78,6 +78,8 @@ internal sealed interface ClaudeConversationEvent {
         val requestId: String,
         val toolName: String,
         val toolInput: Map<String, String>,
+        /** Claude CLI 建议的权限更新列表，原始 JSON 字符串，Allow 时需回传给 CLI。 */
+        val permissionSuggestions: List<String> = emptyList(),
     ) : ClaudeConversationEvent
 
     /**
@@ -104,4 +106,13 @@ internal sealed interface ClaudeConversationEvent {
         COMPLETED,
         FAILED,
     }
+
+    /**
+     * 表示上下文压缩的状态更新（来自 system/status 事件）。
+     * isCompleted=false 表示压缩进行中，true 表示已结束。
+     */
+    data class ContextCompactionUpdated(
+        val isCompleted: Boolean,
+        val isSuccess: Boolean = false,
+    ) : ClaudeConversationEvent
 }

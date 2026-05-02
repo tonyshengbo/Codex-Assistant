@@ -227,11 +227,12 @@ internal class CodexMcpManagementAdapter(
         }
     }
 
-    override suspend fun refreshStatuses(): Map<String, McpRuntimeStatus> {
+    override suspend fun refreshStatuses(serverNames: List<String>?): Map<String, McpRuntimeStatus> {
         val binary = binary()
         return withAppServerClient(binary) { client ->
             client.initialize()
-            client.listStatuses().remapStatusNames(listServers().map { it.name })
+            val names = serverNames ?: listServers().map { it.name }
+            client.listStatuses().remapStatusNames(names)
         }
     }
 

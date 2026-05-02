@@ -69,6 +69,23 @@ internal class ClaudeStreamEventParser(
                 )
             }
 
+            "status" -> {
+                val status = payload.rawString("status")
+                val compactResult = payload.string("compact_result", "compactResult")
+                when {
+                    status == "compacting" -> ClaudeStreamEvent.ContextCompaction(
+                        isStarting = true,
+                        sessionId = payload.string("session_id", "sessionId"),
+                    )
+                    compactResult != null -> ClaudeStreamEvent.ContextCompaction(
+                        isStarting = false,
+                        compactResult = compactResult,
+                        sessionId = payload.string("session_id", "sessionId"),
+                    )
+                    else -> null
+                }
+            }
+
             else -> null
         }
     }
@@ -277,11 +294,15 @@ internal class ClaudeStreamEventParser(
         val toolInput = inputObj.entries.associate { (k, v) ->
             k to ((v as? JsonPrimitive)?.contentOrNull ?: v.toString())
         }
+        val permissionSuggestions = (request["permission_suggestions"] as? JsonArray)
+            ?.mapNotNull { it.toString().takeIf { s -> s.isNotBlank() } }
+            .orEmpty()
         return ClaudeStreamEvent.ControlRequest(
             requestId = requestId,
             toolName = toolName,
             toolInput = toolInput,
             sessionId = payload.string("session_id", "sessionId"),
+            permissionSuggestions = permissionSuggestions,
         )
     }
 

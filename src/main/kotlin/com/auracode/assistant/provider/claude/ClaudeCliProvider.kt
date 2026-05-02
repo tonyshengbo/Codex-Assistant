@@ -18,6 +18,8 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.channelFlow
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
 import java.util.concurrent.ConcurrentHashMap
 
 /**
@@ -83,7 +85,13 @@ internal class ClaudeCliProvider(
                                 )
                                 val decision = deferred.await()
                                 approvals.remove(unified.request.requestId)
-                                session.writeStdin(buildControlResponse(unified.request.requestId, decision))
+                                session.writeStdin(
+                                    buildControlResponse(
+                                        approvalRequestId = unified.request.requestId,
+                                        decision = decision,
+                                        permissionSuggestions = unified.request.permissionSuggestions,
+                                    ),
+                                )
                                 diagnosticLogger(
                                     "Claude CLI approval decision: requestId=${request.requestId} " +
                                         "approvalId=${unified.request.requestId} decision=$decision",
@@ -162,10 +170,19 @@ internal class ClaudeCliProvider(
 
     /** 将 UI 层的授权决定写回 Claude CLI 的 stdin。 */
     override fun submitApprovalDecision(requestId: String, decision: ApprovalAction): Boolean {
+        val pendingKeys = pendingApprovals.values.flatMap { it.keys }
+        diagnosticLogger(
+            "Claude CLI submitApprovalDecision called: requestId=$requestId decision=$decision pendingKeys=$pendingKeys",
+        )
         for (approvals in pendingApprovals.values) {
             val deferred = approvals[requestId] ?: continue
-            return deferred.complete(decision)
+            val completed = deferred.complete(decision)
+            diagnosticLogger(
+                "Claude CLI submitApprovalDecision: deferred found requestId=$requestId completed=$completed",
+            )
+            return completed
         }
+        diagnosticLogger("Claude CLI submitApprovalDecision: deferred NOT found for requestId=$requestId")
         return false
     }
 
@@ -200,22 +217,34 @@ internal class ClaudeCliProvider(
     }
 
     /** 构造发回 Claude CLI stdin 的 control_response JSON 行。 */
-    private fun buildControlResponse(approvalRequestId: String, decision: ApprovalAction): String {
+    private fun buildControlResponse(
+        approvalRequestId: String,
+        decision: ApprovalAction,
+        permissionSuggestions: List<String> = emptyList(),
+    ): String {
         val behavior = when (decision) {
             ApprovalAction.ALLOW, ApprovalAction.ALLOW_FOR_SESSION -> "allow"
             ApprovalAction.REJECT -> "deny"
         }
+        // Claude CLI 协议：response 字段直接包含 behavior 和 updatedPermissions，不需要额外嵌套。
         val response = buildJsonObject {
             put("type", "control_response")
             put("request_id", approvalRequestId)
             put("response", buildJsonObject {
-                put("subtype", "success")
-                put("response", buildJsonObject {
-                    put("behavior", behavior)
-                })
+                put("behavior", behavior)
+                if (behavior == "allow" && permissionSuggestions.isNotEmpty()) {
+                    val parsed = permissionSuggestions.mapNotNull { raw ->
+                        runCatching { Json.parseToJsonElement(raw) }.getOrNull()
+                    }
+                    if (parsed.isNotEmpty()) {
+                        put("updatedPermissions", JsonArray(parsed))
+                    }
+                }
             })
         }
-        return response.toString()
+        val json = response.toString()
+        diagnosticLogger("Claude CLI control_response: $json")
+        return json
     }
 
     /** 记录会话启动元数据，便于确认 CLI 的执行上下文。 */
@@ -225,6 +254,7 @@ internal class ClaudeCliProvider(
                 "model=${request.model?.trim().orEmpty().ifBlank { "<auto>" }} " +
                 "cwd=${request.workingDirectory} " +
                 "resume=${request.remoteConversationId?.isNotBlank() == true} " +
+                "approvalMode=${request.approvalMode} " +
                 "contextFiles=${request.contextFiles.size} " +
                 "images=${request.imageAttachments.size} files=${request.fileAttachments.size}",
         )
