@@ -33,8 +33,10 @@ internal class DefaultClaudeCliLauncher(
             command = buildCommand(request, settings),
             workingDirectory = File(request.workingDirectory),
         )
-        if (request.imageAttachments.isNotEmpty()) {
-            // 有图片时通过 stdin 发送包含 base64 图片块的 stream-json 消息。
+        // 只有在不需要 stdio 控制通道时才通过 stdin 发送多模态消息。
+        // 当 approvalMode=REQUIRE_CONFIRMATION 或 plan 模式时，stdin 专用于 control_response，
+        // 图片已通过 --image 参数传递，无需再写 stdin。
+        if (request.imageAttachments.isNotEmpty() && !needsPermissionPromptTool(request)) {
             writeMultimodalMessage(process, request)
         }
         // 授权模式和计划模式需要保持 stdin 开放，以便写回 control_response；其它模式立即关闭。
@@ -54,6 +56,9 @@ internal class DefaultClaudeCliLauncher(
             .trim()
             .ifBlank { ClaudeProviderFactory.ENGINE_ID }
         val hasImages = request.imageAttachments.isNotEmpty()
+        // 当需要 stdio 控制通道时，stdin 专用于 control_response，不能再用 --input-format stream-json。
+        // 此时图片通过 --image <path> 参数传递，避免 stdin 协议冲突。
+        val useStdinForImages = hasImages && !needsPermissionPromptTool(request)
         return buildList {
             add(executable)
             add("-p")
@@ -84,12 +89,20 @@ internal class DefaultClaudeCliLauncher(
                     add("--append-system-prompt")
                     add(instruction)
                 }
-            if (hasImages) {
-                // 有图片时通过 stdin 以 stream-json 格式发送多模态消息，prompt 不作为 CLI 参数传入。
+            if (useStdinForImages) {
+                // 无控制通道时，通过 stdin 以 stream-json 格式发送多模态消息，prompt 不作为 CLI 参数传入。
                 add("--input-format")
                 add("stream-json")
             } else {
+                // 有控制通道或无图片时，prompt 直接作为 CLI 参数传入。
                 add(renderPrompt(request))
+                // 有图片且需要控制通道时，通过 --image 参数传递图片文件路径，避免占用 stdin。
+                if (hasImages) {
+                    request.imageAttachments.forEach { attachment ->
+                        add("--image")
+                        add(attachment.path)
+                    }
+                }
             }
         }
     }

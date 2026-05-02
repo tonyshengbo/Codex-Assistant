@@ -107,7 +107,7 @@ internal fun SubmissionSubagentTray(
                     contentAlignment = Alignment.Center,
                 ) {
                     Icon(
-                        painter = painterResource(if (state.subagentTrayExpanded) "/icons/arrow-up.svg" else "/icons/arrow-down.svg"),
+                        painter = painterResource(if (state.subagentTrayExpanded) "/icons/arrow-down.svg" else "/icons/arrow-up.svg"),
                         contentDescription = null,
                         tint = p.textMuted,
                         modifier = Modifier.size(12.dp),

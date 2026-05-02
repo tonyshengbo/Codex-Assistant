@@ -372,6 +372,10 @@ internal class ClaudeCliProvider(
             is ClaudeStreamEvent.TaskNotification -> {
                 "task-notification sessionId=${sessionId.orEmpty()} toolUseId=$toolUseId status=$status"
             }
+
+            is ClaudeStreamEvent.ContextCompaction -> {
+                "context-compaction sessionId=${sessionId.orEmpty()} isStarting=$isStarting"
+            }
         }
     }
 
@@ -420,6 +424,10 @@ internal class ClaudeCliProvider(
 
             is ClaudeConversationEvent.SubagentUpdated -> {
                 "subagent-updated toolUseId=$toolUseId displayName=$displayName status=$status"
+            }
+
+            is ClaudeConversationEvent.ContextCompactionUpdated -> {
+                "context-compaction-updated isCompleted=$isCompleted isSuccess=$isSuccess"
             }
         }
     }
