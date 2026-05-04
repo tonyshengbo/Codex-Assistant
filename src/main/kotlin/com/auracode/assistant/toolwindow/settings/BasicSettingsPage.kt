@@ -87,6 +87,13 @@ internal fun BasicSettingsPage(
                 onIntent(UiIntent.EditSettingsBackgroundCompletionNotificationsEnabled(it))
             },
         )
+        SettingsToggleField(
+            p = p,
+            title = AuraCodeBundle.message("settings.cliDebugLogging.label"),
+            description = AuraCodeBundle.message("settings.cliDebugLogging.hint"),
+            checked = state.cliDebugLoggingEnabled,
+            onCheckedChange = { onIntent(UiIntent.EditSettingsCliDebugLoggingEnabled(it)) },
+        )
     }
 }
 

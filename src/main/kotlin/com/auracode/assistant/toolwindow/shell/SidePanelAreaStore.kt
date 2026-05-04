@@ -61,6 +61,7 @@ internal data class SidePanelAreaState(
     val uiScaleMode: UiScaleMode = UiScaleMode.P100,
     val autoContextEnabled: Boolean = true,
     val backgroundCompletionNotificationsEnabled: Boolean = true,
+    val cliDebugLoggingEnabled: Boolean = false,
     val codexCliAutoUpdateCheckEnabled: Boolean = true,
     val codexCliVersionSnapshot: CodexCliVersionSnapshot = CodexCliVersionSnapshot(),
     val claudeCliVersionSnapshot: ClaudeCliVersionSnapshot = ClaudeCliVersionSnapshot(),
@@ -239,6 +240,10 @@ internal class SidePanelAreaStore {
                         )
                     }
 
+                    is UiIntent.EditSettingsCliDebugLoggingEnabled -> {
+                        _state.value = _state.value.copy(cliDebugLoggingEnabled = event.intent.enabled)
+                    }
+
                     is UiIntent.EditSettingsCodexCliAutoUpdateCheckEnabled -> {
                         _state.value = _state.value.copy(
                             codexCliAutoUpdateCheckEnabled = event.intent.enabled,
@@ -378,6 +383,7 @@ internal class SidePanelAreaStore {
                     uiScaleMode = event.uiScaleMode,
                     autoContextEnabled = event.autoContextEnabled,
                     backgroundCompletionNotificationsEnabled = event.backgroundCompletionNotificationsEnabled,
+                    cliDebugLoggingEnabled = event.cliDebugLoggingEnabled,
                     codexCliAutoUpdateCheckEnabled = event.codexCliAutoUpdateCheckEnabled,
                     codexCliVersionSnapshot = event.codexCliVersionSnapshot,
                     claudeCliVersionSnapshot = event.claudeCliVersionSnapshot,

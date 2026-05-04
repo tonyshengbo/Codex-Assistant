@@ -3,8 +3,6 @@ package com.auracode.assistant.toolwindow.settings
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.material.MaterialTheme
-import androidx.compose.material.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import com.auracode.assistant.i18n.AuraCodeBundle
@@ -40,25 +38,6 @@ internal fun McpSettingsPage(
                 )
             },
         )
-        when (state.mcpSettingsTab) {
-            McpSettingsTab.CODEX -> McpSettingsListPage(p = p, state = state, onIntent = onIntent)
-            McpSettingsTab.CLAUDE -> ClaudeMcpPlaceholderPage(p = p)
-        }
-    }
-}
-
-/** Renders the temporary placeholder state for the unsupported Claude MCP tab. */
-@Composable
-private fun ClaudeMcpPlaceholderPage(p: DesignPalette) {
-    SettingsField(
-        p = p,
-        title = AuraCodeBundle.message("settings.mcp.claude.placeholder.title"),
-        description = AuraCodeBundle.message("settings.mcp.claude.placeholder.body"),
-    ) {
-        Text(
-            text = AuraCodeBundle.message("settings.mcp.claude.placeholder.caption"),
-            color = p.textMuted,
-            style = MaterialTheme.typography.body2,
-        )
+        McpSettingsListPage(p = p, state = state, onIntent = onIntent)
     }
 }

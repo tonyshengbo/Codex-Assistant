@@ -347,6 +347,9 @@ internal class ToolWindowCoordinator(
             is UiIntent.EditSettingsBackgroundCompletionNotificationsEnabled -> {
                 settingsHandler.applyBackgroundCompletionNotificationPreference(intent.enabled)
             }
+            is UiIntent.EditSettingsCliDebugLoggingEnabled -> {
+                settingsHandler.applyCliDebugLoggingPreference(intent.enabled)
+            }
             is UiIntent.EditSettingsCodexCliAutoUpdateCheckEnabled -> {
                 settingsHandler.applyCodexCliAutoUpdatePreference(intent.enabled)
             }
@@ -598,6 +601,7 @@ internal class ToolWindowCoordinator(
                 uiScaleMode = settingsService.uiScaleMode(),
                 autoContextEnabled = settingsService.autoContextEnabled(),
                 backgroundCompletionNotificationsEnabled = settingsService.backgroundCompletionNotificationsEnabled(),
+                cliDebugLoggingEnabled = settingsService.cliDebugLoggingEnabled(),
                 codexCliAutoUpdateCheckEnabled = settingsService.codexCliAutoUpdateCheckEnabled(),
                 savedAgents = state.savedAgents.toList(),
                 selectedAgentIds = settingsService.selectedAgentIds(),

@@ -4,6 +4,7 @@ import com.auracode.assistant.conversation.ConversationCapabilities
 import com.auracode.assistant.conversation.ConversationHistoryPage
 import com.auracode.assistant.conversation.ConversationRef
 import com.auracode.assistant.conversation.ConversationSummaryPage
+import com.auracode.assistant.logging.CliDebugLogger
 import com.auracode.assistant.model.AgentRequest
 import com.auracode.assistant.provider.AgentProvider
 import com.auracode.assistant.provider.session.ProviderProtocolDomainMapper
@@ -30,7 +31,7 @@ internal class ClaudeCliProvider(
     private val launcher: ClaudeCliLauncher = DefaultClaudeCliLauncher(),
     private val parser: ClaudeStreamEventParser = ClaudeStreamEventParser(),
     private val historyReader: ClaudeLocalHistoryReader = ClaudeLocalHistoryReader(),
-    private val diagnosticLogger: (String) -> Unit = { message -> LOG.info(message) },
+    private val diagnosticLogger: (String) -> Unit = { message -> CLI_LOGGER.info { message } },
 ) : AgentProvider {
     override val providerId: String = ClaudeProviderFactory.ENGINE_ID
     private val running = ConcurrentHashMap<String, ClaudeStreamJsonSession>()
@@ -43,10 +44,10 @@ internal class ClaudeCliProvider(
         logStreamStart(request)
         val session = runCatching { launcher.start(request, settings) }
             .onFailure { error ->
-                diagnosticLogger(
+                CLI_LOGGER.warn {
                     "Claude CLI launch failed: requestId=${request.requestId} " +
-                        "message=${error.message.orEmpty().ifBlank { error::class.java.simpleName }}",
-                )
+                        "message=${error.message.orEmpty().ifBlank { error::class.java.simpleName }}"
+                }
             }
             .getOrElse { error ->
                 emitDomainEvents(
@@ -137,10 +138,10 @@ internal class ClaudeCliProvider(
         } catch (error: CancellationException) {
             throw error
         } catch (error: Throwable) {
-            diagnosticLogger(
+            CLI_LOGGER.warn {
                 "Claude CLI stream failed: requestId=${request.requestId} " +
-                    "message=${error.message.orEmpty().ifBlank { error::class.java.simpleName }}",
-            )
+                    "message=${error.message.orEmpty().ifBlank { error::class.java.simpleName }}"
+            }
             emitDomainEvents(
                 request = request,
                 event = ProviderEvent.Error(error.message.orEmpty().ifBlank { "Claude CLI request failed." }),
@@ -460,5 +461,6 @@ internal class ClaudeCliProvider(
     companion object {
         private const val LOG_SNIPPET_LIMIT: Int = 4000
         private val LOG = Logger.getInstance(ClaudeCliProvider::class.java)
+        private val CLI_LOGGER = CliDebugLogger(LOG)
     }
 }

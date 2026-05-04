@@ -7,6 +7,7 @@ import com.auracode.assistant.conversation.ConversationCapabilities
 import com.auracode.assistant.conversation.ConversationRef
 import com.auracode.assistant.conversation.ConversationSummaryPage
 import com.auracode.assistant.i18n.AuraCodeBundle
+import com.auracode.assistant.logging.CliDebugLogger
 import com.auracode.assistant.model.AgentAction
 import com.auracode.assistant.model.AgentApprovalMode
 import com.auracode.assistant.model.AgentCollaborationMode
@@ -62,7 +63,7 @@ class AgentChatService private constructor(
         settings = AgentSettingsService.getInstance(),
         registry = ProviderRegistry(AgentSettingsService.getInstance()),
         workingDirectoryProvider = { project.basePath ?: "." },
-        diagnosticLogger = { message -> LOG.info(message) },
+        diagnosticLogger = { message -> CLI_LOGGER.info { message } },
         scopeDispatcher = Dispatchers.IO,
     )
 
@@ -71,7 +72,7 @@ class AgentChatService private constructor(
         registry: ProviderRegistry,
         settings: AgentSettingsService,
         workingDirectoryProvider: () -> String = { "." },
-        diagnosticLogger: (String) -> Unit = { message -> LOG.info(message) },
+        diagnosticLogger: (String) -> Unit = { message -> CLI_LOGGER.info { message } },
         scopeDispatcher: CoroutineDispatcher = Dispatchers.IO,
     ) : this(
         project = null,
@@ -130,6 +131,7 @@ class AgentChatService private constructor(
 
     companion object {
         private val LOG = Logger.getInstance(AgentChatService::class.java)
+        private val CLI_LOGGER = CliDebugLogger(LOG)
 
         private fun defaultDatabasePath(project: Project): Path {
             val baseDir = Path.of(PathManager.getSystemPath(), "aura-code", project.locationHash)

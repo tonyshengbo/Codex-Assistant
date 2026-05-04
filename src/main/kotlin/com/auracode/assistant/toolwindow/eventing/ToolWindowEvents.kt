@@ -151,6 +151,7 @@ internal sealed interface UiIntent {
     data class EditSettingsUiScaleMode(val mode: UiScaleMode) : UiIntent
     data class EditSettingsAutoContextEnabled(val enabled: Boolean) : UiIntent
     data class EditSettingsBackgroundCompletionNotificationsEnabled(val enabled: Boolean) : UiIntent
+    data class EditSettingsCliDebugLoggingEnabled(val enabled: Boolean) : UiIntent
     data class EditSettingsCodexCliAutoUpdateCheckEnabled(val enabled: Boolean) : UiIntent
     data object DetectCodexEnvironment : UiIntent
     data object TestCodexEnvironment : UiIntent
@@ -252,6 +253,7 @@ internal sealed interface AppEvent {
         val uiScaleMode: UiScaleMode = UiScaleMode.P100,
         val autoContextEnabled: Boolean,
         val backgroundCompletionNotificationsEnabled: Boolean = true,
+        val cliDebugLoggingEnabled: Boolean = false,
         val codexCliAutoUpdateCheckEnabled: Boolean = true,
         val savedAgents: List<SavedAgentDefinition>,
         val selectedAgentIds: List<String> = emptyList(),

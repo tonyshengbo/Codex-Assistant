@@ -16,11 +16,7 @@ import androidx.compose.material.Icon
 import androidx.compose.material.MaterialTheme
 import androidx.compose.material.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -33,24 +29,15 @@ import com.auracode.assistant.i18n.AuraCodeBundle
 import com.auracode.assistant.toolwindow.shared.DesignPalette
 import com.auracode.assistant.toolwindow.shared.assistantUiTokens
 import java.awt.Desktop
-import java.awt.Toolkit
-import java.awt.datatransfer.StringSelection
 import java.net.URI
-import kotlinx.coroutines.delay
 
+/** Renders the About section inside the settings overlay. */
 @Composable
 internal fun AboutSettingsPage(
     p: DesignPalette,
 ) {
     val t = assistantUiTokens()
     val version = remember { AboutPluginInfo.pluginVersion() }
-    var qqGroupCopied by remember { mutableStateOf(false) }
-
-    LaunchedEffect(qqGroupCopied) {
-        if (!qqGroupCopied) return@LaunchedEffect
-        delay(1_600)
-        qqGroupCopied = false
-    }
 
     Column(
         modifier = Modifier.fillMaxWidth(),
@@ -68,7 +55,7 @@ internal fun AboutSettingsPage(
             AboutLinkRow(
                 p = p,
                 iconPath = "/icons/document.svg",
-                value = AboutPluginInfo.repositoryUrl,
+                value = AuraCodeBundle.message("settings.about.repository.value"),
                 actionText = AuraCodeBundle.message("settings.about.repository.action"),
                 onValueClick = { openExternalUrl(AboutPluginInfo.repositoryUrl) },
                 onActionClick = { openExternalUrl(AboutPluginInfo.repositoryUrl) },
@@ -92,18 +79,10 @@ internal fun AboutSettingsPage(
             AboutLinkRow(
                 p = p,
                 iconPath = "/icons/community.svg",
-                value = AboutPluginInfo.qqGroupNumber,
-                actionText = if (qqGroupCopied) {
-                    AuraCodeBundle.message("settings.about.community.action.copied")
-                } else {
-                    AuraCodeBundle.message("settings.about.community.action")
-                },
-                onValueClick = {
-                    qqGroupCopied = copyToClipboard(AboutPluginInfo.qqGroupNumber)
-                },
-                onActionClick = {
-                    qqGroupCopied = copyToClipboard(AboutPluginInfo.qqGroupNumber)
-                },
+                value = AuraCodeBundle.message("settings.about.community.value"),
+                actionText = AuraCodeBundle.message("settings.about.community.action"),
+                onValueClick = { openExternalUrl(AboutPluginInfo.communityJoinUrl) },
+                onActionClick = { openExternalUrl(AboutPluginInfo.communityJoinUrl) },
             )
         }
         Text(
@@ -114,6 +93,7 @@ internal fun AboutSettingsPage(
     }
 }
 
+/** Displays the branded hero card for the About section. */
 @Composable
 private fun AboutHeroCard(
     p: DesignPalette,
@@ -187,6 +167,7 @@ private fun AboutHeroCard(
     }
 }
 
+/** Displays a hidden-link entry with a branded label and action button. */
 @Composable
 private fun AboutLinkRow(
     p: DesignPalette,
@@ -231,6 +212,7 @@ private fun AboutLinkRow(
     }
 }
 
+/** Displays a compact badge for the current plugin version. */
 @Composable
 private fun AboutBadge(
     p: DesignPalette,
@@ -258,19 +240,13 @@ private fun AboutBadge(
     }
 }
 
+/** Opens an external URL in the host desktop browser when supported. */
 private fun openExternalUrl(url: String): Boolean {
     return runCatching {
         if (!Desktop.isDesktopSupported()) return false
         val desktop = Desktop.getDesktop()
         if (!desktop.isSupported(Desktop.Action.BROWSE)) return false
         desktop.browse(URI(url))
-        true
-    }.getOrDefault(false)
-}
-
-private fun copyToClipboard(value: String): Boolean {
-    return runCatching {
-        Toolkit.getDefaultToolkit().systemClipboard.setContents(StringSelection(value), null)
         true
     }.getOrDefault(false)
 }

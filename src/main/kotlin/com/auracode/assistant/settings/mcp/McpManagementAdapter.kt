@@ -1,6 +1,7 @@
 package com.auracode.assistant.settings.mcp
 
 import com.auracode.assistant.provider.CodexProviderFactory
+import com.auracode.assistant.provider.claude.ClaudeProviderFactory
 import com.auracode.assistant.settings.AgentSettingsService
 
 internal interface McpManagementAdapter {
@@ -29,6 +30,7 @@ internal class McpManagementAdapterRegistry(
     constructor(settings: AgentSettingsService) : this(
         adapters = mapOf(
             CodexProviderFactory.ENGINE_ID to CodexMcpManagementAdapter(settings),
+            ClaudeProviderFactory.ENGINE_ID to ClaudeMcpManagementAdapter(settings),
         ),
     )
 

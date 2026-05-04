@@ -50,6 +50,7 @@ class AgentSettingsService : PersistentStateComponent<AgentSettingsService.State
         var uiScale: String = UiScaleMode.P100.name,
         var autoContextEnabled: Boolean = true,
         var backgroundCompletionNotificationsEnabled: Boolean = true,
+        var cliDebugLoggingEnabled: Boolean = false,
         var codexCliAutoUpdateCheckEnabled: Boolean = true,
         var codexCliIgnoredVersion: String = "",
         var codexCliLastCheckAt: Long = 0L,
@@ -153,6 +154,14 @@ class AgentSettingsService : PersistentStateComponent<AgentSettingsService.State
 
     fun setBackgroundCompletionNotificationsEnabled(enabled: Boolean) {
         state.backgroundCompletionNotificationsEnabled = enabled
+    }
+
+    /** Returns whether CLI diagnostic info logs should be written to the IDE log. */
+    fun cliDebugLoggingEnabled(): Boolean = state.cliDebugLoggingEnabled
+
+    /** Persists whether CLI diagnostic info logs should be written to the IDE log. */
+    fun setCliDebugLoggingEnabled(enabled: Boolean) {
+        state.cliDebugLoggingEnabled = enabled
     }
 
     fun codexCliAutoUpdateCheckEnabled(): Boolean = state.codexCliAutoUpdateCheckEnabled

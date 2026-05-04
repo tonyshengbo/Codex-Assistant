@@ -64,6 +64,13 @@ internal class SettingsAndEnvironmentHandler(
         context.publishSettingsSnapshot()
     }
 
+    /** Applies the persisted CLI debug logging preference and refreshes the settings snapshot. */
+    fun applyCliDebugLoggingPreference(enabled: Boolean) {
+        if (context.settingsService.cliDebugLoggingEnabled() == enabled) return
+        context.settingsService.setCliDebugLoggingEnabled(enabled)
+        context.publishSettingsSnapshot()
+    }
+
     fun applyCodexCliAutoUpdatePreference(enabled: Boolean) {
         if (context.settingsService.codexCliAutoUpdateCheckEnabled() == enabled) return
         context.settingsService.setCodexCliAutoUpdateCheckEnabled(enabled)
@@ -86,6 +93,7 @@ internal class SettingsAndEnvironmentHandler(
         context.settingsService.setBackgroundCompletionNotificationsEnabled(
             sidePanelState.backgroundCompletionNotificationsEnabled,
         )
+        context.settingsService.setCliDebugLoggingEnabled(sidePanelState.cliDebugLoggingEnabled)
         context.settingsService.setCodexCliAutoUpdateCheckEnabled(sidePanelState.codexCliAutoUpdateCheckEnabled)
         if (oldLanguage != context.settingsService.uiLanguageMode()) {
             context.settingsService.notifyLanguageChanged()
@@ -396,7 +404,7 @@ internal class SettingsAndEnvironmentHandler(
             runCatching {
                 publishSkillsSnapshot(
                     forceReload = false,
-                    engineId = currentSkillsEngineId(),
+                    engineId = context.currentEngineId(),
                 )
             }
         }
@@ -996,10 +1004,7 @@ internal class SettingsAndEnvironmentHandler(
 
     /** Refreshes MCP data only for tabs backed by a real adapter. */
     fun onMcpSettingsTabSelected(tab: McpSettingsTab) {
-        when (tab) {
-            McpSettingsTab.CODEX -> loadMcpServers()
-            McpSettingsTab.CLAUDE -> Unit
-        }
+        loadMcpServers()
     }
 
     fun mcpContextSnapshotForLog(): String = mcpContextSnapshot()
@@ -1137,7 +1142,10 @@ internal class SettingsAndEnvironmentHandler(
         )
     }
 
-    private fun mcpAdapter(): McpManagementAdapter = context.mcpAdapterRegistry.defaultAdapter()
+    private fun mcpAdapter(): McpManagementAdapter {
+        val engineId = context.sidePanelStore.state.value.mcpSettingsTab.engineId
+        return context.mcpAdapterRegistry.adapterFor(engineId)
+    }
 
     private fun mcpContextSnapshot(requestedName: String? = null): String {
         val state = context.sidePanelStore.state.value

@@ -2,6 +2,7 @@ package com.auracode.assistant.settings.mcp
 
 import com.auracode.assistant.coroutine.AppCoroutineManager
 import com.auracode.assistant.coroutine.ManagedCoroutineScope
+import com.auracode.assistant.logging.CliDebugLogger
 import com.auracode.assistant.provider.CodexProviderFactory
 import com.auracode.assistant.provider.codex.CodexRuntimeJsonSupport
 import com.auracode.assistant.provider.codex.CodexEnvironmentDetector
@@ -434,6 +435,7 @@ internal class CodexMcpManagementAdapter(
 
     companion object {
         private val LOG = Logger.getInstance(CodexMcpManagementAdapter::class.java)
+        private val CLI_LOGGER = CliDebugLogger(LOG)
 
         private fun runCommand(request: CommandExecutionRequest): CommandExecutionResult {
             val command = request.command
@@ -475,7 +477,7 @@ private class RealCodexMcpAppServerClient(
     binary: String,
     environmentOverrides: Map<String, String>,
     private val diagnosticLogger: (String) -> Unit = { message ->
-        Logger.getInstance(CodexMcpManagementAdapter::class.java).info(message)
+        CliDebugLogger(Logger.getInstance(CodexMcpManagementAdapter::class.java)).info { message }
     },
 ) : CodexMcpAppServerClient {
     private val process = ProcessBuilder(listOf(binary, "app-server"))
@@ -493,9 +495,9 @@ private class RealCodexMcpAppServerClient(
         scopeName = "CodexMcpAppServerClient",
         dispatcher = Dispatchers.IO,
         failureReporter = { scopeName, label, error ->
-            diagnosticLogger(
-                "$scopeName coroutine failed${label?.let { ": $it" }.orEmpty()}: ${error.message}\n${error.stackTraceToString()}",
-            )
+            CliDebugLogger(Logger.getInstance(CodexMcpManagementAdapter::class.java)).warn {
+                "$scopeName coroutine failed${label?.let { ": $it" }.orEmpty()}: ${error.message}\n${error.stackTraceToString()}"
+            }
         },
     )
 
