@@ -303,6 +303,11 @@ internal class ToolWindowCoordinator(
             )
             is UiIntent.SwitchSession -> conversationHandler.switchSession(intent.sessionId) {
                 historyHandler.restoreCurrentSessionHistory()
+            }.also {
+                settingsHandler.warmRuntimeSkillsCacheForEngine(
+                    engineId = chatService.sessionProviderId(chatService.getCurrentSessionId()),
+                    forceReload = false,
+                )
             }
             UiIntent.LoadHistoryConversations -> historyHandler.loadHistoryConversations(reset = true)
             UiIntent.LoadMoreHistoryConversations -> historyHandler.loadHistoryConversations(reset = false)
@@ -639,6 +644,10 @@ internal class ToolWindowCoordinator(
             publishSettingsSnapshot()
             publishConversationCapabilities()
             publishSessionSnapshot()
+            settingsHandler.warmRuntimeSkillsCacheForEngine(
+                engineId = normalizedEngineId,
+                forceReload = false,
+            )
             return
         }
 
@@ -679,6 +688,10 @@ internal class ToolWindowCoordinator(
         publishSettingsSnapshot()
         publishConversationCapabilities()
         publishSessionSnapshot()
+        settingsHandler.warmRuntimeSkillsCacheForEngine(
+            engineId = normalizedEngineId,
+            forceReload = true,
+        )
     }
 
     /**

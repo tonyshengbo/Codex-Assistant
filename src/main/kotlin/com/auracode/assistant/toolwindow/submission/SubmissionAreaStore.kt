@@ -316,7 +316,7 @@ internal data class SubmissionAreaState(
 }
 
 internal class SubmissionAreaStore(
-    private val availableSkillsProvider: () -> List<SlashSkillDescriptor> = ::discoverAvailableSkills,
+    private val availableSkillsProvider: (engineId: String) -> List<SlashSkillDescriptor> = ::discoverAvailableSkills,
 ) {
     companion object {
         const val MAX_CONTEXT_FILES: Int = 10
@@ -373,7 +373,7 @@ internal class SubmissionAreaStore(
                             engineMenuExpanded = false,
                             modelMenuExpanded = false,
                             engineSwitchConfirmation = null,
-                        )
+                        ).refreshSlashSuggestions()
                     }
                     UiIntent.DismissEngineSwitchDialog -> _state.value = _state.value.copy(
                         engineSwitchConfirmation = null,
@@ -759,7 +759,7 @@ internal class SubmissionAreaStore(
                     } else {
                         _state.value.activeMentionIndex
                     },
-                )
+                ).refreshSlashSuggestions()
             }
 
             is AppEvent.PendingSubmissionsUpdated -> {
@@ -816,7 +816,7 @@ internal class SubmissionAreaStore(
                     } else {
                         _state.value.customModelDraft
                     },
-                ).withResolvedContextEntries()
+                ).withResolvedContextEntries().refreshSlashSuggestions()
             }
 
             AppEvent.ConversationReset -> _state.value = SubmissionAreaState(
@@ -830,6 +830,12 @@ internal class SubmissionAreaStore(
                 selectedReasoning = _state.value.selectedReasoning,
                 activeSessionMessageCount = null,
             )
+
+            is AppEvent.RuntimeSkillsSnapshotUpdated -> {
+                if (event.engineId == _state.value.selectedEngineId) {
+                    _state.value = _state.value.refreshSlashSuggestions()
+                }
+            }
 
             else -> Unit
         }
@@ -1077,7 +1083,7 @@ internal class SubmissionAreaStore(
         return buildList {
             addAll(buildSlashCommandSuggestions(query, state))
             addAll(
-                availableSkillsProvider()
+                availableSkillsProvider(state.selectedEngineId)
                     .filter { skill ->
                         query.trim().isBlank() ||
                             skill.name.contains(query.trim(), ignoreCase = true) ||
@@ -1220,6 +1226,24 @@ internal class SubmissionAreaStore(
             agentSuggestions = if (slashMatch == null && keepAgentSuggestions) agentSuggestions else emptyList(),
             agentPopupVisible = slashMatch == null && keepAgentSuggestions && agentPopupVisible,
             activeAgentIndex = if (keepAgentSuggestions) activeAgentIndex.coerceAtMost((agentSuggestions.size - 1).coerceAtLeast(0)) else 0,
+        )
+    }
+
+    /** Rebuilds slash suggestions after engine or runtime-skills cache changes. */
+    private fun SubmissionAreaState.refreshSlashSuggestions(): SubmissionAreaState {
+        val slashMatch = findSlashQuery(document, mentionEntries) ?: return copy(
+            slashQuery = "",
+            slashSuggestions = emptyList(),
+            slashPopupVisible = false,
+            activeSlashIndex = 0,
+        )
+        val slashQuery = slashMatch.query
+        val slashSuggestions = buildSlashSuggestions(slashQuery, this)
+        return copy(
+            slashQuery = slashQuery,
+            slashSuggestions = slashSuggestions,
+            slashPopupVisible = slashSuggestions.isNotEmpty(),
+            activeSlashIndex = activeSlashIndex.coerceAtMost((slashSuggestions.size - 1).coerceAtLeast(0)),
         )
     }
 

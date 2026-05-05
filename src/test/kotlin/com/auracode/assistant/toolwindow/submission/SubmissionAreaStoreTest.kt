@@ -1,5 +1,7 @@
 package com.auracode.assistant.toolwindow.submission
 
+import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.input.TextFieldValue
 import com.auracode.assistant.protocol.ProviderApprovalRequestKind
 import com.auracode.assistant.conversation.ConversationCapabilities
 import com.auracode.assistant.model.ContextFile
@@ -583,6 +585,56 @@ class SubmissionAreaStoreTest {
 
         assertEquals("claude", store.state.value.selectedEngineId)
         assertEquals("claude-sonnet-4-6", store.state.value.selectedModel)
+    }
+
+    @Test
+    fun `runtime skills snapshot refreshes slash suggestions for the selected engine`() {
+        var skillsByEngine = mapOf(
+            "codex" to emptyList<SlashSkillDescriptor>(),
+            "claude" to listOf(
+                SlashSkillDescriptor(
+                    name = "claude-skill",
+                    description = "Claude only.",
+                ),
+            ),
+        )
+        val store = SubmissionAreaStore(
+            availableSkillsProvider = { engineId -> skillsByEngine[engineId].orEmpty() },
+        )
+        store.restoreState(
+            SubmissionAreaState(
+                selectedEngineId = "codex",
+                document = TextFieldValue("/", TextRange(1)),
+            ),
+        )
+        store.onEvent(
+            AppEvent.UiIntentPublished(
+                UiIntent.UpdateDocument(TextFieldValue("/", TextRange(1))),
+            ),
+        )
+
+        assertTrue(store.state.value.slashSuggestions.none { it is SlashSuggestionItem.Skill })
+
+        skillsByEngine = skillsByEngine + (
+            "codex" to listOf(
+                SlashSkillDescriptor(
+                    name = "codex-skill",
+                    description = "Codex only.",
+                ),
+            )
+        )
+        store.onEvent(
+            AppEvent.RuntimeSkillsSnapshotUpdated(
+                engineId = "codex",
+                cwd = ".",
+            ),
+        )
+
+        assertTrue(store.state.value.slashPopupVisible)
+        assertEquals(
+            listOf("codex-skill"),
+            store.state.value.slashSuggestions.mapNotNull { (it as? SlashSuggestionItem.Skill)?.name },
+        )
     }
 
     @Test

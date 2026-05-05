@@ -400,12 +400,24 @@ internal class SettingsAndEnvironmentHandler(
 
     /** Preloads runtime skills in the background for later composer usage. */
     fun warmSkillsRuntimeCache() {
-        context.coroutineLauncher.launch("warmSkillsRuntimeCache") {
+        warmRuntimeSkillsCacheForEngine(
+            engineId = context.currentEngineId(),
+            forceReload = false,
+        )
+    }
+
+    /** Preloads one engine's runtime skills for composer slash suggestions and validation. */
+    fun warmRuntimeSkillsCacheForEngine(
+        engineId: String,
+        forceReload: Boolean = false,
+    ) {
+        context.coroutineLauncher.launch("warmSkillsRuntimeCache($engineId)") {
             runCatching {
-                publishSkillsSnapshot(
-                    forceReload = false,
-                    engineId = context.currentEngineId(),
+                val snapshot = loadSkillsSnapshot(
+                    forceReload = forceReload,
+                    engineId = engineId,
                 )
+                publishRuntimeSkillsSnapshot(snapshot)
             }
         }
     }
@@ -462,11 +474,11 @@ internal class SettingsAndEnvironmentHandler(
         forceReload: Boolean,
         engineId: String,
     ) {
-        val snapshot = context.engineSkillsService.loadSkills(
-            engineId = engineId,
-            cwd = context.chatService.currentWorkingDirectory(),
+        val snapshot = loadSkillsSnapshot(
             forceReload = forceReload,
+            engineId = engineId,
         )
+        publishRuntimeSkillsSnapshot(snapshot)
         context.eventHub.publish(
             AppEvent.SkillsLoaded(
                 engineId = snapshot.engineId,
@@ -475,6 +487,28 @@ internal class SettingsAndEnvironmentHandler(
                 supportsRuntimeSkills = snapshot.supportsRuntimeSkills,
                 stale = snapshot.stale,
                 errorMessage = snapshot.errorMessage,
+            ),
+        )
+    }
+
+    /** Loads the latest managed skills snapshot for one engine and cwd pair. */
+    private suspend fun loadSkillsSnapshot(
+        forceReload: Boolean,
+        engineId: String,
+    ) = context.engineSkillsService.loadSkills(
+        engineId = engineId,
+        cwd = context.chatService.currentWorkingDirectory(),
+        forceReload = forceReload,
+    )
+
+    /** Broadcasts a runtime-skills cache refresh without mutating the Settings page state. */
+    private fun publishRuntimeSkillsSnapshot(
+        snapshot: com.auracode.assistant.settings.skills.ManagedSkillsSnapshot,
+    ) {
+        context.eventHub.publish(
+            AppEvent.RuntimeSkillsSnapshotUpdated(
+                engineId = snapshot.engineId,
+                cwd = snapshot.cwd,
             ),
         )
     }

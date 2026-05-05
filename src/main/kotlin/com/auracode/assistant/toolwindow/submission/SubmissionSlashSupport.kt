@@ -134,5 +134,4 @@ internal fun replaceSlashQuery(
     )
 }
 
-internal fun discoverAvailableSkills(): List<SlashSkillDescriptor> = emptyList()
-
+internal fun discoverAvailableSkills(@Suppress("UNUSED_PARAMETER") engineId: String): List<SlashSkillDescriptor> = emptyList()

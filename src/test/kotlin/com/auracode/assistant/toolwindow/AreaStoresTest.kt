@@ -1519,7 +1519,7 @@ class AreaStoresTest {
     @Test
     fun `slash popup opens at input start and lists commands plus skills`() {
         val store = SubmissionAreaStore(
-            availableSkillsProvider = {
+            availableSkillsProvider = { _ ->
                 listOf(
                     com.auracode.assistant.toolwindow.submission.SlashSkillDescriptor(
                         name = "brainstorming",
@@ -1722,7 +1722,7 @@ class AreaStoresTest {
     @Test
     fun `slash popup supports keyboard selection state`() {
         val store = SubmissionAreaStore(
-            availableSkillsProvider = {
+            availableSkillsProvider = { _ ->
                 listOf(
                     com.auracode.assistant.toolwindow.submission.SlashSkillDescriptor(
                         name = "brainstorming",

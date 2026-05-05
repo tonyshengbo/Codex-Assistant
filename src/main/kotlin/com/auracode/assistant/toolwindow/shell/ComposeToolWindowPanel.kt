@@ -89,9 +89,9 @@ class ComposeToolWindowPanel(
         runtimeService = skillsRuntimeService,
     )
     private val submissionStore = SubmissionAreaStore(
-        availableSkillsProvider = {
+        availableSkillsProvider = { engineId ->
             engineSkillsService.enabledSlashSkills(
-                engineId = chatService.defaultEngineId(),
+                engineId = engineId,
                 cwd = chatService.currentWorkingDirectory(),
             )
         },

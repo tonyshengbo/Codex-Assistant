@@ -385,7 +385,7 @@ class ToolWindowCoordinatorMcpTest {
             enabledUpdates += name to enabled
         }
 
-        override suspend fun refreshStatuses(): Map<String, McpRuntimeStatus> {
+        override suspend fun refreshStatuses(serverNames: List<String>?): Map<String, McpRuntimeStatus> {
             refreshCalls += 1
             return statuses
         }

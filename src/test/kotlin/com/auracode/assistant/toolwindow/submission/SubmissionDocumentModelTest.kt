@@ -403,7 +403,7 @@ class SubmissionDocumentModelTest {
     @Test
     fun `select slash skill inserts visible skill token`() {
         val store = SubmissionAreaStore(
-            availableSkillsProvider = {
+            availableSkillsProvider = { _ ->
                 listOf(
                     SlashSkillDescriptor(
                         name = "brainstorming",

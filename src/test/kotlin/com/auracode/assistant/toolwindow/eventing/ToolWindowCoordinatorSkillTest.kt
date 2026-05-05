@@ -84,8 +84,8 @@ class ToolWindowCoordinatorSkillTest {
         }
         val engineSkillsService = EngineSkillsService(runtimeService = runtimeService)
         val submissionStore = SubmissionAreaStore(
-            availableSkillsProvider = {
-                engineSkillsService.enabledSlashSkills(engineId = "codex", cwd = ".")
+            availableSkillsProvider = { engineId ->
+                engineSkillsService.enabledSlashSkills(engineId = engineId, cwd = ".")
             },
         )
         val coordinator = ToolWindowCoordinator(
@@ -157,8 +157,8 @@ class ToolWindowCoordinatorSkillTest {
         }
         val engineSkillsService = EngineSkillsService(runtimeService = runtimeService)
         val store = SubmissionAreaStore(
-            availableSkillsProvider = {
-                engineSkillsService.enabledSlashSkills(engineId = "codex", cwd = ".")
+            availableSkillsProvider = { engineId ->
+                engineSkillsService.enabledSlashSkills(engineId = engineId, cwd = ".")
             },
         )
 
@@ -169,6 +169,95 @@ class ToolWindowCoordinatorSkillTest {
 
         assertFalse(skillNames.contains("brainstorming"))
         assertTrue(skillNames.contains("systematic-debugging"))
+    }
+
+    @Test
+    fun `switching from claude to codex refreshes open slash skills for codex`() {
+        val workingDir = createTempDirectory("coordinator-skill-engine-switch")
+        val settings = AgentSettingsService().apply {
+            setDefaultEngineId("claude")
+        }
+        val service = AgentChatService(
+            repository = com.auracode.assistant.persistence.chat.SQLiteChatSessionRepository(workingDir.resolve("chat.db")),
+            registry = registry(defaultEngineId = "claude"),
+            settings = settings,
+        )
+        val eventHub = ToolWindowEventHub()
+        val claudeAdapter = RecordingSkillsManagementAdapter(
+            records = mutableListOf(
+                RuntimeSkillRecord(
+                    name = "claude-skill",
+                    description = "Claude skill.",
+                    enabled = true,
+                    path = "/runtime/claude/claude-skill/SKILL.md",
+                    scopeLabel = "user",
+                ),
+            ),
+            adapterEngineId = "claude",
+        )
+        val codexAdapter = RecordingSkillsManagementAdapter(
+            records = mutableListOf(
+                RuntimeSkillRecord(
+                    name = "codex-skill",
+                    description = "Codex skill.",
+                    enabled = true,
+                    path = "/runtime/codex/codex-skill/SKILL.md",
+                    scopeLabel = "user",
+                ),
+            ),
+        )
+        val runtimeService = SkillsRuntimeService(
+            SkillsManagementAdapterRegistry(
+                adapters = mapOf("codex" to codexAdapter, "claude" to claudeAdapter),
+                defaultEngineId = "claude",
+            ),
+        )
+        val engineSkillsService = EngineSkillsService(runtimeService = runtimeService)
+        val store = SubmissionAreaStore(
+            availableSkillsProvider = { engineId ->
+                engineSkillsService.enabledSlashSkills(engineId, ".")
+            },
+        )
+        val coordinator = ToolWindowCoordinator(
+            chatService = service,
+            settingsService = settings,
+            eventHub = eventHub,
+            sessionTabsStore = SessionTabsAreaStore(),
+            executionStatusStore = ExecutionStatusAreaStore(),
+            conversationStore = ConversationAreaStore(),
+            submissionStore = store,
+            sidePanelStore = SidePanelAreaStore(),
+            approvalStore = ApprovalAreaStore(),
+            skillsRuntimeService = runtimeService,
+            engineSkillsService = engineSkillsService,
+            runStartupWarmups = true,
+            scopeDispatcher = testDispatcher,
+        )
+
+        waitUntil(2_000) { claudeAdapter.listCalls > 0 }
+
+        store.onEvent(
+            AppEvent.UiIntentPublished(
+                UiIntent.UpdateDocument(TextFieldValue("/", TextRange(1))),
+            ),
+        )
+        waitUntil(2_000) {
+            store.state.value.slashSuggestions.mapNotNull { (it as? com.auracode.assistant.toolwindow.submission.SlashSuggestionItem.Skill)?.name } ==
+                listOf("claude-skill")
+        }
+
+        eventHub.publishUiIntent(UiIntent.SelectEngine("codex"))
+
+        waitUntil(2_000) {
+            store.state.value.selectedEngineId == "codex" &&
+                codexAdapter.listCalls > 0 &&
+                store.state.value.slashSuggestions.mapNotNull {
+                    (it as? com.auracode.assistant.toolwindow.submission.SlashSuggestionItem.Skill)?.name
+                } == listOf("codex-skill")
+        }
+
+        coordinator.dispose()
+        service.dispose()
     }
 
     @Test
@@ -453,8 +542,8 @@ class ToolWindowCoordinatorSkillTest {
             executionStatusStore = ExecutionStatusAreaStore(),
             conversationStore = ConversationAreaStore(),
             submissionStore = SubmissionAreaStore(
-                availableSkillsProvider = {
-                    engineSkillsService.enabledSlashSkills("claude", workingDir.toString())
+                availableSkillsProvider = { engineId ->
+                    engineSkillsService.enabledSlashSkills(engineId, workingDir.toString())
                 },
             ),
             sidePanelStore = sidePanelStore,
@@ -528,8 +617,8 @@ class ToolWindowCoordinatorSkillTest {
             executionStatusStore = ExecutionStatusAreaStore(),
             conversationStore = ConversationAreaStore(),
             submissionStore = SubmissionAreaStore(
-                availableSkillsProvider = {
-                    engineSkillsService.enabledSlashSkills("claude", workingDir.toString())
+                availableSkillsProvider = { engineId ->
+                    engineSkillsService.enabledSlashSkills(engineId, workingDir.toString())
                 },
             ),
             sidePanelStore = sidePanelStore,

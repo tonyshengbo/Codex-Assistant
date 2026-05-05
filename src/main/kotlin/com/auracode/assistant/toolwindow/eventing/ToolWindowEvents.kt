@@ -290,6 +290,10 @@ internal sealed interface AppEvent {
         val stale: Boolean,
         val errorMessage: String? = null,
     ) : AppEvent
+    data class RuntimeSkillsSnapshotUpdated(
+        val engineId: String,
+        val cwd: String,
+    ) : AppEvent
     data class SkillsLoadingChanged(
         val loading: Boolean,
         val activePath: String? = null,
