@@ -638,6 +638,40 @@ class SubmissionAreaStoreTest {
     }
 
     @Test
+    fun `slash skill suggestions only match skill names and ignore descriptions`() {
+        val store = SubmissionAreaStore(
+            availableSkillsProvider = {
+                listOf(
+                    SlashSkillDescriptor(
+                        name = "ui-ux-pro-max",
+                        description = "Actions include review and refactor.",
+                    ),
+                    SlashSkillDescriptor(
+                        name = "review-code",
+                        description = "Code review workflow.",
+                    ),
+                )
+            },
+        )
+
+        store.restoreState(
+            SubmissionAreaState(
+                document = TextFieldValue("/review", TextRange(7)),
+            ),
+        )
+        store.onEvent(
+            AppEvent.UiIntentPublished(
+                UiIntent.UpdateDocument(TextFieldValue("/review", TextRange(7))),
+            ),
+        )
+
+        assertEquals(
+            listOf("review-code"),
+            store.state.value.slashSuggestions.mapNotNull { (it as? SlashSuggestionItem.Skill)?.name },
+        )
+    }
+
+    @Test
     fun `requesting engine switch from a populated session opens a confirmation dialog instead of changing engine`() {
         val store = SubmissionAreaStore()
         store.onEvent(

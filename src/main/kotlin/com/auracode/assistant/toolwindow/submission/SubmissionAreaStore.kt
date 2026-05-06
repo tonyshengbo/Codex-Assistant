@@ -1086,8 +1086,7 @@ internal class SubmissionAreaStore(
                 availableSkillsProvider(state.selectedEngineId)
                     .filter { skill ->
                         query.trim().isBlank() ||
-                            skill.name.contains(query.trim(), ignoreCase = true) ||
-                            skill.description.contains(query.trim(), ignoreCase = true)
+                            skill.name.contains(query.trim(), ignoreCase = true)
                     }
                     .map { skill ->
                         SlashSuggestionItem.Skill(

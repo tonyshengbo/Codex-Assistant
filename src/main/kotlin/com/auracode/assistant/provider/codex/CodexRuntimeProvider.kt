@@ -36,6 +36,7 @@ import com.auracode.assistant.protocol.ProviderToolUserInputSubmission
 import com.auracode.assistant.settings.AgentSettingsService
 import com.auracode.assistant.session.kernel.SessionDomainEvent
 import com.auracode.assistant.toolwindow.execution.ApprovalAction
+import com.auracode.assistant.logging.CliDebugLogger
 import com.intellij.openapi.diagnostic.Logger
 import kotlinx.coroutines.DelicateCoroutinesApi
 import kotlinx.coroutines.CompletableDeferred
@@ -70,7 +71,7 @@ import java.util.concurrent.atomic.AtomicInteger
 internal class CodexRuntimeProvider(
     private val settings: AgentSettingsService,
     private val environmentDetector: CodexEnvironmentDetector = CodexEnvironmentDetector(),
-    private val diagnosticLogger: (String) -> Unit = { message -> LOG.info(message) },
+    private val diagnosticLogger: (String) -> Unit = { message -> CLI_LOGGER.info { message } },
 ) : AgentProvider {
     private val running = ConcurrentHashMap<String, ActiveRequest>()
     override val providerId: String = CodexProviderFactory.ENGINE_ID
@@ -1509,6 +1510,7 @@ internal class CodexRuntimeProvider(
 
     companion object {
         private val LOG = Logger.getInstance(CodexRuntimeProvider::class.java)
+        private val CLI_LOGGER = CliDebugLogger(LOG)
     }
 }
 

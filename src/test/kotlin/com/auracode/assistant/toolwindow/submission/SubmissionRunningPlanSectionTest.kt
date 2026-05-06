@@ -29,6 +29,25 @@ class SubmissionRunningPlanSectionTest {
 
         assertEquals("Running plan", summary.title)
         assertEquals("Update UI", summary.currentStep)
+        assertEquals("2/3", summary.progressLabel)
+    }
+
+    @Test
+    fun `header summary shows step 1 of N when first step is in progress`() {
+        val summary = runningPlanHeaderSummary(
+            SubmissionRunningPlanState(
+                threadId = "thread-1",
+                turnId = "turn-1",
+                explanation = "Executing plan",
+                steps = listOf(
+                    SubmissionRunningPlanStep(step = "Inspect logs", status = SubmissionRunningPlanStepStatus.IN_PROGRESS),
+                    SubmissionRunningPlanStep(step = "Update UI", status = SubmissionRunningPlanStepStatus.PENDING),
+                    SubmissionRunningPlanStep(step = "Verify tests", status = SubmissionRunningPlanStepStatus.PENDING),
+                ),
+            ),
+        )
+
+        assertEquals("Inspect logs", summary.currentStep)
         assertEquals("1/3", summary.progressLabel)
     }
 

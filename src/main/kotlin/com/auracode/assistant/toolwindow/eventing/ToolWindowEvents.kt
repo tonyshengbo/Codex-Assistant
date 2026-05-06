@@ -37,6 +37,9 @@ import com.auracode.assistant.toolwindow.settings.RuntimeSettingsTab
 import com.auracode.assistant.toolwindow.settings.SettingsSection
 import com.auracode.assistant.toolwindow.settings.SkillsSettingsTab
 import com.auracode.assistant.toolwindow.settings.McpSettingsTab
+import com.auracode.assistant.toolwindow.settings.TokenUsageRange
+import com.auracode.assistant.toolwindow.settings.TokenUsageSettingsTab
+import com.auracode.assistant.toolwindow.settings.TokenUsageStatsSnapshot
 import com.auracode.assistant.toolwindow.shared.UiText
 import com.auracode.assistant.toolwindow.execution.ExecutionTurnStatusUiState
 import com.auracode.assistant.toolwindow.conversation.ConversationFileChange
@@ -143,6 +146,8 @@ internal sealed interface UiIntent {
     data class SelectRuntimeSettingsTab(val tab: RuntimeSettingsTab) : UiIntent
     data class SelectSkillsSettingsTab(val tab: SkillsSettingsTab) : UiIntent
     data class SelectMcpSettingsTab(val tab: McpSettingsTab) : UiIntent
+    data class SelectTokenUsageSettingsTab(val tab: TokenUsageSettingsTab) : UiIntent
+    data class SelectTokenUsageRange(val range: TokenUsageRange) : UiIntent
     data class EditSettingsCodexCliPath(val value: String) : UiIntent
     data class EditSettingsClaudeCliPath(val value: String) : UiIntent
     data class EditSettingsNodePath(val value: String) : UiIntent
@@ -190,6 +195,8 @@ internal sealed interface UiIntent {
     data class LoginMcpServer(val name: String) : UiIntent
     data class CancelMcpLogin(val name: String) : UiIntent
     data class LogoutMcpServer(val name: String) : UiIntent
+    data object LoadTokenUsageStats : UiIntent
+    data object RefreshTokenUsageStats : UiIntent
     data object DiscardRuntimeSettingsChanges : UiIntent
     data object SaveSettings : UiIntent
 }
@@ -306,6 +313,23 @@ internal sealed interface AppEvent {
     data class McpBusyStateUpdated(val state: McpBusyState) : AppEvent
     data class McpValidationErrorsUpdated(val errors: McpValidationErrors) : AppEvent
     data class McpFeedbackUpdated(val message: String, val isError: Boolean) : AppEvent
+    /** Announces the scoped Token Usage request that is now considered active by the UI. */
+    data class TokenUsageStatsLoadingChanged(
+        val loading: Boolean,
+        val requestScopeKey: String,
+    ) : AppEvent
+
+    /** Publishes one completed Token Usage snapshot together with the scoped request key that produced it. */
+    data class TokenUsageStatsUpdated(
+        val snapshot: TokenUsageStatsSnapshot,
+        val requestScopeKey: String,
+    ) : AppEvent
+
+    /** Publishes one scoped Token Usage load failure for the request that produced it. */
+    data class TokenUsageStatsFailed(
+        val message: String,
+        val requestScopeKey: String,
+    ) : AppEvent
     data class StatusTextUpdated(val text: UiText) : AppEvent
     data class ConversationOlderLoadingChanged(val loading: Boolean) : AppEvent
     data class ConversationUiProjectionUpdated(

@@ -39,6 +39,7 @@ import com.auracode.assistant.toolwindow.execution.ExecutionStatusAreaStore
 import com.auracode.assistant.toolwindow.conversation.ConversationAreaStore
 import com.auracode.assistant.toolwindow.conversation.ConversationFileChange
 import com.auracode.assistant.toolwindow.execution.ToolUserInputPromptStore
+import com.auracode.assistant.logging.CliDebugLogger
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.diagnostic.Logger
 import kotlinx.coroutines.CoroutineDispatcher
@@ -106,7 +107,7 @@ internal class ToolWindowCoordinator(
         if (error != null) {
             LOG.warn(message, error)
         } else {
-            LOG.info(message)
+            CLI_LOGGER.info { message }
         }
     },
     private val onSessionSnapshotPublished: () -> Unit = {},
@@ -116,6 +117,7 @@ internal class ToolWindowCoordinator(
 ) : Disposable {
     companion object {
         private val LOG = Logger.getInstance(ToolWindowCoordinator::class.java)
+        private val CLI_LOGGER = CliDebugLogger(LOG)
         private const val MENTION_LIMIT: Int = 10
         private const val EXECUTE_APPROVED_PLAN_PROMPT: String =
             "The user approved the latest plan. Execute it now."
@@ -323,6 +325,10 @@ internal class ToolWindowCoordinator(
             is UiIntent.SelectRuntimeSettingsTab -> settingsHandler.onRuntimeSettingsTabSelected(intent.tab)
             is UiIntent.SelectSkillsSettingsTab -> settingsHandler.onSkillsSettingsTabSelected(intent.tab)
             is UiIntent.SelectMcpSettingsTab -> settingsHandler.onMcpSettingsTabSelected(intent.tab)
+            is UiIntent.SelectTokenUsageSettingsTab -> settingsHandler.onTokenUsageSettingsTabSelected(intent.tab)
+            is UiIntent.SelectTokenUsageRange -> settingsHandler.onTokenUsageRangeSelected(intent.range)
+            UiIntent.LoadTokenUsageStats -> settingsHandler.loadTokenUsageStats()
+            UiIntent.RefreshTokenUsageStats -> settingsHandler.refreshTokenUsageStats()
             UiIntent.DiscardRuntimeSettingsChanges -> {
                 settingsHandler.onRuntimeSettingsTabSelected(sidePanelStore.state.value.runtimeSettingsTab)
             }
@@ -588,6 +594,7 @@ internal class ToolWindowCoordinator(
                 activeSessionId = chatService.getCurrentSessionId(),
             ),
         )
+        settingsHandler.refreshTokenUsageStatsIfVisible()
         onSessionSnapshotPublished()
     }
 

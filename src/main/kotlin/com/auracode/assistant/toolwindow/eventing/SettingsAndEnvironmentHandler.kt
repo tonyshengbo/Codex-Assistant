@@ -2,6 +2,7 @@ package com.auracode.assistant.toolwindow.eventing
 
 import com.auracode.assistant.i18n.AuraCodeBundle
 import com.auracode.assistant.notification.AuraNotificationGroup
+import com.auracode.assistant.service.TokenUsageStatsService
 import com.auracode.assistant.provider.claude.ClaudeCliVersionCheckStatus
 import com.auracode.assistant.provider.claude.ClaudeCliVersionSnapshot
 import com.auracode.assistant.provider.codex.CodexCliVersionCheckStatus
@@ -20,6 +21,11 @@ import com.auracode.assistant.toolwindow.settings.SkillsSettingsTab
 import com.auracode.assistant.toolwindow.settings.McpSettingsTab
 import com.auracode.assistant.toolwindow.settings.mcpSettingsTabForEngine
 import com.auracode.assistant.toolwindow.settings.skillsSettingsTabForEngine
+import com.auracode.assistant.toolwindow.settings.TokenUsageRange
+import com.auracode.assistant.toolwindow.settings.TokenUsageSettingsTab
+import com.auracode.assistant.toolwindow.settings.tokenUsageScopeKey
+import com.auracode.assistant.toolwindow.settings.tokenUsageSettingsTabForEngine
+import com.auracode.assistant.toolwindow.shell.SidePanelKind
 import com.auracode.assistant.toolwindow.shell.SkillImportDialogPhase
 import com.auracode.assistant.toolwindow.shell.SkillImportDialogState
 import com.auracode.assistant.toolwindow.shared.UiText
@@ -31,6 +37,11 @@ import java.util.UUID
 internal class SettingsAndEnvironmentHandler(
     private val context: ToolWindowCoordinatorContext,
 ) {
+    private val tokenUsageStatsService = TokenUsageStatsService(
+        loadLedgerRecords = { engineId -> context.chatService.listUsageLedgerRecords(engineId) },
+    )
+    private var lastTokenUsageRefreshSignature: String? = null
+
     fun applyLanguagePreview(mode: com.auracode.assistant.settings.UiLanguageMode) {
         if (context.settingsService.uiLanguageMode() == mode) return
         context.settingsService.setUiLanguageMode(mode)
@@ -991,10 +1002,10 @@ internal class SettingsAndEnvironmentHandler(
         when (context.sidePanelStore.state.value.settingsSection) {
             SettingsSection.MCP -> selectMcpTabForCurrentEngine()
             SettingsSection.SKILLS -> selectSkillsTabForCurrentEngine()
+            SettingsSection.TOKEN_USAGE -> selectTokenUsageTabForCurrentEngine()
             SettingsSection.BASIC -> Unit
             SettingsSection.RUNTIME -> refreshRuntimeChecksForCurrentState()
             SettingsSection.AGENTS,
-            SettingsSection.TOKEN_USAGE,
             -> Unit
             SettingsSection.ABOUT -> refreshCodexCliVersion(force = false, announceResult = false)
         }
@@ -1004,6 +1015,7 @@ internal class SettingsAndEnvironmentHandler(
         when (section) {
             SettingsSection.MCP -> selectMcpTabForCurrentEngine()
             SettingsSection.SKILLS -> selectSkillsTabForCurrentEngine()
+            SettingsSection.TOKEN_USAGE -> selectTokenUsageTabForCurrentEngine()
             SettingsSection.BASIC -> Unit
             SettingsSection.RUNTIME -> {
                 if (context.sidePanelStore.state.value.kind == com.auracode.assistant.toolwindow.shell.SidePanelKind.SETTINGS) {
@@ -1011,7 +1023,6 @@ internal class SettingsAndEnvironmentHandler(
                 }
             }
             SettingsSection.AGENTS,
-            SettingsSection.TOKEN_USAGE,
             -> Unit
             SettingsSection.ABOUT -> refreshCodexCliVersion(force = false, announceResult = false)
         }
@@ -1039,6 +1050,67 @@ internal class SettingsAndEnvironmentHandler(
     /** Refreshes MCP data only for tabs backed by a real adapter. */
     fun onMcpSettingsTabSelected(tab: McpSettingsTab) {
         loadMcpServers()
+    }
+
+    /** Refreshes Token Usage data using the selected engine tab. */
+    fun onTokenUsageSettingsTabSelected(tab: TokenUsageSettingsTab) {
+        loadTokenUsageStats(engineId = tab.engineId, range = context.sidePanelStore.state.value.tokenUsageRange)
+    }
+
+    /** Refreshes Token Usage data using the selected historical range. */
+    fun onTokenUsageRangeSelected(range: TokenUsageRange) {
+        loadTokenUsageStats(engineId = context.sidePanelStore.state.value.tokenUsageSettingsTab.engineId, range = range)
+    }
+
+    /** Loads the current Token Usage snapshot using the active page selection. */
+    fun loadTokenUsageStats() {
+        val state = context.sidePanelStore.state.value
+        loadTokenUsageStats(
+            engineId = state.tokenUsageSettingsTab.engineId,
+            range = state.tokenUsageRange,
+        )
+    }
+
+    /** Forces a Token Usage refresh using the active page selection. */
+    fun refreshTokenUsageStats() {
+        loadTokenUsageStats()
+    }
+
+    /** Refreshes Token Usage only when the page is visible and the active usage snapshot materially changed. */
+    fun refreshTokenUsageStatsIfVisible() {
+        val state = context.sidePanelStore.state.value
+        if (state.kind != SidePanelKind.SETTINGS || state.settingsSection != SettingsSection.TOKEN_USAGE) {
+            lastTokenUsageRefreshSignature = null
+            return
+        }
+        val activeSession = context.chatService.listSessions().firstOrNull {
+            it.id == context.chatService.getCurrentSessionId()
+        }
+        val snapshot = activeSession?.usageSnapshot
+        if (activeSession?.providerId != state.tokenUsageSettingsTab.engineId || snapshot == null) {
+            lastTokenUsageRefreshSignature = null
+            return
+        }
+        val signature = buildString {
+            append(activeSession.id)
+            append('|')
+            append(activeSession.providerId)
+            append('|')
+            append(snapshot.model)
+            append('|')
+            append(snapshot.inputTokens)
+            append('|')
+            append(snapshot.cachedInputTokens)
+            append('|')
+            append(snapshot.outputTokens)
+            append('|')
+            append(snapshot.capturedAt)
+        }
+        if (state.tokenUsageLoading || signature == lastTokenUsageRefreshSignature) {
+            return
+        }
+        lastTokenUsageRefreshSignature = signature
+        refreshTokenUsageStats()
     }
 
     fun mcpContextSnapshotForLog(): String = mcpContextSnapshot()
@@ -1099,6 +1171,53 @@ internal class SettingsAndEnvironmentHandler(
     private fun selectMcpTabForCurrentEngine() {
         val tab = mcpSettingsTabForEngine(context.currentEngineId())
         context.eventHub.publishUiIntent(UiIntent.SelectMcpSettingsTab(tab))
+    }
+
+    /** Aligns the Token Usage page tab with the current engine before loading that engine's content. */
+    private fun selectTokenUsageTabForCurrentEngine() {
+        val tab = tokenUsageSettingsTabForEngine(context.currentEngineId())
+        context.eventHub.publishUiIntent(UiIntent.SelectTokenUsageSettingsTab(tab))
+    }
+
+    /** Loads one Token Usage snapshot through the dedicated historical aggregation service. */
+    private fun loadTokenUsageStats(
+        engineId: String,
+        range: TokenUsageRange,
+    ) {
+        val normalizedEngineId = engineId.trim().ifBlank { TokenUsageSettingsTab.CODEX.engineId }
+        val requestScopeKey = tokenUsageScopeKey(
+            engineId = normalizedEngineId,
+            range = range,
+        )
+        context.eventHub.publish(
+            AppEvent.TokenUsageStatsLoadingChanged(
+                loading = true,
+                requestScopeKey = requestScopeKey,
+            ),
+        )
+        context.coroutineLauncher.launch("loadTokenUsageStats($normalizedEngineId,$range)") {
+            runCatching {
+                tokenUsageStatsService.load(
+                    sessions = context.chatService.listSessions(),
+                    engineId = normalizedEngineId,
+                    range = range,
+                )
+            }.onSuccess { snapshot ->
+                context.eventHub.publish(
+                    AppEvent.TokenUsageStatsUpdated(
+                        snapshot = snapshot,
+                        requestScopeKey = requestScopeKey,
+                    ),
+                )
+            }.onFailure { error ->
+                context.eventHub.publish(
+                    AppEvent.TokenUsageStatsFailed(
+                        message = error.message ?: AuraCodeBundle.message("settings.usage.error.load"),
+                        requestScopeKey = requestScopeKey,
+                    ),
+                )
+            }
+        }
     }
 
     /** Resolves the engine currently targeted by the Skills settings page. */

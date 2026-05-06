@@ -24,6 +24,10 @@ import com.auracode.assistant.toolwindow.settings.McpSettingsTab
 import com.auracode.assistant.toolwindow.settings.RuntimeSettingsTab
 import com.auracode.assistant.toolwindow.settings.SettingsSection
 import com.auracode.assistant.toolwindow.settings.SkillsSettingsTab
+import com.auracode.assistant.toolwindow.settings.TokenUsageRange
+import com.auracode.assistant.toolwindow.settings.TokenUsageSettingsTab
+import com.auracode.assistant.toolwindow.settings.TokenUsageStatsSnapshot
+import com.auracode.assistant.toolwindow.settings.tokenUsageScopeKey
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -97,6 +101,12 @@ internal data class SidePanelAreaState(
     val mcpValidationErrors: McpValidationErrors = McpValidationErrors(),
     val mcpFeedbackMessage: String? = null,
     val mcpFeedbackIsError: Boolean = false,
+    val tokenUsageSettingsTab: TokenUsageSettingsTab = TokenUsageSettingsTab.CODEX,
+    val tokenUsageRange: TokenUsageRange = TokenUsageRange.LAST_7_DAYS,
+    val tokenUsageLoading: Boolean = false,
+    val tokenUsageActiveRequestKey: String? = null,
+    val tokenUsageStatsByScope: Map<String, TokenUsageStatsSnapshot> = emptyMap(),
+    val tokenUsageLastError: String? = null,
 ) {
     /** Exposes the editable Codex path from the environment draft for UI callers. */
     val codexCliPath: String
@@ -147,9 +157,33 @@ internal class SidePanelAreaStore {
                     }
 
                     is UiIntent.SelectSettingsSection -> {
+                        val defaultTokenUsageRange = if (event.intent.section == SettingsSection.TOKEN_USAGE) {
+                            TokenUsageRange.LAST_7_DAYS
+                        } else {
+                            _state.value.tokenUsageRange
+                        }
                         _state.value = _state.value.copy(
                             kind = SidePanelKind.SETTINGS,
                             settingsSection = event.intent.section,
+                            tokenUsageRange = defaultTokenUsageRange,
+                            tokenUsageLoading = if (event.intent.section == SettingsSection.TOKEN_USAGE) {
+                                _state.value.tokenUsageLoading
+                            } else {
+                                false
+                            },
+                            tokenUsageActiveRequestKey = if (event.intent.section == SettingsSection.TOKEN_USAGE) {
+                                tokenUsageScopeKey(
+                                    engineId = _state.value.tokenUsageSettingsTab.engineId,
+                                    range = defaultTokenUsageRange,
+                                )
+                            } else {
+                                null
+                            },
+                            tokenUsageLastError = if (event.intent.section == SettingsSection.TOKEN_USAGE) {
+                                null
+                            } else {
+                                _state.value.tokenUsageLastError
+                            },
                             // Reset page-scoped editors when switching sections so
                             // modal visibility does not leak across settings areas.
                             agentSettingsPage = AgentSettingsPage.LIST,
@@ -171,6 +205,28 @@ internal class SidePanelAreaStore {
 
                     is UiIntent.SelectMcpSettingsTab -> {
                         _state.value = _state.value.copy(mcpSettingsTab = event.intent.tab)
+                    }
+
+                    is UiIntent.SelectTokenUsageSettingsTab -> {
+                        _state.value = _state.value.copy(
+                            tokenUsageSettingsTab = event.intent.tab,
+                            tokenUsageActiveRequestKey = tokenUsageScopeKey(
+                                engineId = event.intent.tab.engineId,
+                                range = _state.value.tokenUsageRange,
+                            ),
+                            tokenUsageLastError = null,
+                        )
+                    }
+
+                    is UiIntent.SelectTokenUsageRange -> {
+                        _state.value = _state.value.copy(
+                            tokenUsageRange = event.intent.range,
+                            tokenUsageActiveRequestKey = tokenUsageScopeKey(
+                                engineId = _state.value.tokenUsageSettingsTab.engineId,
+                                range = event.intent.range,
+                            ),
+                            tokenUsageLastError = null,
+                        )
                     }
 
                     UiIntent.DismissSkillImportDialog -> {
@@ -467,6 +523,48 @@ internal class SidePanelAreaStore {
                 _state.value = _state.value.copy(
                     mcpFeedbackMessage = event.message,
                     mcpFeedbackIsError = event.isError,
+                )
+            }
+
+            is AppEvent.TokenUsageStatsLoadingChanged -> {
+                val currentScopeKey = tokenUsageScopeKey(
+                    engineId = _state.value.tokenUsageSettingsTab.engineId,
+                    range = _state.value.tokenUsageRange,
+                )
+                if (event.requestScopeKey != currentScopeKey) {
+                    return
+                }
+                _state.value = _state.value.copy(
+                    tokenUsageLoading = event.loading,
+                    tokenUsageActiveRequestKey = if (event.loading) event.requestScopeKey else null,
+                    tokenUsageLastError = null,
+                )
+            }
+
+            is AppEvent.TokenUsageStatsUpdated -> {
+                val nextState = _state.value.copy(
+                    tokenUsageStatsByScope = _state.value.tokenUsageStatsByScope + (event.requestScopeKey to event.snapshot),
+                )
+                if (_state.value.tokenUsageActiveRequestKey != event.requestScopeKey) {
+                    _state.value = nextState
+                    return
+                }
+                _state.value = _state.value.copy(
+                    tokenUsageLoading = false,
+                    tokenUsageActiveRequestKey = null,
+                    tokenUsageStatsByScope = nextState.tokenUsageStatsByScope,
+                    tokenUsageLastError = null,
+                )
+            }
+
+            is AppEvent.TokenUsageStatsFailed -> {
+                if (_state.value.tokenUsageActiveRequestKey != event.requestScopeKey) {
+                    return
+                }
+                _state.value = _state.value.copy(
+                    tokenUsageLoading = false,
+                    tokenUsageActiveRequestKey = null,
+                    tokenUsageLastError = event.message,
                 )
             }
 

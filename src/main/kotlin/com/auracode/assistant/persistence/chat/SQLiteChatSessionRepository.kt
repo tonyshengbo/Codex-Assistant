@@ -68,13 +68,19 @@ internal interface ChatSessionRepository {
 
 internal class SQLiteChatSessionRepository(
     private val dbPath: Path,
-) : ChatSessionRepository {
+) : ChatSessionRepository, SessionUsageLedgerRepository {
+    private val usageLedgerRepository = SQLiteSessionUsageLedgerRepository(
+        dbPath = dbPath,
+        ensureSchema = false,
+    )
+
     init {
         Class.forName("org.sqlite.JDBC")
         dbPath.parent?.let { Files.createDirectories(it) }
         withConnection { connection ->
             ensureSessionsTable(connection)
             ensureSessionAssetsTable(connection)
+            SessionUsageLedgerSchema.ensureAll(connection)
             ensureIndexes(connection)
         }
     }
@@ -298,6 +304,34 @@ internal class SQLiteChatSessionRepository(
                 }
             }
         }
+    }
+
+    /**
+     * Appends one usage ledger record into the shared chat database.
+     */
+    override fun appendRecord(record: PersistedSessionUsageLedgerEntry) {
+        usageLedgerRepository.appendRecord(record)
+    }
+
+    /**
+     * Returns all usage ledger records for one provider.
+     */
+    override fun listRecordsByProvider(providerId: String): List<PersistedSessionUsageLedgerEntry> {
+        return usageLedgerRepository.listRecordsByProvider(providerId)
+    }
+
+    /**
+     * Returns all usage ledger records for one session.
+     */
+    override fun listRecordsBySession(sessionId: String): List<PersistedSessionUsageLedgerEntry> {
+        return usageLedgerRepository.listRecordsBySession(sessionId)
+    }
+
+    /**
+     * Returns the newest usage ledger record for one session.
+     */
+    override fun loadLatestRecord(sessionId: String): PersistedSessionUsageLedgerEntry? {
+        return usageLedgerRepository.loadLatestRecord(sessionId)
     }
 
     private fun ensureSessionsTable(connection: Connection) {

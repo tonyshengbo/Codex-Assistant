@@ -74,6 +74,91 @@ class SQLiteChatSessionRepositoryTest {
     }
 
     @Test
+    fun `stores usage ledger entries and exposes provider session and latest queries`() {
+        val repository = SQLiteChatSessionRepository(createTempDirectory("chat-repository-ledger").resolve("chat.db"))
+        repository.upsertSession(
+            PersistedChatSession(
+                id = "session-1",
+                title = "First session",
+                createdAt = 1L,
+                updatedAt = 3L,
+                messageCount = 1,
+                providerId = "codex",
+                remoteConversationId = "thread-1",
+                usageSnapshot = null,
+                isActive = true,
+            ),
+        )
+        repository.upsertSession(
+            PersistedChatSession(
+                id = "session-2",
+                title = "Second session",
+                createdAt = 2L,
+                updatedAt = 4L,
+                messageCount = 1,
+                providerId = "claude",
+                remoteConversationId = "thread-2",
+                usageSnapshot = null,
+                isActive = false,
+            ),
+        )
+
+        repository.appendRecord(
+            PersistedSessionUsageLedgerEntry(
+                id = "ledger-1",
+                sessionId = "session-1",
+                providerId = "codex",
+                model = "gpt-5.4",
+                contextWindow = 400_000,
+                inputTokens = 100,
+                cachedInputTokens = 20,
+                outputTokens = 10,
+                capturedAt = 100L,
+                sourceTurnId = "turn-1",
+                isBaseline = true,
+            ),
+        )
+        repository.appendRecord(
+            PersistedSessionUsageLedgerEntry(
+                id = "ledger-2",
+                sessionId = "session-1",
+                providerId = "codex",
+                model = "gpt-5.4",
+                contextWindow = 400_000,
+                inputTokens = 160,
+                cachedInputTokens = 40,
+                outputTokens = 30,
+                capturedAt = 200L,
+                sourceTurnId = "turn-2",
+                isBaseline = false,
+            ),
+        )
+        repository.appendRecord(
+            PersistedSessionUsageLedgerEntry(
+                id = "ledger-3",
+                sessionId = "session-2",
+                providerId = "claude",
+                model = "claude-sonnet-4",
+                contextWindow = 200_000,
+                inputTokens = 50,
+                cachedInputTokens = 0,
+                outputTokens = 5,
+                capturedAt = 150L,
+                sourceTurnId = "turn-3",
+                isBaseline = true,
+            ),
+        )
+
+        val sessionRecords = repository.listRecordsBySession("session-1")
+        assertEquals(listOf("ledger-1", "ledger-2"), sessionRecords.map { it.id })
+        assertEquals("ledger-2", repository.loadLatestRecord("session-1")?.id)
+
+        val providerRecords = repository.listRecordsByProvider("codex")
+        assertEquals(listOf("ledger-1", "ledger-2"), providerRecords.map { it.id })
+        assertTrue(providerRecords.none { it.providerId != "codex" })
+    }
+
+    @Test
     fun `deleting a session cascades stored assets`() {
         val repository = SQLiteChatSessionRepository(createTempDirectory("chat-repository-delete").resolve("chat.db"))
         repository.upsertSession(
@@ -106,10 +191,27 @@ class SQLiteChatSessionRepositoryTest {
             ),
             createdAt = 2L,
         )
+        repository.appendRecord(
+            PersistedSessionUsageLedgerEntry(
+                id = "ledger-1",
+                sessionId = "session-1",
+                providerId = "codex",
+                model = "gpt-5.4",
+                contextWindow = 400_000,
+                inputTokens = 10,
+                cachedInputTokens = 0,
+                outputTokens = 1,
+                capturedAt = 3L,
+                sourceTurnId = "turn-1",
+                isBaseline = true,
+            ),
+        )
 
         repository.deleteSession("session-1")
 
         assertEquals(null, repository.loadSession("session-1"))
         assertTrue(repository.loadSessionAssets("session-1").isEmpty())
+        assertTrue(repository.listRecordsBySession("session-1").isEmpty())
+        assertEquals(null, repository.loadLatestRecord("session-1"))
     }
 }

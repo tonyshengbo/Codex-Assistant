@@ -81,13 +81,16 @@ internal fun runningPlanToggleIconPath(expanded: Boolean): String {
 internal fun runningPlanHeaderSummary(state: SubmissionRunningPlanState): RunningPlanHeaderSummary {
     val totalCount = state.steps.size
     val completedCount = state.steps.count { it.status == SubmissionRunningPlanStepStatus.COMPLETED }
+    val hasInProgress = state.steps.any { it.status == SubmissionRunningPlanStepStatus.IN_PROGRESS }
     val currentStep = state.steps.firstOrNull { it.status == SubmissionRunningPlanStepStatus.IN_PROGRESS }
         ?: state.steps.firstOrNull { it.status == SubmissionRunningPlanStepStatus.PENDING }
         ?: state.steps.lastOrNull()
+    // 有正在执行的步骤时，显示当前步骤序号（completedCount + 1），否则显示已完成数
+    val displayCount = if (hasInProgress) completedCount + 1 else completedCount
     return RunningPlanHeaderSummary(
         title = AuraCodeBundle.message("submission.runningPlan.title"),
         currentStep = currentStep?.step.orEmpty(),
-        progressLabel = if (totalCount > 0) "$completedCount/$totalCount" else "",
+        progressLabel = if (totalCount > 0) "$displayCount/$totalCount" else "",
     )
 }
 

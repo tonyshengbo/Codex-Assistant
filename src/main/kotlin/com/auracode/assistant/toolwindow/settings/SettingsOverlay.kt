@@ -174,11 +174,15 @@ internal fun SettingsOverlay(
                         }
                     }
 
-                    SettingsSection.TOKEN_USAGE -> PlaceholderSettingsPage(
-                        p = p,
-                        title = AuraCodeBundle.message("settings.placeholder.usage.title"),
-                        body = AuraCodeBundle.message("settings.placeholder.usage.body"),
-                    )
+                    SettingsSection.TOKEN_USAGE -> {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .verticalScroll(rememberScrollState()),
+                        ) {
+                            TokenUsageSettingsPage(p = p, state = state, onIntent = onIntent)
+                        }
+                    }
                     SettingsSection.ABOUT -> {
                         Column(
                             modifier = Modifier

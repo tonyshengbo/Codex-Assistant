@@ -19,8 +19,10 @@ import com.auracode.assistant.model.ImageAttachment
 import com.auracode.assistant.model.MessageRole
 import com.auracode.assistant.model.TurnUsageSnapshot
 import com.auracode.assistant.persistence.chat.ChatSessionRepository
+import com.auracode.assistant.persistence.chat.PersistedSessionUsageLedgerEntry
 import com.auracode.assistant.persistence.chat.PersistedMessageAttachment
 import com.auracode.assistant.persistence.chat.PersistedChatSession
+import com.auracode.assistant.persistence.chat.SessionUsageLedgerRepository
 import com.auracode.assistant.persistence.chat.SQLiteChatSessionRepository
 import com.auracode.assistant.protocol.ItemStatus
 import com.auracode.assistant.protocol.ProviderToolUserInputAnswerDraft
@@ -123,6 +125,8 @@ class AgentChatService private constructor(
     private val engineLaunchErrorPresenter = EngineLaunchErrorPresenter(
         registry = registry,
     )
+    private val usageLedgerRepository: SessionUsageLedgerRepository =
+        repository as? SessionUsageLedgerRepository ?: NoOpSessionUsageLedgerRepository
 
     private val sessions = linkedMapOf<String, SessionData>()
     private val sessionRuns = SessionRunRegistry()
@@ -160,6 +164,13 @@ class AgentChatService private constructor(
 
     fun currentUsageSnapshot(): TurnUsageSnapshot? = synchronized(stateLock) {
         sessions[currentSessionId]?.usageSnapshot
+    }
+
+    /**
+     * Returns all persisted ledger records for one provider for historical usage aggregation.
+     */
+    internal fun listUsageLedgerRecords(providerId: String): List<PersistedSessionUsageLedgerEntry> {
+        return usageLedgerRepository.listRecordsByProvider(providerId)
     }
 
     /** Returns the working directory currently used for provider requests. */
@@ -853,14 +864,26 @@ class AgentChatService private constructor(
         when (event) {
             is SessionDomainEvent.ThreadStarted -> updateCurrentRemoteConversationId(sessionId, event.threadId)
             is SessionDomainEvent.UsageUpdated -> {
-                updateCurrentUsageSnapshot(
-                    sessionId = sessionId,
-                    model = event.model ?: model,
+                val previousUsageSnapshot = currentPersistedUsageSnapshot(sessionId)
+                val usageSnapshot = TurnUsageSnapshot(
+                    model = event.model?.trim().takeUnless { it.isNullOrBlank() } ?: model?.trim().orEmpty(),
                     contextWindow = event.contextWindow,
                     inputTokens = event.inputTokens,
                     cachedInputTokens = event.cachedInputTokens,
                     outputTokens = event.outputTokens,
+                )
+                updateCurrentUsageSnapshot(
+                    sessionId = sessionId,
+                    snapshot = usageSnapshot,
                     engineId = engineId,
+                )
+                appendUsageLedgerSnapshot(
+                    sessionId = sessionId,
+                    engineId = engineId,
+                    snapshot = usageSnapshot,
+                    legacySnapshotExisted = previousUsageSnapshot != null,
+                    sourceTurnId = event.turnId?.trim()?.takeIf { it.isNotBlank() }
+                        ?: activeTurnId.trim().takeIf { it.isNotBlank() },
                 )
             }
             is SessionDomainEvent.TurnStarted -> {
@@ -893,22 +916,18 @@ class AgentChatService private constructor(
         persistSessionSnapshot(sessionId)
     }
 
+    /**
+     * Returns the session usage snapshot that existed before the current event is persisted.
+     */
+    private fun currentPersistedUsageSnapshot(sessionId: String): TurnUsageSnapshot? = synchronized(stateLock) {
+        sessions[sessionId]?.usageSnapshot
+    }
+
     private fun updateCurrentUsageSnapshot(
         sessionId: String,
-        model: String?,
-        contextWindow: Int,
-        inputTokens: Int,
-        cachedInputTokens: Int,
-        outputTokens: Int,
+        snapshot: TurnUsageSnapshot,
         engineId: String,
     ) {
-        val snapshot = TurnUsageSnapshot(
-            model = model?.trim().orEmpty(),
-            contextWindow = contextWindow,
-            inputTokens = inputTokens,
-            cachedInputTokens = cachedInputTokens,
-            outputTokens = outputTokens,
-        )
         synchronized(stateLock) {
             sessions[sessionId]?.usageSnapshot = snapshot
             sessions[sessionId]?.updatedAt = snapshot.capturedAt
@@ -922,6 +941,45 @@ class AgentChatService private constructor(
             )
         }
         persistSessionSnapshot(sessionId)
+    }
+
+    /**
+     * Appends one deduplicated usage snapshot into the local ledger for later historical aggregation.
+     */
+    private fun appendUsageLedgerSnapshot(
+        sessionId: String,
+        engineId: String,
+        snapshot: TurnUsageSnapshot,
+        legacySnapshotExisted: Boolean,
+        sourceTurnId: String?,
+    ) {
+        val latestRecord = usageLedgerRepository.loadLatestRecord(sessionId)
+        if (
+            latestRecord != null &&
+            latestRecord.model == snapshot.model &&
+            latestRecord.inputTokens == snapshot.inputTokens &&
+            latestRecord.cachedInputTokens == snapshot.cachedInputTokens &&
+            latestRecord.outputTokens == snapshot.outputTokens
+        ) {
+            return
+        }
+        val providerId = synchronized(stateLock) {
+            sessions[sessionId]?.providerId?.trim()?.takeIf { it.isNotBlank() }
+        } ?: engineId
+        usageLedgerRepository.appendRecord(
+            PersistedSessionUsageLedgerEntry(
+                sessionId = sessionId,
+                providerId = providerId,
+                model = snapshot.model,
+                contextWindow = snapshot.contextWindow,
+                inputTokens = snapshot.inputTokens,
+                cachedInputTokens = snapshot.cachedInputTokens,
+                outputTokens = snapshot.outputTokens,
+                capturedAt = snapshot.capturedAt,
+                sourceTurnId = sourceTurnId,
+                isBaseline = latestRecord == null && legacySnapshotExisted,
+            ),
+        )
     }
 
     /** Returns whether a unified event still belongs to the currently accepted live run for the session. */
@@ -990,6 +1048,31 @@ class AgentChatService private constructor(
             usageSnapshot = usageSnapshot,
             isActive = isActive,
         )
+    }
+
+    /**
+     * Provides a safe fallback when the injected repository does not expose ledger persistence.
+     */
+    private object NoOpSessionUsageLedgerRepository : SessionUsageLedgerRepository {
+        /**
+         * Ignores append requests when ledger persistence is unavailable.
+         */
+        override fun appendRecord(record: PersistedSessionUsageLedgerEntry) = Unit
+
+        /**
+         * Returns no provider records when ledger persistence is unavailable.
+         */
+        override fun listRecordsByProvider(providerId: String): List<PersistedSessionUsageLedgerEntry> = emptyList()
+
+        /**
+         * Returns no session records when ledger persistence is unavailable.
+         */
+        override fun listRecordsBySession(sessionId: String): List<PersistedSessionUsageLedgerEntry> = emptyList()
+
+        /**
+         * Returns no latest record when ledger persistence is unavailable.
+         */
+        override fun loadLatestRecord(sessionId: String): PersistedSessionUsageLedgerEntry? = null
     }
 
     private fun SessionData.applyMessage(message: ChatMessage) {
