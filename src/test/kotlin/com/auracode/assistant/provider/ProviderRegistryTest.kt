@@ -28,11 +28,11 @@ class ProviderRegistryTest {
 
         assertEquals(
             listOf(
-                "gpt-5.3-codex",
+                "gpt-5.5",
                 "gpt-5.4",
-                "gpt-5.2-codex",
-                "gpt-5.1-codex-max",
-                "gpt-5.1-codex-mini",
+                "gpt-5.4-mini",
+                "gpt-5.3-codex",
+                "gpt-5.2",
             ),
             registry.engine("codex")?.models,
         )
@@ -46,11 +46,10 @@ class ProviderRegistryTest {
 
         assertEquals(
             listOf(
+                "claude-opus-4-7",
                 "claude-sonnet-4-6",
-                "claude-sonnet-4-6[1m]",
-                "claude-opus-4-6",
-                "claude-opus-4-6[1m]",
                 "claude-haiku-4-5-20251001",
+                "claude-opus-4-6",
             ),
             registry.engine("claude")?.models,
         )
@@ -72,7 +71,7 @@ class ProviderRegistryTest {
         val settings = AgentSettingsService().apply { loadState(AgentSettingsService.State()) }
 
         settings.setSelectedSubmissionModel(engineId = "claude", model = "claude-opus-4-1")
-        assertEquals("claude-opus-4-6", settings.selectedSubmissionModel("claude"))
+        assertEquals("claude-opus-4-7", settings.selectedSubmissionModel("claude"))
 
         settings.setSelectedSubmissionModel(engineId = "claude", model = "claude-haiku-4-5")
         assertEquals("claude-haiku-4-5-20251001", settings.selectedSubmissionModel("claude"))
@@ -80,8 +79,8 @@ class ProviderRegistryTest {
 
     @Test
     fun `curated model catalogs expose display friendly short names`() {
-        assertEquals("GPT 5.3 Codex", CodexModelCatalog.option("gpt-5.3-codex")?.description)
-        assertEquals("GPT 5.4", CodexModelCatalog.option("gpt-5.4")?.description)
+        assertEquals("gpt-5.3-codex", CodexModelCatalog.option("gpt-5.3-codex")?.description)
+        assertEquals("gpt-5.4", CodexModelCatalog.option("gpt-5.4")?.description)
         assertEquals("Sonnet 4.6", ClaudeModelCatalog.option("claude-sonnet-4-6")?.shortName)
         assertEquals("Haiku 4.5", ClaudeModelCatalog.option("claude-haiku-4-5-20251001")?.shortName)
     }

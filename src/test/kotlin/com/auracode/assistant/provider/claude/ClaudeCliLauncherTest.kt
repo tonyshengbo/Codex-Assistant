@@ -128,21 +128,47 @@ class ClaudeCliLauncherTest {
     }
 
     @Test
-    /** 验证无图片附件时 prompt 仍作为 CLI 参数传入，保持原有行为。 */
-    fun `build command passes prompt as cli arg when no image attachments`() {
+    /** 验证 plan 模式下有图片时走 stream-json stdin 路径，而非不存在的 --image 参数。 */
+    fun `build command uses stream-json input format in plan mode with image attachments`() {
         val launcher = DefaultClaudeCliLauncher()
 
         val command = launcher.buildCommand(
             request = AgentRequest(
                 engineId = "claude",
-                prompt = "Say hello",
+                prompt = "Plan based on this screenshot",
                 contextFiles = emptyList(),
                 workingDirectory = ".",
+                collaborationMode = AgentCollaborationMode.PLAN,
+                imageAttachments = listOf(
+                    ImageAttachment(path = "/tmp/test.png", name = "test.png", mimeType = "image/png"),
+                ),
             ),
             settings = AgentSettingsService().apply { loadState(AgentSettingsService.State()) },
         )
 
-        assertTrue(command.any { it.contains("Say hello") }, "无图片时 prompt 应作为 CLI 参数传入")
+        assertContains(command, "--input-format")
+        assertContains(command, "stream-json")
+        assertFalse(command.contains("--image"), "Claude CLI 没有 --image 参数，plan 模式下图片应通过 stdin 发送")
+        assertFalse(command.contains("Plan based on this screenshot"), "有图片时 prompt 应通过 stdin 发送，不应出现在 CLI 参数中")
+    }
+
+    @Test
+    /** 验证 plan 模式下无图片时 prompt 仍作为 CLI 参数传入，不添加 --permission-prompt-tool。 */
+    fun `build command in plan mode without images passes prompt as cli arg`() {
+        val launcher = DefaultClaudeCliLauncher()
+
+        val command = launcher.buildCommand(
+            request = AgentRequest(
+                engineId = "claude",
+                prompt = "Plan a refactor",
+                contextFiles = emptyList(),
+                workingDirectory = ".",
+                collaborationMode = AgentCollaborationMode.PLAN,
+            ),
+            settings = AgentSettingsService().apply { loadState(AgentSettingsService.State()) },
+        )
+
+        assertTrue(command.any { it.contains("Plan a refactor") }, "无图片时 prompt 应作为 CLI 参数传入")
         assertFalse(command.contains("--input-format"), "无图片时不应添加 --input-format 参数")
     }
 

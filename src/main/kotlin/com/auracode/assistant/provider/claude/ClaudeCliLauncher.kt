@@ -34,14 +34,13 @@ internal class DefaultClaudeCliLauncher(
             workingDirectory = File(request.workingDirectory),
         )
         // 只有在不需要 stdio 控制通道时才通过 stdin 发送多模态消息。
-        // 当 approvalMode=REQUIRE_CONFIRMATION 或 plan 模式时，stdin 专用于 control_response，
-        // 图片已通过 --image 参数传递，无需再写 stdin。
+        // plan 模式使用 --permission-mode plan，Claude 只规划不执行工具，不需要 stdio 控制通道，
+        // 图片可以正常通过 stdin stream-json 发送。
         if (request.imageAttachments.isNotEmpty() && !needsPermissionPromptTool(request)) {
             writeMultimodalMessage(process, request)
         }
-        // 授权模式和计划模式需要保持 stdin 开放，以便写回 control_response；其它模式立即关闭。
-        if (request.approvalMode != AgentApprovalMode.REQUIRE_CONFIRMATION &&
-            request.collaborationMode != AgentCollaborationMode.PLAN) {
+        // 只有授权模式（REQUIRE_CONFIRMATION）需要保持 stdin 开放，以便写回 control_response；其它模式立即关闭。
+        if (request.approvalMode != AgentApprovalMode.REQUIRE_CONFIRMATION) {
             closeProcessInput(process)
         }
         return ProcessClaudeStreamJsonSession(process)
@@ -56,8 +55,8 @@ internal class DefaultClaudeCliLauncher(
             .trim()
             .ifBlank { ClaudeProviderFactory.ENGINE_ID }
         val hasImages = request.imageAttachments.isNotEmpty()
-        // 当需要 stdio 控制通道时，stdin 专用于 control_response，不能再用 --input-format stream-json。
-        // 此时图片通过 --image <path> 参数传递，避免 stdin 协议冲突。
+        // plan 模式不需要 stdio 控制通道（--permission-mode plan 下 Claude 只规划不执行工具），
+        // 图片可以正常通过 stdin stream-json 发送，与普通模式行为一致。
         val useStdinForImages = hasImages && !needsPermissionPromptTool(request)
         return buildList {
             add(executable)
@@ -94,15 +93,9 @@ internal class DefaultClaudeCliLauncher(
                 add("--input-format")
                 add("stream-json")
             } else {
-                // 有控制通道或无图片时，prompt 直接作为 CLI 参数传入。
+                // 有控制通道（REQUIRE_CONFIRMATION）或无图片时，prompt 直接作为 CLI 参数传入。
+                // 注意：Claude CLI 没有 --image 参数，有图片时必须走 stdin stream-json 路径。
                 add(renderPrompt(request))
-                // 有图片且需要控制通道时，通过 --image 参数传递图片文件路径，避免占用 stdin。
-                if (hasImages) {
-                    request.imageAttachments.forEach { attachment ->
-                        add("--image")
-                        add(attachment.path)
-                    }
-                }
             }
         }
     }
@@ -116,10 +109,11 @@ internal class DefaultClaudeCliLauncher(
         }
     }
 
-    /** 授权模式下是否需要启用 stdio 控制通道。 */
+    /** 只有授权模式（REQUIRE_CONFIRMATION）需要启用 stdio 控制通道。
+     *  plan 模式使用 --permission-mode plan，Claude 只规划不执行工具，不需要 stdio 控制通道。
+     */
     private fun needsPermissionPromptTool(request: AgentRequest): Boolean {
-        return request.approvalMode == AgentApprovalMode.REQUIRE_CONFIRMATION ||
-            request.collaborationMode == AgentCollaborationMode.PLAN
+        return request.approvalMode == AgentApprovalMode.REQUIRE_CONFIRMATION
     }
 
     /** 将上下文文件与附件整理成 Claude CLI 可直接消费的纯文本 prompt。 */

@@ -36,7 +36,7 @@ internal class SessionSubmissionViewStateRegistry {
         sessionId: String,
         baseState: SubmissionAreaState,
     ): SubmissionAreaState {
-        val cachedState = stateBySessionId[sessionId] ?: return baseState
+        val cachedState = stateBySessionId[sessionId] ?: return baseState.clearTransientExecutionState()
         return with(SubmissionAreaStore()) {
             cachedState.restoreSessionViewOnto(baseState)
         }
@@ -59,3 +59,21 @@ private fun AppEvent.affectsBackgroundSubmissionState(): Boolean {
         else -> false
     }
 }
+
+/**
+ * Clears transient execution state that belongs to a specific session run.
+ * Used when switching to a session that has no cached view state, so that
+ * execution artifacts from the previously active session do not bleed through.
+ */
+private fun SubmissionAreaState.clearTransientExecutionState(): SubmissionAreaState = copy(
+    runningPlan = null,
+    runningPlanExpanded = true,
+    planCompletion = null,
+    sessionIsRunning = false,
+    pendingApprovalCount = 0,
+    pendingToolInputCount = 0,
+    approvalQueue = emptyList(),
+    approvalPrompt = null,
+    toolUserInputQueue = emptyList(),
+    toolUserInputPrompt = null,
+)

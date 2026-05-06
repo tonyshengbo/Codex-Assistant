@@ -215,7 +215,7 @@ internal fun SettingsGhostIconButton(
     HoverTooltip(text = contentDescription) {
         Box(
             modifier = Modifier
-                .size(t.controls.headerActionTouch)
+                .size(t.controls.headerActionTouch + 6.dp)
                 .clip(RoundedCornerShape(t.spacing.sm))
                 .background(
                     if (enabled) {
@@ -245,7 +245,7 @@ internal fun SettingsGhostIconButton(
                 painter = painterResource(iconPath),
                 contentDescription = contentDescription,
                 tint = if (enabled) p.textSecondary.copy(alpha = 0.9f) else p.textMuted.copy(alpha = 0.72f),
-                modifier = Modifier.size(t.controls.iconMd),
+                modifier = Modifier.size(t.controls.iconLg),
             )
         }
     }

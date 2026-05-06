@@ -239,7 +239,7 @@ internal class CodexCliVersionService(
     }
 }
 
-private fun runCodexCliCommand(
+internal fun runCodexCliCommand(
     command: List<String>,
     environment: Map<String, String>,
 ): CodexCliCommandResult {

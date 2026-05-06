@@ -254,6 +254,7 @@ internal data class SubmissionAreaState(
             builtInModelIds = availableEngines.firstOrNull { it.id == selectedEngineId }?.models
                 ?: defaultModelIdsForEngine(selectedEngineId),
             customModelIds = customModelIds,
+            modelDisplayNames = availableEngines.firstOrNull { it.id == selectedEngineId }?.modelDisplayNames ?: emptyMap(),
         )
 
     /**
@@ -365,6 +366,7 @@ internal class SubmissionAreaStore(
                             engineId = nextEngineId,
                             builtInModelIds = nextBuiltInModels,
                             customModelIds = _state.value.customModelIds,
+                            modelDisplayNames = _state.value.availableEngines.firstOrNull { it.id == nextEngineId }?.modelDisplayNames ?: emptyMap(),
                         ).map { it.id }.toSet()
                         _state.value = _state.value.copy(
                             selectedEngineId = nextEngineId,
@@ -729,6 +731,7 @@ internal class SubmissionAreaStore(
                     engineId = selectedEngineId,
                     builtInModelIds = builtInModelIds,
                     customModelIds = _state.value.customModelIds,
+                    modelDisplayNames = _state.value.availableEngines.firstOrNull { it.id == selectedEngineId }?.modelDisplayNames ?: emptyMap(),
                 ).map { it.id }.toSet()
                 val switchedSession = _state.value.currentSessionId != null &&
                     _state.value.currentSessionId != event.activeSessionId
@@ -782,6 +785,7 @@ internal class SubmissionAreaStore(
                     engineId = selectedEngineId,
                     builtInModelIds = builtInModelIds,
                     customModelIds = event.customModelIds,
+                    modelDisplayNames = event.availableEngines.firstOrNull { it.id == selectedEngineId }?.modelDisplayNames ?: emptyMap(),
                 ).map { it.id }.toSet()
                 val trimmedDraft = _state.value.customModelDraft.trim()
                 val selectedModel = event.selectedModel.takeIf { it in availableModelIds }
@@ -1365,11 +1369,12 @@ internal fun submissionModelOptions(
     engineId: String,
     builtInModelIds: List<String>,
     customModelIds: List<String>,
+    modelDisplayNames: Map<String, String> = emptyMap(),
 ): List<SubmissionModelOption> {
     val builtIns = builtInModelIds.map { modelId ->
         SubmissionModelOption(
             id = modelId,
-            shortName = modelShortName(engineId = engineId, modelId = modelId),
+            shortName = modelShortName(engineId = engineId, modelId = modelId, modelDisplayNames = modelDisplayNames),
             isCustom = false,
         )
     }
@@ -1392,10 +1397,12 @@ internal fun submissionModelOptions(
 internal fun modelShortName(
     engineId: String,
     modelId: String,
+    modelDisplayNames: Map<String, String> = emptyMap(),
 ): String {
     val normalizedEngineId = engineId.trim()
     val normalizedModelId = modelId.trim()
     if (normalizedModelId.isBlank()) return modelId
+    modelDisplayNames[normalizedModelId]?.takeIf { it.isNotBlank() }?.let { return it }
     return when (normalizedEngineId) {
         "claude" -> ClaudeModelCatalog.option(normalizedModelId)?.shortName
         else -> CodexModelCatalog.option(normalizedModelId)?.description

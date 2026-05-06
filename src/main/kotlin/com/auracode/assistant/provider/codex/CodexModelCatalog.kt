@@ -1,35 +1,35 @@
 package com.auracode.assistant.provider.codex
 
-/** Describes one selectable Codex model option exposed in settings and composer UI. */
+/** 描述一个可在界面中展示的 Codex 模型选项。 */
 data class CodexModelOption(
     val id: String,
     val description: String,
 )
 
-/** Holds the built-in Codex model list and default model selection. */
+/** 维护 Codex 内置模型列表和默认模型选择。 */
 object CodexModelCatalog {
-    const val defaultModel: String = "gpt-5.4"
+    const val defaultModel: String = "gpt-5.5"
 
     val options: List<CodexModelOption> = listOf(
         CodexModelOption(
-            id = "gpt-5.3-codex",
-            description = "GPT 5.3 Codex",
+            id = "gpt-5.5",
+            description = "GPT-5.5",
         ),
         CodexModelOption(
             id = "gpt-5.4",
-            description = "GPT 5.4",
+            description = "gpt-5.4",
         ),
         CodexModelOption(
-            id = "gpt-5.2-codex",
-            description = "GPT 5.2 Codex",
+            id = "gpt-5.4-mini",
+            description = "GPT-5.4-Mini",
         ),
         CodexModelOption(
-            id = "gpt-5.1-codex-max",
-            description = "GPT 5.1 Codex Max",
+            id = "gpt-5.3-codex",
+            description = "gpt-5.3-codex",
         ),
         CodexModelOption(
-            id = "gpt-5.1-codex-mini",
-            description = "GPT 5.1 Codex Mini",
+            id = "gpt-5.2",
+            description = "gpt-5.2",
         ),
     )
 

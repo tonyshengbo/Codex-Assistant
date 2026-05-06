@@ -12,6 +12,8 @@ data class EngineDescriptor(
     val id: String,
     val displayName: String,
     val models: List<String>,
+    /** slug → display name 映射，用于动态获取的模型展示名，默认空 map 保持向后兼容。 */
+    val modelDisplayNames: Map<String, String> = emptyMap(),
     val capabilities: EngineCapabilities,
 )
 

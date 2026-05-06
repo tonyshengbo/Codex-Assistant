@@ -387,7 +387,7 @@ class SubmissionAreaStoreTest {
                     EngineDescriptor(
                         id = "claude",
                         displayName = "Claude",
-                        models = listOf("claude-sonnet-4-6"),
+                        models = listOf("claude-opus-4-7", "claude-sonnet-4-6"),
                         capabilities = EngineCapabilities(
                             supportsThinking = true,
                             supportsToolEvents = false,
@@ -423,7 +423,7 @@ class SubmissionAreaStoreTest {
         )
 
         assertEquals("claude", store.state.value.selectedEngineId)
-        assertEquals("claude-sonnet-4-6", store.state.value.selectedModel)
+        assertEquals("claude-opus-4-7", store.state.value.selectedModel)
         assertNull(store.state.value.emptyStateHint)
     }
 
@@ -563,7 +563,7 @@ class SubmissionAreaStoreTest {
                     EngineDescriptor(
                         id = "claude",
                         displayName = "Claude",
-                        models = listOf("claude-sonnet-4-6"),
+                        models = listOf("claude-opus-4-7", "claude-sonnet-4-6"),
                         capabilities = EngineCapabilities(
                             supportsThinking = true,
                             supportsToolEvents = false,
@@ -584,7 +584,7 @@ class SubmissionAreaStoreTest {
         store.onEvent(AppEvent.UiIntentPublished(UiIntent.SelectEngine("claude")))
 
         assertEquals("claude", store.state.value.selectedEngineId)
-        assertEquals("claude-sonnet-4-6", store.state.value.selectedModel)
+        assertEquals("claude-opus-4-7", store.state.value.selectedModel)
     }
 
     @Test

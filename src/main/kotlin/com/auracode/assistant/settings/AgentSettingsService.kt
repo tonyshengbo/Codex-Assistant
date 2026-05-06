@@ -70,6 +70,10 @@ class AgentSettingsService : PersistentStateComponent<AgentSettingsService.State
         var selectedSubmissionModelsByEngine: MutableMap<String, String> = mutableMapOf(),
         var selectedSubmissionModel: String = CodexModelCatalog.defaultModel,
         var selectedSubmissionReasoning: String = SubmissionReasoning.MEDIUM.effort,
+        /** 跨重启缓存的 Codex 模型 slug 列表，空列表表示尚未获取过。 */
+        var cachedCodexModelIds: MutableList<String> = mutableListOf(),
+        /** 与 cachedCodexModelIds 一一对应的展示名列表。 */
+        var cachedCodexModelDisplayNames: MutableList<String> = mutableListOf(),
     ) {
         fun executablePathFor(engineId: String): String {
             val fromMap = engineExecutablePaths[engineId]?.trim().orEmpty()
@@ -282,6 +286,18 @@ class AgentSettingsService : PersistentStateComponent<AgentSettingsService.State
 
     fun setCustomModelIds(values: List<String>) {
         state.customModelIds = values.toMutableList()
+    }
+
+    fun cachedCodexModelIds(): List<String> = state.cachedCodexModelIds.toList()
+
+    fun setCachedCodexModelIds(values: List<String>) {
+        state.cachedCodexModelIds = values.toMutableList()
+    }
+
+    fun cachedCodexModelDisplayNames(): List<String> = state.cachedCodexModelDisplayNames.toList()
+
+    fun setCachedCodexModelDisplayNames(values: List<String>) {
+        state.cachedCodexModelDisplayNames = values.toMutableList()
     }
 
     fun selectedSubmissionModel(): String = selectedSubmissionModel(defaultEngineId())

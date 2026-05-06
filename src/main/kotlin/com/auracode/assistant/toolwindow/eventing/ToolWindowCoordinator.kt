@@ -9,6 +9,7 @@ import com.auracode.assistant.persistence.chat.PersistedMessageAttachment
 import com.auracode.assistant.provider.claude.ClaudeCliVersionService
 import com.auracode.assistant.provider.codex.CodexCliVersionService
 import com.auracode.assistant.provider.codex.CodexEnvironmentDetector
+import com.auracode.assistant.provider.codex.CodexModelCatalogService
 import com.auracode.assistant.service.AgentChatService.SessionHistoryReplayPage
 import com.auracode.assistant.service.AgentChatService
 import com.auracode.assistant.session.kernel.SessionDomainEvent
@@ -74,6 +75,10 @@ internal class ToolWindowCoordinator(
     private val mcpAdapterRegistry: McpManagementAdapterRegistry = McpManagementAdapterRegistry(settingsService),
     private val codexEnvironmentDetector: CodexEnvironmentDetector = CodexEnvironmentDetector(),
     private val codexCliVersionService: CodexCliVersionService = CodexCliVersionService(settingsService, codexEnvironmentDetector),
+    private val codexModelCatalogService: CodexModelCatalogService = CodexModelCatalogService(
+        settingsService = settingsService,
+        environmentDetector = codexEnvironmentDetector,
+    ),
     private val claudeCliVersionService: ClaudeCliVersionService = ClaudeCliVersionService(settingsService),
     private val runtimeExecutableCheckService: RuntimeExecutableCheckService = RuntimeExecutableCheckService(),
     private val pickAttachments: () -> List<String> = { emptyList() },
@@ -172,6 +177,7 @@ internal class ToolWindowCoordinator(
         engineSkillsService = engineSkillsService,
         codexEnvironmentDetector = codexEnvironmentDetector,
         codexCliVersionService = codexCliVersionService,
+        codexModelCatalogService = codexModelCatalogService,
         claudeCliVersionService = claudeCliVersionService,
         runtimeExecutableCheckService = runtimeExecutableCheckService,
         pickAttachments = pickAttachments,
@@ -275,6 +281,7 @@ internal class ToolWindowCoordinator(
         historyHandler.restoreCurrentSessionHistory()
         if (runStartupWarmups) {
             settingsHandler.warmSkillsRuntimeCache()
+            settingsHandler.warmCodexModelCatalog()
             settingsHandler.warmCodexCliVersionState()
             settingsHandler.warmClaudeCliVersionState()
         }

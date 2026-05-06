@@ -42,7 +42,7 @@ internal class ProviderRegistry(
     factories: List<AgentProviderFactory>,
     private val defaultEngineId: String,
 ) {
-    private val descriptorMap = descriptors.associateBy { it.id }
+    private val descriptorMap = ConcurrentHashMap(descriptors.associateBy { it.id })
     private val factoryMap = factories.associateBy { it.engineId }
     private val providers = ConcurrentHashMap<String, AgentProvider>()
 
@@ -73,6 +73,13 @@ internal class ProviderRegistry(
     fun defaultEngineId(): String = defaultEngineId
 
     fun engine(engineId: String): EngineDescriptor? = descriptorMap[engineId]
+
+    /** 运行时更新指定引擎的模型列表和展示名映射。 */
+    fun updateModels(engineId: String, models: List<String>, displayNames: Map<String, String> = emptyMap()) {
+        descriptorMap.computeIfPresent(engineId) { _, existing ->
+            existing.copy(models = models, modelDisplayNames = displayNames)
+        }
+    }
 
     fun providerOrNull(engineId: String): AgentProvider? {
         val factory = factoryMap[engineId] ?: return null

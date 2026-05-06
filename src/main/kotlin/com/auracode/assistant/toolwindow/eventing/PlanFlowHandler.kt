@@ -173,10 +173,19 @@ internal class PlanFlowHandler(
         val current = context.activePlanRunContexts[sessionId] ?: return false
         if (current.remoteTurnId != null && current.remoteTurnId != event.turnId) return false
         context.activePlanRunContexts.remove(sessionId)
-        context.dispatchSessionEvent(sessionId, AppEvent.RunningPlanUpdated(plan = null))
-        if (event.outcome != SessionTurnOutcome.SUCCESS) return true
+        // Only clear the running plan immediately on non-success outcomes; on SUCCESS the
+        // PlanCompletionPromptUpdated handler (or the blank-body path below) clears it, which
+        // avoids the flicker caused by clearing and then immediately re-showing the plan when
+        // the next task turn starts.
+        if (event.outcome != SessionTurnOutcome.SUCCESS) {
+            context.dispatchSessionEvent(sessionId, AppEvent.RunningPlanUpdated(plan = null))
+            return true
+        }
         val body = current.latestPlanBody?.trim().orEmpty()
-        if (body.isBlank()) return true
+        if (body.isBlank()) {
+            context.dispatchSessionEvent(sessionId, AppEvent.RunningPlanUpdated(plan = null))
+            return true
+        }
         context.dispatchSessionEvent(
             sessionId,
             AppEvent.PlanCompletionPromptUpdated(

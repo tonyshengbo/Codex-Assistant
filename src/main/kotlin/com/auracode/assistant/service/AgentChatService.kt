@@ -764,6 +764,11 @@ class AgentChatService private constructor(
 
     fun availableEngines(): List<EngineDescriptor> = registry.engines()
 
+    /** 运行时更新指定引擎的模型列表，由后台 CLI 刷新触发。 */
+    fun updateEngineModels(engineId: String, models: List<String>, displayNames: Map<String, String> = emptyMap()) {
+        registry.updateModels(engineId, models, displayNames)
+    }
+
     fun defaultEngineId(): String = synchronized(stateLock) {
         sessions[currentSessionId]?.providerId?.trim()?.takeIf { it.isNotBlank() }
             ?: settings.defaultEngineId().takeIf { it.isNotBlank() }

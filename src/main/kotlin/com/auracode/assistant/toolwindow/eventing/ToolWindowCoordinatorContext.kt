@@ -5,6 +5,7 @@ import com.auracode.assistant.persistence.chat.PersistedMessageAttachment
 import com.auracode.assistant.provider.claude.ClaudeCliVersionService
 import com.auracode.assistant.provider.codex.CodexCliVersionService
 import com.auracode.assistant.provider.codex.CodexEnvironmentDetector
+import com.auracode.assistant.provider.codex.CodexModelCatalogService
 import com.auracode.assistant.provider.runtime.RuntimeExecutableCheckService
 import com.auracode.assistant.service.AgentChatService
 import com.auracode.assistant.service.AgentChatService.SessionHistoryReplayPage
@@ -45,6 +46,7 @@ internal class ToolWindowCoordinatorContext(
     val engineSkillsService: EngineSkillsService,
     val codexEnvironmentDetector: CodexEnvironmentDetector,
     val codexCliVersionService: CodexCliVersionService,
+    val codexModelCatalogService: CodexModelCatalogService,
     val claudeCliVersionService: ClaudeCliVersionService,
     val runtimeExecutableCheckService: RuntimeExecutableCheckService,
     val pickAttachments: () -> List<String>,

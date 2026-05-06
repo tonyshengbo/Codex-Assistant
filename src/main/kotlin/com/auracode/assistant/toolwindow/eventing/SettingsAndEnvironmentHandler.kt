@@ -7,6 +7,7 @@ import com.auracode.assistant.provider.claude.ClaudeCliVersionCheckStatus
 import com.auracode.assistant.provider.claude.ClaudeCliVersionSnapshot
 import com.auracode.assistant.provider.codex.CodexCliVersionCheckStatus
 import com.auracode.assistant.provider.codex.CodexCliVersionSnapshot
+import com.auracode.assistant.provider.codex.CodexModelCatalogRefreshResult
 import com.auracode.assistant.settings.SavedAgentDefinition
 import com.auracode.assistant.settings.mcp.McpAuthActionResult
 import com.auracode.assistant.settings.mcp.McpBusyState
@@ -429,6 +430,23 @@ internal class SettingsAndEnvironmentHandler(
                     engineId = engineId,
                 )
                 publishRuntimeSkillsSnapshot(snapshot)
+            }
+        }
+    }
+
+    /** 后台异步刷新 Codex 模型列表，有变化时更新引擎描述符并推送设置快照。 */
+    fun warmCodexModelCatalog() {
+        context.coroutineLauncher.launch("warmCodexModelCatalog") {
+            runCatching {
+                val result = context.codexModelCatalogService.refresh()
+                if (result is CodexModelCatalogRefreshResult.Changed) {
+                    context.chatService.updateEngineModels(
+                        engineId = "codex",
+                        models = result.models.map { it.slug },
+                        displayNames = result.models.associate { it.slug to it.displayName },
+                    )
+                    context.publishSettingsSnapshot()
+                }
             }
         }
     }

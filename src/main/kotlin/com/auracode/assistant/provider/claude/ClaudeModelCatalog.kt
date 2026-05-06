@@ -10,40 +10,38 @@ internal data class ClaudeModelOption(
  * 维护 Claude 可选模型列表，并兼容旧版本持久化下来的模型标识。
  */
 internal object ClaudeModelCatalog {
-    /** 当前 Claude 默认模型，对应 CLI 里的 Default/sonnet。 */
-    const val defaultModel: String = "claude-sonnet-4-6"
+    /** 当前 Claude 默认模型。 */
+    const val defaultModel: String = "claude-opus-4-7"
     private const val standardContextWindow: Int = 200_000
     private const val extendedContextWindow: Int = 1_000_000
-    private const val sonnetOneMillionModel: String = "claude-sonnet-4-6[1m]"
+    private const val opusNewModel: String = "claude-opus-4-7"
+    private const val sonnetModel: String = "claude-sonnet-4-6"
     private const val opusModel: String = "claude-opus-4-6"
-    private const val opusOneMillionModel: String = "claude-opus-4-6[1m]"
     private const val haikuModel: String = "claude-haiku-4-5-20251001"
     private val curatedOptions: List<ClaudeModelOption> = listOf(
         ClaudeModelOption(
-            id = defaultModel,
-            shortName = "Sonnet 4.6",
+            id = opusNewModel,
+            shortName = "Opus 4.7 [1m]",
         ),
         ClaudeModelOption(
-            id = sonnetOneMillionModel,
-            shortName = "Sonnet 4.6 1M",
-        ),
-        ClaudeModelOption(
-            id = opusModel,
-            shortName = "Opus 4.6",
-        ),
-        ClaudeModelOption(
-            id = opusOneMillionModel,
-            shortName = "Opus 4.6 1M",
+            id = sonnetModel,
+            shortName = "Sonnet 4.6 [1m]",
         ),
         ClaudeModelOption(
             id = haikuModel,
-            shortName = "Haiku 4.5",
+            shortName = "Haiku 4.5 [200k]",
+        ),
+        ClaudeModelOption(
+            id = opusModel,
+            shortName = "Opus 4.6 [1m]",
         ),
     )
     private val legacyModelReplacements: Map<String, String> = mapOf(
-        "claude-sonnet-4-5" to defaultModel,
-        "claude-opus-4-1" to opusModel,
+        "claude-sonnet-4-5" to sonnetModel,
+        "claude-opus-4-1" to opusNewModel,
         "claude-haiku-4-5" to haikuModel,
+        "claude-sonnet-4-6[1m]" to sonnetModel,
+        "claude-opus-4-6[1m]" to opusModel,
     )
 
     /** 返回当前 Claude 引擎内置的模型列表。 */
@@ -69,10 +67,9 @@ internal object ClaudeModelCatalog {
     /** 返回模型的默认上下文窗口，用于 result 未显式回传时的兜底。 */
     fun contextWindow(modelId: String?): Int {
         val normalized = normalize(modelId.orEmpty())
-        return if (normalized.endsWith("[1m]")) {
-            extendedContextWindow
-        } else {
-            standardContextWindow
+        return when (normalized) {
+            opusNewModel, sonnetModel, opusModel -> extendedContextWindow
+            else -> standardContextWindow
         }
     }
 }
