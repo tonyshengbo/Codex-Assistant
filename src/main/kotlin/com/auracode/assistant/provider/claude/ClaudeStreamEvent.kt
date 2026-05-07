@@ -211,6 +211,17 @@ internal sealed interface ClaudeStreamEvent {
         val durationMs: Long = 0L,
     ) : ClaudeStreamEvent
 
+    /** 表示 Claude CLI 返回的任务进度事件（system/task_progress）。 */
+    data class TaskProgress(
+        val sessionId: String? = null,
+        val toolUseId: String? = null,
+        val description: String? = null,
+        val lastToolName: String? = null,
+        val totalTokens: Int = 0,
+        val toolUses: Int = 0,
+        val durationMs: Long = 0L,
+    ) : ClaudeStreamEvent
+
     /** 表示 Claude CLI 返回的显式错误事件。 */
     data class Error(
         val message: String,

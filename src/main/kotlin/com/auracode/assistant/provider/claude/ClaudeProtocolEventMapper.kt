@@ -39,6 +39,8 @@ internal class ClaudeProviderEventMapper(
     private var latestAssistantText: String = ""
     private var latestAssistantMessageId: String? = null
     private var latestErrorMessage: String? = null
+    private var latestPlanBody: String? = null
+    private var latestPlanSource: PlanBodySource? = null
     /** 维护当前 turn 内所有子 Agent 的快照，按 toolUseId 有序存储。 */
     private val subagentSnapshots: LinkedHashMap<String, ProviderAgentSnapshot> = LinkedHashMap()
 
@@ -59,6 +61,8 @@ internal class ClaudeProviderEventMapper(
                     maybeEmitTurnStarted(this)
                     if (event.toolName.trim().equals("TodoWrite", ignoreCase = true)) {
                         val plan = toolCallItemMapper.mapTodoWritePlan(event)
+                        latestPlanBody = plan.body.trim().takeIf { it.isNotBlank() } ?: latestPlanBody
+                        latestPlanSource = if (plan.body.isNotBlank()) PlanBodySource.TODO_WRITE else latestPlanSource
                         add(
                             ProviderEvent.RunningPlanUpdated(
                                 threadId = threadId,
@@ -73,6 +77,8 @@ internal class ClaudeProviderEventMapper(
                         // ExitPlanMode 携带完整 plan markdown，映射为 RunningPlanUpdated 供 UI 展示。
                         val planBody = toolCallItemMapper.mapExitPlanModeBody(event)
                         if (planBody.isNotBlank()) {
+                            latestPlanBody = planBody.trim()
+                            latestPlanSource = PlanBodySource.EXIT_PLAN_MODE
                             add(
                                 ProviderEvent.RunningPlanUpdated(
                                     threadId = threadId,
@@ -185,6 +191,24 @@ internal class ClaudeProviderEventMapper(
                 buildList {
                     maybeEmitThreadStarted(this)
                     maybeEmitTurnStarted(this)
+                    val resolvedPlanBody = latestPlanBody?.trim().orEmpty()
+                    if (
+                        request.collaborationMode == com.auracode.assistant.model.AgentCollaborationMode.PLAN &&
+                        !event.isError &&
+                        latestPlanSource == PlanBodySource.TODO_WRITE &&
+                        resolvedPlanBody.isNotBlank()
+                    ) {
+                        add(
+                            ProviderEvent.RunningPlanUpdated(
+                                threadId = threadId,
+                                turnId = turnId,
+                                explanation = null,
+                                steps = emptyList(),
+                                body = resolvedPlanBody,
+                                presentation = ProviderRunningPlanPresentation.SUBMISSION_PANEL,
+                            ),
+                        )
+                    }
                     val rawFinalText = event.resultText?.trim().orEmpty().ifBlank { latestAssistantText }
                     val (_, finalText) = splitThinkingFromText(rawFinalText)
                     if (!event.isError && finalText.isNotBlank()) {
@@ -403,6 +427,17 @@ internal class ClaudeProviderEventMapper(
         }
     }
 
+    /** Completes one Claude plan-mode turn after ExitPlanMode is accepted by the host. */
+    fun onExitPlanModeAccepted(): List<ProviderEvent> {
+        if (completed) return emptyList()
+        completed = true
+        return buildList {
+            maybeEmitThreadStarted(this)
+            maybeEmitTurnStarted(this)
+            add(ProviderEvent.TurnCompleted(turnId = turnId, outcome = TurnOutcome.SUCCESS))
+        }
+    }
+
     /** 根据 Claude messageId 生成 assistant narrative item id；缺失时回退到稳定兜底值。 */
     private fun assistantItemId(messageId: String?): String {
         val normalizedMessageId = messageId?.trim().orEmpty()
@@ -416,6 +451,12 @@ internal class ClaudeProviderEventMapper(
     /** 返回最后一条 assistant 消息应回写的 unified item id。 */
     private fun latestAssistantItemId(): String {
         return assistantItemId(latestAssistantMessageId)
+    }
+
+    /** Tracks which Claude tool produced the latest plan body used by the submission panel. */
+    private enum class PlanBodySource {
+        TODO_WRITE,
+        EXIT_PLAN_MODE,
     }
 
     /** 首次拿到有效 threadId 时发出 thread-started。 */
@@ -504,6 +545,7 @@ internal class ClaudeProviderEventMapper(
             threadId = threadId.orEmpty(),
             turnId = turnId,
             itemId = "${request.requestId}:user-input:${event.requestId}",
+            rawQuestionsJson = event.questionsJson,
             questions = questions.mapIndexed { index, question ->
                 val questionText = (question["question"] as? JsonPrimitive)?.contentOrNull.orEmpty()
                 val header = (question["header"] as? JsonPrimitive)?.contentOrNull.orEmpty()
@@ -521,6 +563,7 @@ internal class ClaudeProviderEventMapper(
                     header = header,
                     question = questionText,
                     options = options,
+                    multiSelect = (question["multiSelect"] as? JsonPrimitive)?.contentOrNull == "true",
                 )
             },
         )

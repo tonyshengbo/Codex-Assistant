@@ -41,6 +41,7 @@ internal class ClaudeStreamAccumulator {
                     ),
                 )
                 is ClaudeStreamEvent.SessionStarted -> Unit
+                is ClaudeStreamEvent.TaskProgress -> Unit
                 is ClaudeStreamEvent.TaskNotification -> handleTaskNotification(event, this)
                 is ClaudeStreamEvent.MessageStart -> {
                     if (event.parentToolUseId == null) handleMessageStart(event, this)
@@ -575,6 +576,7 @@ internal class ClaudeStreamAccumulator {
             is ClaudeStreamEvent.MessageStopped -> sessionId
             is ClaudeStreamEvent.Result -> sessionId
             is ClaudeStreamEvent.SessionStarted -> sessionId
+            is ClaudeStreamEvent.TaskProgress -> sessionId
             is ClaudeStreamEvent.UserToolResult -> sessionId
             is ClaudeStreamEvent.ControlRequest -> sessionId
             is ClaudeStreamEvent.TaskNotification -> sessionId

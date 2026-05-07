@@ -8,10 +8,18 @@ import com.auracode.assistant.session.kernel.SessionMessageRole
 import com.auracode.assistant.session.kernel.SessionToolKind
 import com.auracode.assistant.session.kernel.SessionTurnOutcome
 import com.auracode.assistant.settings.AgentSettingsService
+import com.auracode.assistant.protocol.ProviderToolUserInputAnswerDraft
+import com.auracode.assistant.protocol.ProviderToolUserInputOption
+import com.auracode.assistant.protocol.ProviderToolUserInputPrompt
+import com.auracode.assistant.protocol.ProviderToolUserInputQuestion
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -204,9 +212,9 @@ class ClaudeCliProviderTest {
         assertTrue(logs.any { it.contains("Claude CLI start: requestId=") })
         assertTrue(logs.any { it.contains("Claude CLI stdout:") })
         assertTrue(logs.any { it.contains("Claude CLI stderr:") })
-        assertTrue(logs.any { it.contains("Claude CLI parsed event:") })
-        assertTrue(logs.any { it.contains("Claude CLI emit unified event:") })
+        assertTrue(logs.any { it.contains("Claude CLI emitted no semantic events:").not() })
         assertTrue(logs.any { it.contains("Claude CLI exited:") })
+        assertTrue(logs.any { it.contains("Claude CLI finalized:") })
     }
 
     @Test
@@ -408,6 +416,113 @@ class ClaudeCliProviderTest {
     }
 
     @Test
+    /** 验证 plan 模式下缺少 ExitPlanMode 时，会使用最后一次 TodoWrite 作为最终计划正文回退。 */
+    fun `stream falls back to last todo write body for plan completion when exit plan mode is absent`() = runBlocking {
+        val provider = ClaudeCliProvider(
+            settings = AgentSettingsService().apply { loadState(AgentSettingsService.State()) },
+            launcher = FakeClaudeCliLauncher(
+                stdoutLines = listOf(
+                    """{"type":"system","subtype":"init","session_id":"session-123","model":"claude-sonnet-4-6"}""",
+                    """{"type":"assistant","session_id":"session-123","message":{"id":"msg_todo","content":[{"id":"tooluse_todo","input":{"todos":[{"content":"Ship plan mode","status":"completed"},{"content":"Add fallback completion body","status":"in_progress"}]},"name":"TodoWrite","type":"tool_use"}]}}""",
+                    """{"type":"user","session_id":"session-123","message":{"role":"user","content":[{"tool_use_id":"tooluse_todo","type":"tool_result","content":"Todos have been modified successfully."}]}}""",
+                    """{"type":"result","subtype":"success","session_id":"session-123","result":"Plan complete.","is_error":false}""",
+                ),
+            ),
+        )
+
+        val events = provider.stream(
+            AgentRequest(
+                engineId = "claude",
+                model = "claude-sonnet-4-6",
+                prompt = "Plan this change",
+                contextFiles = emptyList(),
+                workingDirectory = ".",
+                collaborationMode = com.auracode.assistant.model.AgentCollaborationMode.PLAN,
+            ),
+        ).toList()
+
+        val planUpdates = events.filterIsInstance<SessionDomainEvent.RunningPlanUpdated>()
+        assertTrue(planUpdates.size >= 2)
+        val finalPlan = planUpdates.last().plan
+        assertTrue(finalPlan.body.contains("Ship plan mode"))
+        assertTrue(finalPlan.body.contains("Add fallback completion body"))
+        val completed = assertIs<SessionDomainEvent.TurnCompleted>(events.last())
+        assertEquals(SessionTurnOutcome.SUCCESS, completed.outcome)
+    }
+
+    @Test
+    /** 验证 plan 模式下 ExitPlanMode 会被宿主自动确认并直接结束当前计划轮次。 */
+    fun `stream auto accepts exit plan mode and completes plan turn without approval request`() = runBlocking {
+        val launcher = RecordingClaudeCliLauncher(
+            stdoutLines = listOf(
+                """{"type":"system","subtype":"init","session_id":"session-123","model":"claude-sonnet-4-6"}""",
+                """{"type":"assistant","session_id":"session-123","message":{"id":"msg_exit","content":[{"id":"tooluse_exit","input":{"plan":"# Plan\n\n- [completed] Inspect\n- [pending] Execute","planFilePath":"/tmp/plan.md"},"name":"ExitPlanMode","type":"tool_use"}]}}""",
+                """{"type":"control_request","request_id":"approval-1","request":{"subtype":"can_use_tool","tool_name":"ExitPlanMode","display_name":"ExitPlanMode","input":{"plan":"# Plan\n\n- [completed] Inspect\n- [pending] Execute","planFilePath":"/tmp/plan.md"},"tool_use_id":"tooluse_exit"}}""",
+            ),
+        )
+        val provider = ClaudeCliProvider(
+            settings = AgentSettingsService().apply { loadState(AgentSettingsService.State()) },
+            launcher = launcher,
+        )
+
+        val events = provider.stream(
+            AgentRequest(
+                engineId = "claude",
+                model = "claude-sonnet-4-6",
+                prompt = "Plan this change",
+                contextFiles = emptyList(),
+                workingDirectory = ".",
+                collaborationMode = com.auracode.assistant.model.AgentCollaborationMode.PLAN,
+            ),
+        ).toList()
+
+        assertTrue(events.any { event ->
+            event is SessionDomainEvent.RunningPlanUpdated &&
+                event.plan.body.contains("Execute")
+        })
+        assertFalse(events.any { it is SessionDomainEvent.ApprovalRequested })
+        val completed = assertIs<SessionDomainEvent.TurnCompleted>(events.last())
+        assertEquals(SessionTurnOutcome.SUCCESS, completed.outcome)
+        assertEquals(1, launcher.stdinWrites.size)
+        assertTrue(launcher.stdinWrites.single().contains("\"type\":\"control_response\""))
+        assertTrue(launcher.stdinWrites.single().contains("\"request_id\":\"approval-1\""))
+        assertTrue(launcher.stdinWrites.single().contains("\"behavior\":\"allow\""))
+        assertTrue(launcher.cancelCalled)
+    }
+
+    @Test
+    /** 验证 Claude task_progress 事件不会中断主流程，并继续输出正常的计划/完成事件。 */
+    fun `stream accepts task progress events without dropping subsequent plan lifecycle`() = runBlocking {
+        val provider = ClaudeCliProvider(
+            settings = AgentSettingsService().apply { loadState(AgentSettingsService.State()) },
+            launcher = FakeClaudeCliLauncher(
+                stdoutLines = listOf(
+                    """{"type":"system","subtype":"init","session_id":"session-123","model":"claude-sonnet-4-6"}""",
+                    """{"type":"system","subtype":"task_progress","task_id":"task-1","tool_use_id":"tooluse_read","description":"Reading SessionStateReducer","usage":{"total_tokens":35627,"tool_uses":16,"duration_ms":25903},"last_tool_name":"Read","session_id":"session-123"}""",
+                    """{"type":"assistant","session_id":"session-123","message":{"id":"msg_todo","content":[{"id":"tooluse_todo","input":{"todos":[{"content":"Inspect events","status":"completed"},{"content":"Finalize plan","status":"pending"}]},"name":"TodoWrite","type":"tool_use"}]}}""",
+                    """{"type":"result","subtype":"success","session_id":"session-123","result":"Plan complete.","is_error":false}""",
+                ),
+            ),
+            diagnosticLogger = { },
+        )
+
+        val events = provider.stream(
+            AgentRequest(
+                engineId = "claude",
+                model = "claude-sonnet-4-6",
+                prompt = "Plan this change",
+                contextFiles = emptyList(),
+                workingDirectory = ".",
+                collaborationMode = com.auracode.assistant.model.AgentCollaborationMode.PLAN,
+            ),
+        ).toList()
+
+        assertTrue(events.any { it is SessionDomainEvent.RunningPlanUpdated })
+        val completed = assertIs<SessionDomainEvent.TurnCompleted>(events.last())
+        assertEquals(SessionTurnOutcome.SUCCESS, completed.outcome)
+    }
+
+    @Test
     /** Verifies that Claude placeholder diff actions without file paths never become file-change timeline events. */
     fun `stream ignores placeholder diff apply items without real file paths`() = runBlocking {
         val provider = ClaudeCliProvider(
@@ -463,6 +578,86 @@ class ClaudeCliProviderTest {
         assertTrue(provider.capabilities().supportsStructuredHistory)
     }
 
+    @Test
+    /** 验证 AskUserQuestion 回写使用 Claude SDK 兼容的 updatedInput 协议，并以 question 文本作为 answers key。 */
+    fun `build tool user input response uses updated input payload keyed by question text`() {
+        val provider = ClaudeCliProvider(
+            settings = AgentSettingsService().apply { loadState(AgentSettingsService.State()) },
+            launcher = FakeClaudeCliLauncher(),
+            diagnosticLogger = { },
+        )
+        val json = provider.buildToolUserInputResponse(
+            controlRequestId = "request-1",
+            prompt = ProviderToolUserInputPrompt(
+                requestId = "request-1",
+                threadId = "thread-1",
+                turnId = "turn-1",
+                itemId = "item-1",
+                rawQuestionsJson = """
+                    [
+                      {
+                        "question": "当前目录已有一个 design-patterns-demo 项目，你希望怎么做？",
+                        "header": "操作方式",
+                        "options": [
+                          {"label": "扩展现有项目", "description": "desc"},
+                          {"label": "新建独立项目", "description": "desc"}
+                        ],
+                        "multiSelect": false
+                      },
+                      {
+                        "question": "你希望重点覆盖哪类设计模式？",
+                        "header": "模式类型",
+                        "options": [
+                          {"label": "创建型", "description": "desc"},
+                          {"label": "结构型", "description": "desc"},
+                          {"label": "行为型", "description": "desc"}
+                        ],
+                        "multiSelect": true
+                      }
+                    ]
+                """.trimIndent(),
+                questions = listOf(
+                    ProviderToolUserInputQuestion(
+                        id = "q0",
+                        header = "操作方式",
+                        question = "当前目录已有一个 design-patterns-demo 项目，你希望怎么做？",
+                        options = listOf(
+                            ProviderToolUserInputOption("扩展现有项目", "desc"),
+                            ProviderToolUserInputOption("新建独立项目", "desc"),
+                        ),
+                    ),
+                    ProviderToolUserInputQuestion(
+                        id = "q1",
+                        header = "模式类型",
+                        question = "你希望重点覆盖哪类设计模式？",
+                        options = listOf(
+                            ProviderToolUserInputOption("创建型", "desc"),
+                            ProviderToolUserInputOption("结构型", "desc"),
+                            ProviderToolUserInputOption("行为型", "desc"),
+                        ),
+                        multiSelect = true,
+                    ),
+                ),
+            ),
+            answers = mapOf(
+                "q0" to ProviderToolUserInputAnswerDraft(listOf("扩展现有项目")),
+                "q1" to ProviderToolUserInputAnswerDraft(listOf("创建型", "结构型")),
+            ),
+        )
+
+        val payload = Json.parseToJsonElement(json).jsonObject
+        val response = payload.getValue("response").jsonObject
+        assertEquals("success", response.getValue("subtype").jsonPrimitive.content)
+        assertEquals("request-1", response.getValue("request_id").jsonPrimitive.content)
+        val updatedInput = response.getValue("response").jsonObject
+            .getValue("updatedInput").jsonObject
+        val questions = updatedInput.getValue("questions").jsonArray
+        assertEquals(2, questions.size)
+        val answers = updatedInput.getValue("answers").jsonObject
+        assertEquals("扩展现有项目", answers.getValue("当前目录已有一个 design-patterns-demo 项目，你希望怎么做？").jsonPrimitive.content)
+        assertEquals("创建型, 结构型", answers.getValue("你希望重点覆盖哪类设计模式？").jsonPrimitive.content)
+    }
+
     private class FakeClaudeCliLauncher(
         private val stdoutLines: List<String> = emptyList(),
         private val stderrLines: List<String> = emptyList(),
@@ -488,6 +683,41 @@ class ClaudeCliProviderTest {
                 override suspend fun writeStdin(line: String) = Unit
 
                 override fun cancel() = Unit
+            }
+        }
+    }
+
+    private class RecordingClaudeCliLauncher(
+        private val stdoutLines: List<String> = emptyList(),
+        private val stderrLines: List<String> = emptyList(),
+        private val exitCode: Int = 0,
+    ) : ClaudeCliLauncher {
+        val stdinWrites: MutableList<String> = mutableListOf()
+        var cancelCalled: Boolean = false
+
+        override fun start(
+            request: AgentRequest,
+            settings: AgentSettingsService,
+        ): ClaudeStreamJsonSession {
+            return object : ClaudeStreamJsonSession {
+                override suspend fun collect(
+                    onStdoutLine: suspend (String) -> Unit,
+                    onStderrLine: suspend (String) -> Unit,
+                ): Int {
+                    stdoutLines.forEach { onStdoutLine(it) }
+                    stderrLines.forEach { onStderrLine(it) }
+                    return exitCode
+                }
+
+                /** Records stdin writes so the test can verify control-response behavior. */
+                override suspend fun writeStdin(line: String) {
+                    stdinWrites += line
+                }
+
+                /** Records cancellation because ExitPlanMode should close the current stream. */
+                override fun cancel() {
+                    cancelCalled = true
+                }
             }
         }
     }

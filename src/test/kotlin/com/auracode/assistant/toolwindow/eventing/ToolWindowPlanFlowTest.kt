@@ -144,6 +144,78 @@ class ToolWindowPlanFlowTest {
     }
 
     @Test
+    fun `successful plan turn with running plan body but without explicit final plan still opens completion prompt`() {
+        val harness = CoordinatorHarness()
+
+        harness.eventHub.publishUiIntent(UiIntent.TogglePlanMode)
+        harness.eventHub.publishUiIntent(UiIntent.InputChanged("Plan this change"))
+        harness.eventHub.publishUiIntent(UiIntent.SendPrompt)
+        harness.waitUntil { harness.provider.requests.isNotEmpty() }
+
+        harness.provider.emitRunningPlanUpdate(
+            ProviderEvent.RunningPlanUpdated(
+                threadId = "thread-1",
+                turnId = "turn-1",
+                explanation = null,
+                steps = listOf(
+                    com.auracode.assistant.protocol.ProviderPlanStep(step = "Ship plan mode", status = "completed"),
+                    com.auracode.assistant.protocol.ProviderPlanStep(step = "Add fallback completion", status = "in_progress"),
+                ),
+                body = """
+                    - [completed] Ship plan mode
+                    - [in_progress] Add fallback completion
+                """.trimIndent(),
+                presentation = ProviderRunningPlanPresentation.SUBMISSION_PANEL,
+            ),
+        )
+
+        harness.waitUntil { harness.submissionStore.state.value.runningPlan != null }
+        harness.provider.completeTurn()
+        harness.waitUntil { harness.submissionStore.state.value.planCompletion != null }
+
+        val prompt = harness.submissionStore.state.value.planCompletion
+        assertTrue(prompt?.planBody?.contains("Ship plan mode") == true)
+        assertNull(harness.submissionStore.state.value.runningPlan)
+
+        harness.dispose()
+    }
+
+    @Test
+    fun `claude exit plan mode running plan update opens completion prompt without approval ui`() {
+        val harness = CoordinatorHarness()
+
+        harness.eventHub.publishUiIntent(UiIntent.SelectMode(SubmissionMode.APPROVAL))
+        harness.eventHub.publishUiIntent(UiIntent.TogglePlanMode)
+        harness.eventHub.publishUiIntent(UiIntent.InputChanged("Plan this change"))
+        harness.eventHub.publishUiIntent(UiIntent.SendPrompt)
+        harness.waitUntil { harness.provider.requests.isNotEmpty() }
+
+        harness.provider.emitRunningPlanUpdate(
+            ProviderEvent.RunningPlanUpdated(
+                threadId = "thread-1",
+                turnId = "turn-1",
+                explanation = null,
+                steps = emptyList(),
+                body = """
+                    # Plan
+
+                    - [completed] Inspect events
+                    - [pending] Execute the change
+                """.trimIndent(),
+                presentation = ProviderRunningPlanPresentation.SUBMISSION_PANEL,
+            ),
+        )
+        harness.provider.completeTurn()
+
+        harness.waitUntil { harness.submissionStore.state.value.planCompletion != null }
+        val prompt = harness.submissionStore.state.value.planCompletion
+        assertTrue(prompt?.planBody?.contains("Execute the change") == true)
+        assertNull(harness.submissionStore.state.value.runningPlan)
+
+        harness.dispose()
+    }
+
+    @Test
     fun `non plan turn running plan updates populate timeline and clear on turn completion`() {
         val harness = CoordinatorHarness()
 

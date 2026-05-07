@@ -10,6 +10,7 @@ import com.auracode.assistant.provider.AgentProvider
 import com.auracode.assistant.provider.session.ProviderProtocolDomainMapper
 import com.auracode.assistant.protocol.ProviderEvent
 import com.auracode.assistant.protocol.ProviderToolUserInputAnswerDraft
+import com.auracode.assistant.protocol.ProviderToolUserInputPrompt
 import com.auracode.assistant.session.kernel.SessionDomainEvent
 import com.auracode.assistant.settings.AgentSettingsService
 import com.auracode.assistant.toolwindow.execution.ApprovalAction
@@ -18,6 +19,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.channelFlow
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.Json
@@ -70,6 +72,7 @@ internal class ClaudeCliProvider(
         val accumulator = ClaudeStreamAccumulator()
         val mapper = ClaudeProviderEventMapper(request)
         val sessionEventMapper = ProviderProtocolDomainMapper()
+        var planModeExited = false
         try {
             val exitCode = session.collect(
                 onStdoutLine = { line ->
@@ -80,7 +83,31 @@ internal class ClaudeCliProvider(
                         accumulator = accumulator,
                         mapper = mapper,
                         emitProviderEvent = { unified ->
-                            if (unified is ProviderEvent.ApprovalRequested) {
+                            if (unified is ProviderEvent.ApprovalRequested &&
+                                unified.request.title.trim().equals("ExitPlanMode", ignoreCase = true)
+                            ) {
+                                session.writeStdin(
+                                    buildControlResponse(
+                                        approvalRequestId = unified.request.requestId,
+                                        decision = ApprovalAction.ALLOW,
+                                        permissionSuggestions = unified.request.permissionSuggestions,
+                                    ),
+                                )
+                                diagnosticLogger(
+                                    "Claude CLI exit plan mode accepted internally: requestId=${request.requestId} " +
+                                        "approvalId=${unified.request.requestId}",
+                                )
+                                mapper.onExitPlanModeAccepted().forEach { completionEvent ->
+                                    emitDomainEvents(
+                                        request = request,
+                                        event = completionEvent,
+                                        sessionEventMapper = sessionEventMapper,
+                                        emitDomain = { domainEvent -> send(domainEvent) },
+                                    )
+                                }
+                                planModeExited = true
+                                session.cancel()
+                            } else if (unified is ProviderEvent.ApprovalRequested) {
                                 // 注册 deferred，等待 UI 层调用 submitApprovalDecision。
                                 val deferred = CompletableDeferred<ApprovalAction>()
                                 approvals[unified.request.requestId] = deferred
@@ -118,6 +145,7 @@ internal class ClaudeCliProvider(
                                 session.writeStdin(
                                     buildToolUserInputResponse(
                                         controlRequestId = unified.prompt.requestId,
+                                        prompt = unified.prompt,
                                         answers = answers,
                                     ),
                                 )
@@ -166,6 +194,10 @@ internal class ClaudeCliProvider(
         } catch (error: CancellationException) {
             throw error
         } catch (error: Throwable) {
+            if (planModeExited) {
+                diagnosticLogger("Claude CLI stream closed after ExitPlanMode: requestId=${request.requestId}")
+                return@channelFlow
+            }
             CLI_LOGGER.warn {
                 "Claude CLI stream failed: requestId=${request.requestId} " +
                     "message=${error.message.orEmpty().ifBlank { error::class.java.simpleName }}"
@@ -299,21 +331,70 @@ internal class ClaudeCliProvider(
     }
 
     /** 构造 AskUserQuestion 的 control_response，包含用户选择的答案。 */
-    private fun buildToolUserInputResponse(
+    internal fun buildToolUserInputResponse(
         controlRequestId: String,
+        prompt: ProviderToolUserInputPrompt,
         answers: Map<String, ProviderToolUserInputAnswerDraft>,
     ): String {
+        val rawQuestions: JsonElement = prompt.rawQuestionsJson
+            ?.let { raw -> runCatching { Json.parseToJsonElement(raw) }.getOrNull() }
+            ?: JsonArray(emptyList())
+        val normalizedAnswers = prompt.questions.mapNotNull { question ->
+            val submitted = answers[question.id]?.answers.orEmpty()
+            submitted.takeIf { it.isNotEmpty() }?.let { question.question to it.joinToString(", ") }
+        }.toMap()
+        val annotations = prompt.questions.mapNotNull { question ->
+            val submitted = answers[question.id]?.answers.orEmpty()
+            if (submitted.isEmpty()) return@mapNotNull null
+            val optionLabels = question.options.map { option -> option.label }.toSet()
+            val freeformNotes = submitted.filterNot { answer -> answer in optionLabels }
+            freeformNotes.takeIf { it.isNotEmpty() && optionLabels.isNotEmpty() }
+                ?.let { question.question to it.joinToString(", ") }
+        }.toMap()
         val response = buildJsonObject {
             put("type", "control_response")
-            put("request_id", controlRequestId)
-            put("response", buildJsonObject {
-                put("behavior", "allow")
-                put("answers", buildJsonObject {
-                    answers.forEach { (questionId, draft) ->
-                        put(questionId, draft.answers.firstOrNull().orEmpty())
-                    }
-                })
-            })
+            put(
+                "response",
+                buildJsonObject {
+                    put("subtype", "success")
+                    put("request_id", controlRequestId)
+                    put(
+                        "response",
+                        buildJsonObject {
+                            put("behavior", "allow")
+                            put(
+                                "updatedInput",
+                                buildJsonObject {
+                                    put("questions", rawQuestions)
+                                    put(
+                                        "answers",
+                                        buildJsonObject {
+                                            normalizedAnswers.forEach { (questionText, answerText) ->
+                                                put(questionText, answerText)
+                                            }
+                                        },
+                                    )
+                                    if (annotations.isNotEmpty()) {
+                                        put(
+                                            "annotations",
+                                            buildJsonObject {
+                                                annotations.forEach { (questionText, notes) ->
+                                                    put(
+                                                        questionText,
+                                                        buildJsonObject {
+                                                            put("notes", notes)
+                                                        },
+                                                    )
+                                                }
+                                            },
+                                        )
+                                    }
+                                },
+                            )
+                        },
+                    )
+                },
+            )
         }
         val json = response.toString()
         diagnosticLogger("Claude CLI tool-user-input control_response: $json")
@@ -328,6 +409,7 @@ internal class ClaudeCliProvider(
                 "reasoningEffort=${request.reasoningEffort?.trim().orEmpty().ifBlank { "<default>" }} " +
                 "cwd=${request.workingDirectory} " +
                 "resume=${request.remoteConversationId?.isNotBlank() == true} " +
+                "collaborationMode=${request.collaborationMode} " +
                 "approvalMode=${request.approvalMode} " +
                 "contextFiles=${request.contextFiles.size} " +
                 "images=${request.imageAttachments.size} files=${request.fileAttachments.size}",
@@ -416,6 +498,10 @@ internal class ClaudeCliProvider(
 
             is ClaudeStreamEvent.MessageDelta -> {
                 "message-delta sessionId=${sessionId.orEmpty()} stopReason=${stopReason.orEmpty()} outputTokens=${usage?.outputTokens ?: 0}"
+            }
+
+            is ClaudeStreamEvent.TaskProgress -> {
+                "task-progress sessionId=${sessionId.orEmpty()} toolUseId=${toolUseId.orEmpty()} tool=$lastToolName tokens=$totalTokens"
             }
 
             is ClaudeStreamEvent.MessageStart -> {

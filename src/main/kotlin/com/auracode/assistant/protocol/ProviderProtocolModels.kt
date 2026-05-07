@@ -64,6 +64,7 @@ data class ProviderToolUserInputQuestion(
     val header: String,
     val question: String,
     val options: List<ProviderToolUserInputOption> = emptyList(),
+    val multiSelect: Boolean = false,
     val isOther: Boolean = false,
     val isSecret: Boolean = false,
 )
@@ -74,6 +75,7 @@ data class ProviderToolUserInputPrompt(
     val turnId: String?,
     val itemId: String,
     val questions: List<ProviderToolUserInputQuestion>,
+    val rawQuestionsJson: String? = null,
     val responseSummary: String? = null,
     val status: ItemStatus = ItemStatus.RUNNING,
 )

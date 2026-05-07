@@ -69,6 +69,19 @@ internal class ClaudeStreamEventParser(
                 )
             }
 
+            "task_progress" -> {
+                val usage = payload.objectValue("usage")
+                ClaudeStreamEvent.TaskProgress(
+                    sessionId = payload.string("session_id", "sessionId"),
+                    toolUseId = payload.string("tool_use_id", "toolUseId"),
+                    description = payload.string("description"),
+                    lastToolName = payload.string("last_tool_name", "lastToolName"),
+                    totalTokens = usage?.int("total_tokens", "totalTokens") ?: 0,
+                    toolUses = usage?.int("tool_uses", "toolUses") ?: 0,
+                    durationMs = usage?.double("duration_ms", "durationMs")?.toLong() ?: 0L,
+                )
+            }
+
             "status" -> {
                 val status = payload.rawString("status")
                 val compactResult = payload.string("compact_result", "compactResult")
