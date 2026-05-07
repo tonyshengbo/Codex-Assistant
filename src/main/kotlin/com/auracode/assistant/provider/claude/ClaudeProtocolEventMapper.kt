@@ -12,6 +12,14 @@ import com.auracode.assistant.protocol.ProviderApprovalRequestKind
 import com.auracode.assistant.protocol.ProviderEvent
 import com.auracode.assistant.protocol.ProviderItem
 import com.auracode.assistant.protocol.ProviderRunningPlanPresentation
+import com.auracode.assistant.protocol.ProviderToolUserInputOption
+import com.auracode.assistant.protocol.ProviderToolUserInputPrompt
+import com.auracode.assistant.protocol.ProviderToolUserInputQuestion
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.contentOrNull
 import java.util.Locale
 
 /**
@@ -61,6 +69,21 @@ internal class ClaudeProviderEventMapper(
                                 presentation = ProviderRunningPlanPresentation.SUBMISSION_PANEL,
                             ),
                         )
+                    } else if (event.toolName.trim().equals("ExitPlanMode", ignoreCase = true)) {
+                        // ExitPlanMode 携带完整 plan markdown，映射为 RunningPlanUpdated 供 UI 展示。
+                        val planBody = toolCallItemMapper.mapExitPlanModeBody(event)
+                        if (planBody.isNotBlank()) {
+                            add(
+                                ProviderEvent.RunningPlanUpdated(
+                                    threadId = threadId,
+                                    turnId = turnId,
+                                    explanation = null,
+                                    steps = emptyList(),
+                                    body = planBody,
+                                    presentation = ProviderRunningPlanPresentation.SUBMISSION_PANEL,
+                                ),
+                            )
+                        }
                     } else {
                         toolCallItemMapper.map(ownerId = request.requestId, event = event)?.let { item ->
                             add(ProviderEvent.ItemUpdated(item))
@@ -229,6 +252,18 @@ internal class ClaudeProviderEventMapper(
                     add(
                         ProviderEvent.ApprovalRequested(
                             request = buildApprovalRequest(event),
+                        ),
+                    )
+                }
+            }
+
+            is ClaudeConversationEvent.ToolUserInputReceived -> {
+                buildList {
+                    maybeEmitThreadStarted(this)
+                    maybeEmitTurnStarted(this)
+                    add(
+                        ProviderEvent.ToolUserInputRequested(
+                            prompt = buildToolUserInputPrompt(event),
                         ),
                     )
                 }
@@ -453,5 +488,41 @@ internal class ClaudeProviderEventMapper(
             ItemStatus.FAILED -> "Context compaction interrupted"
             ItemStatus.SKIPPED -> "Context compaction skipped"
         }
+    }
+
+    /** 将 AskUserQuestion 的 control_request 转换为统一的 ToolUserInputPrompt。 */
+    private fun buildToolUserInputPrompt(
+        event: ClaudeConversationEvent.ToolUserInputReceived,
+    ): ProviderToolUserInputPrompt {
+        val questions = runCatching {
+            Json.parseToJsonElement(event.questionsJson)
+        }.getOrNull()?.let { element ->
+            (element as? JsonArray)?.mapNotNull { it as? JsonObject }
+        }.orEmpty()
+        return ProviderToolUserInputPrompt(
+            requestId = event.requestId,
+            threadId = threadId.orEmpty(),
+            turnId = turnId,
+            itemId = "${request.requestId}:user-input:${event.requestId}",
+            questions = questions.mapIndexed { index, question ->
+                val questionText = (question["question"] as? JsonPrimitive)?.contentOrNull.orEmpty()
+                val header = (question["header"] as? JsonPrimitive)?.contentOrNull.orEmpty()
+                val options = (question["options"] as? JsonArray)
+                    ?.mapNotNull { it as? JsonObject }
+                    ?.map { option ->
+                        ProviderToolUserInputOption(
+                            label = (option["label"] as? JsonPrimitive)?.contentOrNull.orEmpty(),
+                            description = (option["description"] as? JsonPrimitive)?.contentOrNull.orEmpty(),
+                        )
+                    }
+                    .orEmpty()
+                ProviderToolUserInputQuestion(
+                    id = "q$index",
+                    header = header,
+                    question = questionText,
+                    options = options,
+                )
+            },
+        )
     }
 }

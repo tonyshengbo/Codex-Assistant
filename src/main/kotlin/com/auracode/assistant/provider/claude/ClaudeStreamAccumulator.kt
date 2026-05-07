@@ -70,14 +70,26 @@ internal class ClaudeStreamAccumulator {
                     if (event.parentToolUseId == null) handleResult(event, this)
                 }
                 is ClaudeStreamEvent.Error -> add(ClaudeConversationEvent.Error(message = event.message))
-                is ClaudeStreamEvent.ControlRequest -> add(
-                    ClaudeConversationEvent.PermissionRequested(
-                        requestId = event.requestId,
-                        toolName = event.toolName,
-                        toolInput = event.toolInput,
-                        permissionSuggestions = event.permissionSuggestions,
-                    ),
-                )
+                is ClaudeStreamEvent.ControlRequest -> {
+                    if (event.toolName == "AskUserQuestion") {
+                        // AskUserQuestion 走 ToolUserInput 通道，不走普通权限审批。
+                        add(
+                            ClaudeConversationEvent.ToolUserInputReceived(
+                                requestId = event.requestId,
+                                questionsJson = event.toolInput["questions"].orEmpty(),
+                            ),
+                        )
+                    } else {
+                        add(
+                            ClaudeConversationEvent.PermissionRequested(
+                                requestId = event.requestId,
+                                toolName = event.toolName,
+                                toolInput = event.toolInput,
+                                permissionSuggestions = event.permissionSuggestions,
+                            ),
+                        )
+                    }
+                }
                 is ClaudeStreamEvent.ContextCompaction -> add(
                     ClaudeConversationEvent.ContextCompactionUpdated(
                         isCompleted = !event.isStarting,

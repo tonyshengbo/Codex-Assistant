@@ -22,7 +22,7 @@ private val claudeCapabilities = EngineCapabilities(
     supportsToolEvents = false,
     supportsCommandProposal = false,
     supportsDiffProposal = false,
-    supportsReasoningEffortSelection = false,
+    supportsReasoningEffortSelection = true,
 )
 
 /** Registers the Codex provider implementation behind the shared provider factory contract. */

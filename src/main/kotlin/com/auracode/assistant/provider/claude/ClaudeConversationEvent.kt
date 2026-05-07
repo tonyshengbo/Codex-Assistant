@@ -82,6 +82,12 @@ internal sealed interface ClaudeConversationEvent {
         val permissionSuggestions: List<String> = emptyList(),
     ) : ClaudeConversationEvent
 
+    /** 表示 Claude CLI 通过 AskUserQuestion 工具请求用户输入（来自 control_request/can_use_tool）。 */
+    data class ToolUserInputReceived(
+        val requestId: String,
+        val questionsJson: String,
+    ) : ClaudeConversationEvent
+
     /**
      * 表示一个子 Agent 的状态快照更新。
      * 由 Agent 工具调用开始时（ACTIVE）和 task_notification 完成时（COMPLETED/FAILED）触发。

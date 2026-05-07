@@ -9,6 +9,7 @@ import com.auracode.assistant.model.AgentRequest
 import com.auracode.assistant.provider.AgentProvider
 import com.auracode.assistant.provider.session.ProviderProtocolDomainMapper
 import com.auracode.assistant.protocol.ProviderEvent
+import com.auracode.assistant.protocol.ProviderToolUserInputAnswerDraft
 import com.auracode.assistant.session.kernel.SessionDomainEvent
 import com.auracode.assistant.settings.AgentSettingsService
 import com.auracode.assistant.toolwindow.execution.ApprovalAction
@@ -39,6 +40,9 @@ internal class ClaudeCliProvider(
     /** requestId → (requestId → deferred) 的两级映射，支持同一 turn 内多个并发授权请求。 */
     private val pendingApprovals = ConcurrentHashMap<String, ConcurrentHashMap<String, CompletableDeferred<ApprovalAction>>>()
 
+    /** requestId → (controlRequestId → deferred) 的两级映射，支持 AskUserQuestion 的用户输入回传。 */
+    private val pendingToolUserInputs = ConcurrentHashMap<String, ConcurrentHashMap<String, CompletableDeferred<Map<String, ProviderToolUserInputAnswerDraft>>>>()
+
     /** 启动 Claude CLI 流式会话，并在 provider 边界内将统一事件折叠为 session domain events。 */
     override fun stream(request: AgentRequest): Flow<SessionDomainEvent> = channelFlow {
         logStreamStart(request)
@@ -61,6 +65,8 @@ internal class ClaudeCliProvider(
         running[request.requestId] = session
         val approvals = ConcurrentHashMap<String, CompletableDeferred<ApprovalAction>>()
         pendingApprovals[request.requestId] = approvals
+        val toolInputs = ConcurrentHashMap<String, CompletableDeferred<Map<String, ProviderToolUserInputAnswerDraft>>>()
+        pendingToolUserInputs[request.requestId] = toolInputs
         val accumulator = ClaudeStreamAccumulator()
         val mapper = ClaudeProviderEventMapper(request)
         val sessionEventMapper = ProviderProtocolDomainMapper()
@@ -96,6 +102,28 @@ internal class ClaudeCliProvider(
                                 diagnosticLogger(
                                     "Claude CLI approval decision: requestId=${request.requestId} " +
                                         "approvalId=${unified.request.requestId} decision=$decision",
+                                )
+                            } else if (unified is ProviderEvent.ToolUserInputRequested) {
+                                // 注册 deferred，等待 UI 层调用 submitToolUserInput。
+                                val deferred = CompletableDeferred<Map<String, ProviderToolUserInputAnswerDraft>>()
+                                toolInputs[unified.prompt.requestId] = deferred
+                                emitDomainEvents(
+                                    request = request,
+                                    event = unified,
+                                    sessionEventMapper = sessionEventMapper,
+                                    emitDomain = { domainEvent -> send(domainEvent) },
+                                )
+                                val answers = deferred.await()
+                                toolInputs.remove(unified.prompt.requestId)
+                                session.writeStdin(
+                                    buildToolUserInputResponse(
+                                        controlRequestId = unified.prompt.requestId,
+                                        answers = answers,
+                                    ),
+                                )
+                                diagnosticLogger(
+                                    "Claude CLI tool user input answered: requestId=${request.requestId} " +
+                                        "controlId=${unified.prompt.requestId} answerCount=${answers.size}",
                                 )
                             } else {
                                 emitDomainEvents(
@@ -150,6 +178,7 @@ internal class ClaudeCliProvider(
             )
         } finally {
             pendingApprovals.remove(request.requestId)?.values?.forEach { it.complete(ApprovalAction.REJECT) }
+            pendingToolUserInputs.remove(request.requestId)?.values?.forEach { it.complete(emptyMap()) }
             running.remove(request.requestId)
             session.cancel()
             diagnosticLogger("Claude CLI finalized: requestId=${request.requestId}")
@@ -162,11 +191,11 @@ internal class ClaudeCliProvider(
         supportsHistoryPagination = false,
         supportsPlanMode = true,
         supportsApprovalRequests = true,
-        supportsToolUserInput = false,
+        supportsToolUserInput = true,
         supportsResume = true,
         supportsAttachments = true,
         supportsImageInputs = true,
-        supportsSubagents = false,
+        supportsSubagents = true,
     )
 
     /** 将 UI 层的授权决定写回 Claude CLI 的 stdin。 */
@@ -184,6 +213,26 @@ internal class ClaudeCliProvider(
             return completed
         }
         diagnosticLogger("Claude CLI submitApprovalDecision: deferred NOT found for requestId=$requestId")
+        return false
+    }
+
+    /** 将 UI 层收集的用户输入回答写回 Claude CLI 的 stdin。 */
+    override fun submitToolUserInput(
+        requestId: String,
+        answers: Map<String, ProviderToolUserInputAnswerDraft>,
+    ): Boolean {
+        diagnosticLogger(
+            "Claude CLI submitToolUserInput called: requestId=$requestId answerKeys=${answers.keys}",
+        )
+        for (inputs in pendingToolUserInputs.values) {
+            val deferred = inputs[requestId] ?: continue
+            val completed = deferred.complete(answers)
+            diagnosticLogger(
+                "Claude CLI submitToolUserInput: deferred found requestId=$requestId completed=$completed",
+            )
+            return completed
+        }
+        diagnosticLogger("Claude CLI submitToolUserInput: deferred NOT found for requestId=$requestId")
         return false
     }
 
@@ -213,6 +262,7 @@ internal class ClaudeCliProvider(
     /** 取消指定请求对应的 Claude CLI 进程。 */
     override fun cancel(requestId: String) {
         pendingApprovals.remove(requestId)?.values?.forEach { it.complete(ApprovalAction.REJECT) }
+        pendingToolUserInputs.remove(requestId)?.values?.forEach { it.complete(emptyMap()) }
         running.remove(requestId)?.cancel()
         diagnosticLogger("Claude CLI cancelled: requestId=$requestId")
     }
@@ -248,11 +298,34 @@ internal class ClaudeCliProvider(
         return json
     }
 
+    /** 构造 AskUserQuestion 的 control_response，包含用户选择的答案。 */
+    private fun buildToolUserInputResponse(
+        controlRequestId: String,
+        answers: Map<String, ProviderToolUserInputAnswerDraft>,
+    ): String {
+        val response = buildJsonObject {
+            put("type", "control_response")
+            put("request_id", controlRequestId)
+            put("response", buildJsonObject {
+                put("behavior", "allow")
+                put("answers", buildJsonObject {
+                    answers.forEach { (questionId, draft) ->
+                        put(questionId, draft.answers.firstOrNull().orEmpty())
+                    }
+                })
+            })
+        }
+        val json = response.toString()
+        diagnosticLogger("Claude CLI tool-user-input control_response: $json")
+        return json
+    }
+
     /** 记录会话启动元数据，便于确认 CLI 的执行上下文。 */
     private fun logStreamStart(request: AgentRequest) {
         diagnosticLogger(
             "Claude CLI start: requestId=${request.requestId} " +
                 "model=${request.model?.trim().orEmpty().ifBlank { "<auto>" }} " +
+                "reasoningEffort=${request.reasoningEffort?.trim().orEmpty().ifBlank { "<default>" }} " +
                 "cwd=${request.workingDirectory} " +
                 "resume=${request.remoteConversationId?.isNotBlank() == true} " +
                 "approvalMode=${request.approvalMode} " +
@@ -421,6 +494,10 @@ internal class ClaudeCliProvider(
 
             is ClaudeConversationEvent.PermissionRequested -> {
                 "permission-requested requestId=$requestId toolName=$toolName"
+            }
+
+            is ClaudeConversationEvent.ToolUserInputReceived -> {
+                "tool-user-input-received requestId=$requestId"
             }
 
             is ClaudeConversationEvent.SubagentUpdated -> {

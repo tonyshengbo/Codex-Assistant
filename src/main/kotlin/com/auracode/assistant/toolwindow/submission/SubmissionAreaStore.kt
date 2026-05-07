@@ -28,6 +28,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import java.nio.charset.StandardCharsets
 import java.nio.file.Files
 import java.nio.file.Path
+import java.util.Locale
 import java.util.UUID
 import kotlin.io.path.name
 import kotlin.math.min
@@ -1386,7 +1387,7 @@ internal fun submissionModelOptions(
         .map {
             SubmissionModelOption(
                 id = it,
-                shortName = it,
+                shortName = normalizeModelDisplayName(engineId, it),
                 isCustom = true,
             )
         }
@@ -1402,11 +1403,24 @@ internal fun modelShortName(
     val normalizedEngineId = engineId.trim()
     val normalizedModelId = modelId.trim()
     if (normalizedModelId.isBlank()) return modelId
-    modelDisplayNames[normalizedModelId]?.takeIf { it.isNotBlank() }?.let { return it }
-    return when (normalizedEngineId) {
+    modelDisplayNames[normalizedModelId]?.takeIf { it.isNotBlank() }?.let {
+        return normalizeModelDisplayName(normalizedEngineId, it)
+    }
+    val resolvedName = when (normalizedEngineId) {
         "claude" -> ClaudeModelCatalog.option(normalizedModelId)?.shortName
         else -> CodexModelCatalog.option(normalizedModelId)?.description
     } ?: normalizedModelId
+    return normalizeModelDisplayName(normalizedEngineId, resolvedName)
+}
+
+/** Normalizes model display text without changing the underlying submitted model id. */
+private fun normalizeModelDisplayName(engineId: String, displayName: String): String {
+    val normalizedDisplayName = displayName.trim()
+    if (normalizedDisplayName.isBlank()) return displayName
+    return when (engineId) {
+        "claude" -> normalizedDisplayName
+        else -> normalizedDisplayName.uppercase(Locale.ROOT)
+    }
 }
 
 private fun defaultModelIdsForEngine(engineId: String): List<String> {

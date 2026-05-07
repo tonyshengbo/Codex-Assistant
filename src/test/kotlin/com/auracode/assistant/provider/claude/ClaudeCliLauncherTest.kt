@@ -9,6 +9,7 @@ import java.io.ByteArrayOutputStream
 import java.io.OutputStream
 import kotlin.test.Test
 import kotlin.test.assertContains
+import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
@@ -35,8 +36,8 @@ class ClaudeCliLauncherTest {
     }
 
     @Test
-    /** 验证 plan 协作模式下命令包含 --permission-mode plan，确保 Claude CLI 进入只规划不执行的模式。 */
-    fun `build command includes permission-mode plan when collaboration mode is PLAN`() {
+    /** 验证 Plan 协作模式下 permission-mode 为 plan，强制 Claude 只读探索不执行修改。 */
+    fun `build command uses permission-mode plan when collaboration mode is PLAN`() {
         val launcher = DefaultClaudeCliLauncher()
 
         val command = launcher.buildCommand(
@@ -52,12 +53,14 @@ class ClaudeCliLauncherTest {
 
         val permissionIndex = command.indexOf("--permission-mode")
         assertTrue(permissionIndex >= 0, "命令应包含 --permission-mode 参数")
-        assertContains(command, "plan")
+        assertEquals("plan", command[permissionIndex + 1])
+        // Plan 模式仍需 permission-prompt-tool stdio 用于计划完成后的用户选择交互
+        assertContains(command, "--permission-prompt-tool")
     }
 
     @Test
-    /** 验证 reasoningEffort 目前不会被映射为 Claude CLI 参数，避免 UI 对无效配置产生错误预期。 */
-    fun `build command ignores reasoning effort for claude cli`() {
+    /** 验证指定 reasoningEffort 时命令包含 Claude CLI 当前支持的 --effort 参数。 */
+    fun `build command includes reasoning effort flag when effort is specified`() {
         val launcher = DefaultClaudeCliLauncher()
 
         val command = launcher.buildCommand(
@@ -71,9 +74,49 @@ class ClaudeCliLauncherTest {
             settings = AgentSettingsService().apply { loadState(AgentSettingsService.State()) },
         )
 
-        assertTrue("--reasoning" !in command, "Claude CLI 命令当前不应包含不存在的 reasoning 参数")
-        assertTrue("--reasoning-effort" !in command, "Claude CLI 命令当前不应包含 reasoning effort 参数")
-        assertTrue("high" !in command, "reasoningEffort 当前不应被直接拼入 Claude CLI 命令")
+        val effortIndex = command.indexOf("--effort")
+        assertTrue(effortIndex >= 0, "命令应包含 --effort 参数")
+        assertEquals("high", command[effortIndex + 1])
+    }
+
+    @Test
+    /** 验证 xhigh（MAX 级别）被映射为 Claude CLI 可接受的 high。 */
+    fun `build command maps xhigh effort to high for claude cli`() {
+        val launcher = DefaultClaudeCliLauncher()
+
+        val command = launcher.buildCommand(
+            request = AgentRequest(
+                engineId = "claude",
+                prompt = "Check support",
+                contextFiles = emptyList(),
+                workingDirectory = ".",
+                reasoningEffort = "xhigh",
+            ),
+            settings = AgentSettingsService().apply { loadState(AgentSettingsService.State()) },
+        )
+
+        val effortIndex = command.indexOf("--effort")
+        assertTrue(effortIndex >= 0, "命令应包含 --effort 参数")
+        assertEquals("high", command[effortIndex + 1], "xhigh 应映射为 high")
+    }
+
+    @Test
+    /** 验证 reasoningEffort 为 null 时命令不包含 --effort 参数。 */
+    fun `build command omits reasoning effort flag when effort is null`() {
+        val launcher = DefaultClaudeCliLauncher()
+
+        val command = launcher.buildCommand(
+            request = AgentRequest(
+                engineId = "claude",
+                prompt = "Check support",
+                contextFiles = emptyList(),
+                workingDirectory = ".",
+                reasoningEffort = null,
+            ),
+            settings = AgentSettingsService().apply { loadState(AgentSettingsService.State()) },
+        )
+
+        assertFalse(command.contains("--effort"), "reasoningEffort 为 null 时不应包含 --effort 参数")
     }
 
     @Test
@@ -153,8 +196,8 @@ class ClaudeCliLauncherTest {
     }
 
     @Test
-    /** 验证 plan 模式下无图片时 prompt 仍作为 CLI 参数传入，不添加 --permission-prompt-tool。 */
-    fun `build command in plan mode without images passes prompt as cli arg`() {
+    /** 验证 plan 模式下无图片时 prompt 通过 stdin stream-json 发送，不作为 CLI 参数传入。 */
+    fun `build command in plan mode without images passes prompt via stdin`() {
         val launcher = DefaultClaudeCliLauncher()
 
         val command = launcher.buildCommand(
@@ -168,8 +211,11 @@ class ClaudeCliLauncherTest {
             settings = AgentSettingsService().apply { loadState(AgentSettingsService.State()) },
         )
 
-        assertTrue(command.any { it.contains("Plan a refactor") }, "无图片时 prompt 应作为 CLI 参数传入")
-        assertFalse(command.contains("--input-format"), "无图片时不应添加 --input-format 参数")
+        assertFalse(command.any { it.contains("Plan a refactor") }, "plan 模式下 prompt 应通过 stdin 发送，不应出现在 CLI 参数中")
+        assertContains(command, "--input-format")
+        assertContains(command, "stream-json")
+        assertContains(command, "--permission-prompt-tool")
+        assertContains(command, "stdio")
     }
 
     /** 记录输出流是否被关闭，便于验证 Claude CLI 的 stdin 生命周期。 */

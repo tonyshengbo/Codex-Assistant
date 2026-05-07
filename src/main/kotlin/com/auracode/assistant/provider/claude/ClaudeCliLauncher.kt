@@ -24,7 +24,7 @@ internal interface ClaudeCliLauncher {
 internal class DefaultClaudeCliLauncher(
     private val processStarter: ClaudeProcessStarter = DefaultClaudeProcessStarter(),
 ) : ClaudeCliLauncher {
-    /** 启动 Claude CLI 进程，并在启动后立即关闭 stdin，避免进程等待额外输入。 */
+    /** 启动 Claude CLI 进程，并根据模式决定 stdin 的初始化策略。 */
     override fun start(
         request: AgentRequest,
         settings: AgentSettingsService,
@@ -33,14 +33,15 @@ internal class DefaultClaudeCliLauncher(
             command = buildCommand(request, settings),
             workingDirectory = File(request.workingDirectory),
         )
-        // 只有在不需要 stdio 控制通道时才通过 stdin 发送多模态消息。
-        // plan 模式使用 --permission-mode plan，Claude 只规划不执行工具，不需要 stdio 控制通道，
-        // 图片可以正常通过 stdin stream-json 发送。
-        if (request.imageAttachments.isNotEmpty() && !needsPermissionPromptTool(request)) {
+        if (needsPermissionPromptTool(request)) {
+            // 控制通道模式：stdin 保持打开用于后续 control_response 写入。
+            // 始终通过 stdin 发送 prompt（stream-json 格式），避免 CLI 的 stdin 3s 超时。
             writeMultimodalMessage(process, request)
-        }
-        // 只有授权模式（REQUIRE_CONFIRMATION）需要保持 stdin 开放，以便写回 control_response；其它模式立即关闭。
-        if (request.approvalMode != AgentApprovalMode.REQUIRE_CONFIRMATION) {
+        } else {
+            // 无控制通道：有图片时发送多模态消息后关闭，无图片时直接关闭。
+            if (request.imageAttachments.isNotEmpty() && usesStdinForImages(request)) {
+                writeMultimodalMessage(process, request)
+            }
             closeProcessInput(process)
         }
         return ProcessClaudeStreamJsonSession(process)
@@ -55,9 +56,7 @@ internal class DefaultClaudeCliLauncher(
             .trim()
             .ifBlank { ClaudeProviderFactory.ENGINE_ID }
         val hasImages = request.imageAttachments.isNotEmpty()
-        // plan 模式不需要 stdio 控制通道（--permission-mode plan 下 Claude 只规划不执行工具），
-        // 图片可以正常通过 stdin stream-json 发送，与普通模式行为一致。
-        val useStdinForImages = hasImages && !needsPermissionPromptTool(request)
+        val useStdinForImages = hasImages && usesStdinForImages(request)
         return buildList {
             add(executable)
             add("-p")
@@ -77,6 +76,10 @@ internal class DefaultClaudeCliLauncher(
                 add("--model")
                 add(model)
             }
+            request.reasoningEffort?.trim()?.takeIf { it.isNotBlank() }?.let { effort ->
+                add("--effort")
+                add(mapReasoningEffort(effort))
+            }
             request.remoteConversationId?.trim()?.takeIf { it.isNotBlank() }?.let { sessionId ->
                 add("--resume")
                 add(sessionId)
@@ -88,32 +91,51 @@ internal class DefaultClaudeCliLauncher(
                     add("--append-system-prompt")
                     add(instruction)
                 }
-            if (useStdinForImages) {
-                // 无控制通道时，通过 stdin 以 stream-json 格式发送多模态消息，prompt 不作为 CLI 参数传入。
+            if (needsPermissionPromptTool(request) || useStdinForImages) {
+                // 控制通道模式或多模态模式：prompt 通过 stdin stream-json 发送，不作为 CLI 参数传入。
                 add("--input-format")
                 add("stream-json")
             } else {
-                // 有控制通道（REQUIRE_CONFIRMATION）或无图片时，prompt 直接作为 CLI 参数传入。
-                // 注意：Claude CLI 没有 --image 参数，有图片时必须走 stdin stream-json 路径。
+                // 无控制通道且无图片时，prompt 直接作为 CLI 参数传入。
                 add(renderPrompt(request))
             }
         }
     }
 
-    /** 将 IDE 不同协作模式映射为 Claude CLI 需要的 permission-mode。 */
+    /** 将内部 effort 值映射为 Claude CLI 可接受的参数值（xhigh 映射为 high）。 */
+    private fun mapReasoningEffort(effort: String): String = when (effort) {
+        "xhigh" -> "high"
+        else -> effort
+    }
+
+    /** 将 IDE 审批模式映射为 Claude CLI 需要的 permission-mode。
+     *  Plan 协作模式优先使用 CLI 原生的 plan 权限模式，强制 Claude 只读和探索，不执行修改。
+     *  计划完成后 CLI 通过 AskUserQuestion 控制通道让用户选择执行模式。
+     */
     private fun resolvePermissionMode(request: AgentRequest): String {
-        return when {
-            request.collaborationMode == AgentCollaborationMode.PLAN -> "plan"
-            request.approvalMode == AgentApprovalMode.REQUIRE_CONFIRMATION -> "default"
-            else -> "auto"
+        if (request.collaborationMode == AgentCollaborationMode.PLAN) {
+            return "plan"
+        }
+        return when (request.approvalMode) {
+            AgentApprovalMode.AUTO -> "auto"
+            AgentApprovalMode.REQUIRE_CONFIRMATION -> "default"
         }
     }
 
-    /** 只有授权模式（REQUIRE_CONFIRMATION）需要启用 stdio 控制通道。
-     *  plan 模式使用 --permission-mode plan，Claude 只规划不执行工具，不需要 stdio 控制通道。
+    /** 只有授权模式（REQUIRE_CONFIRMATION）或 Plan 协作模式需要启用 stdio 控制通道。
+     *  Plan 模式下 AskUserQuestion 工具需要通过控制通道与 IDE 交互。
      */
     private fun needsPermissionPromptTool(request: AgentRequest): Boolean {
-        return request.approvalMode == AgentApprovalMode.REQUIRE_CONFIRMATION
+        return request.approvalMode == AgentApprovalMode.REQUIRE_CONFIRMATION ||
+            request.collaborationMode == AgentCollaborationMode.PLAN
+    }
+
+    /** 判断是否需要通过 stdin stream-json 发送图片。
+     *  仅在无控制通道（纯 AUTO 模式）或 Plan 模式下使用 stdin 发送图片。
+     *  REQUIRE_CONFIRMATION 模式的 stdin 专用于控制通道，不能混用。
+     */
+    private fun usesStdinForImages(request: AgentRequest): Boolean {
+        return request.approvalMode != AgentApprovalMode.REQUIRE_CONFIRMATION
     }
 
     /** 将上下文文件与附件整理成 Claude CLI 可直接消费的纯文本 prompt。 */

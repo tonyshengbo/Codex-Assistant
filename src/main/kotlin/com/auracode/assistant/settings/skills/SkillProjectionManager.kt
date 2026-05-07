@@ -44,6 +44,17 @@ internal class SkillProjectionManager(
             }
     }
 
+    /** 将选中的整个目录直接复制到引擎 skill 目录下，目录名作为 skill 名。 */
+    fun projectDirectory(engineId: String, sourcePath: Path) {
+        val targetRoot = directoryResolver.projectionDirectory(engineId)
+        targetRoot.createDirectories()
+        val target = targetRoot.resolve(sourcePath.fileName)
+        if (target.exists()) {
+            deleteRecursively(target)
+        }
+        copyDirectory(source = sourcePath, target = target)
+    }
+
     /** Copies one source skill directory into its destination directory. */
     private fun copyDirectory(source: Path, target: Path) {
         Files.walkFileTree(

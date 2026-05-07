@@ -217,6 +217,56 @@ class ToolWindowCoordinatorMultiSessionTest {
     }
 
     @Test
+    fun `selecting model writes to the active session engine even when default engine differs`() {
+        val harness = MultiEngineCoordinatorHarness()
+        harness.settleStartup()
+        val originalCodexModel = harness.settings.selectedSubmissionModel("codex")
+
+        harness.eventHub.publishUiIntent(UiIntent.SelectEngine("claude"))
+        harness.waitUntil { harness.submissionStore.state.value.selectedEngineId == "claude" }
+
+        harness.eventHub.publishUiIntent(UiIntent.SelectModel("claude-sonnet-4-6"))
+        harness.waitUntil { harness.submissionStore.state.value.selectedModel == "claude-sonnet-4-6" }
+
+        assertEquals("claude-sonnet-4-6", harness.settings.selectedSubmissionModel("claude"))
+        assertEquals(originalCodexModel, harness.settings.selectedSubmissionModel("codex"))
+
+        harness.dispose()
+    }
+
+    @Test
+    fun `settings snapshot follows active session engine instead of global default engine`() {
+        val harness = MultiEngineCoordinatorHarness()
+        harness.settleStartup()
+        val sessionA = harness.service.getCurrentSessionId()
+
+        harness.eventHub.publishUiIntent(UiIntent.SelectEngine("claude"))
+        harness.waitUntil { harness.submissionStore.state.value.selectedEngineId == "claude" }
+        harness.eventHub.publishUiIntent(UiIntent.SelectModel("claude-sonnet-4-6"))
+        harness.waitUntil { harness.submissionStore.state.value.selectedModel == "claude-sonnet-4-6" }
+
+        val sessionB = harness.createSession(providerId = "codex")
+        harness.eventHub.publishUiIntent(UiIntent.SwitchSession(sessionB))
+        harness.waitUntil { harness.service.getCurrentSessionId() == sessionB }
+        harness.waitUntil { harness.submissionStore.state.value.selectedEngineId == "codex" }
+
+        harness.eventHub.publishUiIntent(UiIntent.SelectModel("gpt-5.3-codex"))
+        harness.waitUntil { harness.submissionStore.state.value.selectedModel == "gpt-5.3-codex" }
+
+        harness.eventHub.publishUiIntent(UiIntent.SwitchSession(sessionA))
+        harness.waitUntil { harness.service.getCurrentSessionId() == sessionA }
+        harness.waitUntil {
+            harness.submissionStore.state.value.selectedEngineId == "claude" &&
+                harness.submissionStore.state.value.selectedModel == "claude-sonnet-4-6"
+        }
+
+        assertEquals("claude", harness.submissionStore.state.value.selectedEngineId)
+        assertEquals("claude-sonnet-4-6", harness.submissionStore.state.value.selectedModel)
+
+        harness.dispose()
+    }
+
+    @Test
     fun `engine switched marker survives session projection rebuild after tab switches`() {
         val harness = MultiEngineCoordinatorHarness()
         harness.settleStartup()
@@ -542,7 +592,7 @@ class ToolWindowCoordinatorMultiSessionTest {
         val claudeProvider = RecordingMultiSessionProvider()
         val openedSessionIds = CopyOnWriteArrayList<String>()
         val conversationStore = ConversationAreaStore()
-        private val settings = AgentSettingsService().apply { loadState(AgentSettingsService.State()) }
+        val settings = AgentSettingsService().apply { loadState(AgentSettingsService.State()) }
         val service = AgentChatService(
             repository = SQLiteChatSessionRepository(workingDir.resolve("chat.db")),
             registry = ProviderRegistry(
@@ -617,8 +667,8 @@ class ToolWindowCoordinatorMultiSessionTest {
             Thread.sleep(150)
         }
 
-        fun createSession(): String {
-            return service.createSession()
+        fun createSession(providerId: String? = null): String {
+            return providerId?.let(service::createSession) ?: service.createSession()
         }
 
         fun dispose() {

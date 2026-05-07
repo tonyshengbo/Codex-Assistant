@@ -49,11 +49,14 @@ internal class ProcessClaudeStreamJsonSession(
         exitCode
     }
 
+    /** 向 stdin 写入一行 JSON；进程已退出时静默忽略，避免 IOException 上抛。 */
     override suspend fun writeStdin(line: String) {
         withContext(Dispatchers.IO) {
-            stdinWriter.write(line)
-            stdinWriter.newLine()
-            stdinWriter.flush()
+            runCatching {
+                stdinWriter.write(line)
+                stdinWriter.newLine()
+                stdinWriter.flush()
+            }
         }
     }
 

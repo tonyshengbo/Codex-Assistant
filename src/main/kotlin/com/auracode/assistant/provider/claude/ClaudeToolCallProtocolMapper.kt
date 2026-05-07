@@ -38,6 +38,12 @@ internal class ClaudeToolCallProtocolMapper(
         return mappedItem.takeUnless(::isPlaceholderDiffApply)
     }
 
+    /** 从 ExitPlanMode 工具调用中提取 plan 正文内容。 */
+    fun mapExitPlanModeBody(event: ClaudeConversationEvent.ToolCallUpdated): String {
+        val input = parseJsonObject(event.inputJson) ?: return ""
+        return input.string("plan").orEmpty().trim()
+    }
+
     /** 将 TodoWrite 输入转换为运行态计划快照；解析失败时返回空步骤与兜底正文。 */
     fun mapTodoWritePlan(
         event: ClaudeConversationEvent.ToolCallUpdated,

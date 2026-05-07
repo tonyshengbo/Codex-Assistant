@@ -398,7 +398,10 @@ internal class ToolWindowCoordinator(
             is UiIntent.SelectEngine -> handleEngineSelection(intent.engineId)
             UiIntent.DismissEngineSwitchDialog -> Unit
             is UiIntent.SelectModel -> {
-                settingsService.setSelectedSubmissionModel(chatService.defaultEngineId(), intent.model)
+                settingsService.setSelectedSubmissionModel(
+                    chatService.sessionProviderId(chatService.getCurrentSessionId()),
+                    intent.model,
+                )
                 publishSettingsSnapshot()
             }
             is UiIntent.SelectReasoning -> {
@@ -607,7 +610,7 @@ internal class ToolWindowCoordinator(
 
     private fun publishSettingsSnapshot() {
         val state = settingsService.state
-        val selectedEngineId = chatService.defaultEngineId()
+        val selectedEngineId = chatService.sessionProviderId(chatService.getCurrentSessionId())
         eventHub.publish(
             AppEvent.SettingsSnapshotUpdated(
                 codexCliPath = state.executablePathFor("codex"),

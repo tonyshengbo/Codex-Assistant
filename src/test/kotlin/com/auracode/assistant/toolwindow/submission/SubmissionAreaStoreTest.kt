@@ -477,7 +477,7 @@ class SubmissionAreaStoreTest {
     }
 
     @Test
-    fun `claude session hides reasoning selector`() {
+    fun `engine with supportsReasoningEffortSelection false hides reasoning selector`() {
         val store = SubmissionAreaStore()
         store.onEvent(
             AppEvent.SettingsSnapshotUpdated(

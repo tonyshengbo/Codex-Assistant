@@ -235,6 +235,7 @@ internal fun ConversationActivityItem.isProcessActivityNode(): Boolean {
         is ConversationActivityItem.ToolCallNode,
         is ConversationActivityItem.CommandNode,
         is ConversationActivityItem.FileChangeNode,
+        is ConversationActivityItem.ReasoningNode,
         -> true
 
         else -> false
