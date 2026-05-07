@@ -2,6 +2,7 @@ package com.auracode.assistant.provider.claude
 
 import com.auracode.assistant.model.AgentRequest
 import com.auracode.assistant.protocol.ItemKind
+import com.auracode.assistant.protocol.ProviderRunningPlanPresentation
 import com.auracode.assistant.protocol.TurnOutcome
 import com.auracode.assistant.protocol.ProviderEvent
 import com.auracode.assistant.provider.diagnostics.ProviderDiagnosticFixture
@@ -144,6 +145,39 @@ class ClaudeStreamReplayTest {
         assertEquals(false, error.terminal)
         assertTrue(error.message.contains("3/10"))
         assertTrue(error.message.contains("2.4s"))
+    }
+
+    @Test
+    /** Verifies that ExitPlanMode emits both timeline and submission running-plan updates. */
+    fun `replay maps exit plan mode into timeline and submission plan updates`() {
+        val parser = ClaudeStreamEventParser()
+        val accumulator = ClaudeStreamAccumulator()
+        val mapper = ClaudeProviderEventMapper(
+            request = AgentRequest(
+                engineId = "claude",
+                model = "claude-sonnet-4-6",
+                prompt = "Replay exit plan mode",
+                contextFiles = emptyList(),
+                workingDirectory = ".",
+                collaborationMode = com.auracode.assistant.model.AgentCollaborationMode.PLAN,
+            ),
+        )
+
+        val events = listOf(
+            """{"type":"system","subtype":"init","session_id":"session-123","model":"claude-sonnet-4-6"}""",
+            """{"type":"assistant","session_id":"session-123","message":{"id":"msg_exit","content":[{"id":"tooluse_exit","input":{"plan":"# Plan\n\n- [completed] Inspect\n- [pending] Execute"},"name":"ExitPlanMode","type":"tool_use"}]}}""",
+        ).flatMap { line ->
+            parser.parse(line)
+                ?.let(accumulator::accumulate)
+                ?.flatMap(mapper::map)
+                .orEmpty()
+        }
+
+        val planUpdates = events.filterIsInstance<ProviderEvent.RunningPlanUpdated>()
+        assertEquals(2, planUpdates.size)
+        assertEquals(ProviderRunningPlanPresentation.TIMELINE, planUpdates[0].presentation)
+        assertEquals(ProviderRunningPlanPresentation.SUBMISSION_PANEL, planUpdates[1].presentation)
+        assertTrue(planUpdates.all { it.body.contains("Execute") })
     }
 
     /** Loads the shared Claude diagnostic fixture through the classpath fixture loader. */

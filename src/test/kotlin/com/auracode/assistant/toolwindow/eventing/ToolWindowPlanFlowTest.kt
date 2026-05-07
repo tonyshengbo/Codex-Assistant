@@ -202,14 +202,33 @@ class ToolWindowPlanFlowTest {
                     - [completed] Inspect events
                     - [pending] Execute the change
                 """.trimIndent(),
+                presentation = ProviderRunningPlanPresentation.TIMELINE,
+            ),
+        )
+        harness.provider.emitRunningPlanUpdate(
+            ProviderEvent.RunningPlanUpdated(
+                threadId = "thread-1",
+                turnId = "turn-1",
+                explanation = null,
+                steps = emptyList(),
+                body = """
+                    # Plan
+
+                    - [completed] Inspect events
+                    - [pending] Execute the change
+                """.trimIndent(),
                 presentation = ProviderRunningPlanPresentation.SUBMISSION_PANEL,
             ),
         )
+        harness.waitUntil { harness.conversationStore.state.value.nodes.any { it is ConversationActivityItem.PlanNode } }
         harness.provider.completeTurn()
 
         harness.waitUntil { harness.submissionStore.state.value.planCompletion != null }
         val prompt = harness.submissionStore.state.value.planCompletion
         assertTrue(prompt?.planBody?.contains("Execute the change") == true)
+        val planNode = harness.conversationStore.state.value.nodes.filterIsInstance<ConversationActivityItem.PlanNode>().single()
+        assertEquals("turn-1", planNode.turnId)
+        assertTrue(planNode.body.contains("Execute the change"))
         assertNull(harness.submissionStore.state.value.runningPlan)
 
         harness.dispose()

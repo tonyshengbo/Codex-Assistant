@@ -74,11 +74,22 @@ internal class ClaudeProviderEventMapper(
                             ),
                         )
                     } else if (event.toolName.trim().equals("ExitPlanMode", ignoreCase = true)) {
-                        // ExitPlanMode 携带完整 plan markdown，映射为 RunningPlanUpdated 供 UI 展示。
+                        // ExitPlanMode carries the final plan markdown and must update both
+                        // timeline conversation state and the submission completion flow.
                         val planBody = toolCallItemMapper.mapExitPlanModeBody(event)
                         if (planBody.isNotBlank()) {
                             latestPlanBody = planBody.trim()
                             latestPlanSource = PlanBodySource.EXIT_PLAN_MODE
+                            add(
+                                ProviderEvent.RunningPlanUpdated(
+                                    threadId = threadId,
+                                    turnId = turnId,
+                                    explanation = null,
+                                    steps = emptyList(),
+                                    body = planBody,
+                                    presentation = ProviderRunningPlanPresentation.TIMELINE,
+                                ),
+                            )
                             add(
                                 ProviderEvent.RunningPlanUpdated(
                                     threadId = threadId,

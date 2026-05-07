@@ -476,10 +476,17 @@ class ClaudeCliProviderTest {
             ),
         ).toList()
 
-        assertTrue(events.any { event ->
-            event is SessionDomainEvent.RunningPlanUpdated &&
-                event.plan.body.contains("Execute")
-        })
+        val planUpdates = events.filterIsInstance<SessionDomainEvent.RunningPlanUpdated>()
+        assertEquals(2, planUpdates.size)
+        assertEquals(
+            com.auracode.assistant.session.kernel.SessionRunningPlanPresentation.TIMELINE,
+            planUpdates[0].plan.presentation,
+        )
+        assertEquals(
+            com.auracode.assistant.session.kernel.SessionRunningPlanPresentation.SUBMISSION_PANEL,
+            planUpdates[1].plan.presentation,
+        )
+        assertTrue(planUpdates.all { it.plan.body.contains("Execute") })
         assertFalse(events.any { it is SessionDomainEvent.ApprovalRequested })
         val completed = assertIs<SessionDomainEvent.TurnCompleted>(events.last())
         assertEquals(SessionTurnOutcome.SUCCESS, completed.outcome)
