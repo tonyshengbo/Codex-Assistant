@@ -1556,7 +1556,7 @@ class AreaStoresTest {
 
         store.onEvent(
             AppEvent.UiIntentPublished(
-                UiIntent.UpdateDocument(TextFieldValue("/pl", TextRange(3))),
+                UiIntent.UpdateDocument(TextFieldValue("hello /pl", TextRange(9))),
             ),
         )
 
@@ -1576,7 +1576,7 @@ class AreaStoresTest {
 
         store.onEvent(
             AppEvent.UiIntentPublished(
-                UiIntent.UpdateDocument(TextFieldValue("/au", TextRange(3))),
+                UiIntent.UpdateDocument(TextFieldValue("hello /au", TextRange(9))),
             ),
         )
 
@@ -1591,7 +1591,7 @@ class AreaStoresTest {
     }
 
     @Test
-    fun `slash popup stays closed when slash is not at input start`() {
+    fun `slash popup opens after whitespace`() {
         val store = SubmissionAreaStore()
 
         store.onEvent(
@@ -1600,23 +1600,38 @@ class AreaStoresTest {
             ),
         )
 
+        assertTrue(store.state.value.slashPopupVisible)
+        assertEquals("pl", store.state.value.slashQuery)
+    }
+
+    @Test
+    fun `slash popup stays closed when slash follows non whitespace`() {
+        val store = SubmissionAreaStore()
+
+        store.onEvent(
+            AppEvent.UiIntentPublished(
+                UiIntent.UpdateDocument(TextFieldValue("hello/pl", TextRange(8))),
+            ),
+        )
+
         assertFalse(store.state.value.slashPopupVisible)
         assertTrue(store.state.value.slashSuggestions.isEmpty())
     }
 
     @Test
-    fun `selecting slash plan enables plan mode and clears trigger text`() {
+    fun `selecting slash plan enables plan mode and clears current token`() {
         val store = SubmissionAreaStore()
         store.onEvent(
             AppEvent.UiIntentPublished(
-                UiIntent.UpdateDocument(TextFieldValue("/plan", TextRange(5))),
+                UiIntent.UpdateDocument(TextFieldValue("before /plan after", TextRange(12))),
             ),
         )
 
         store.onEvent(AppEvent.UiIntentPublished(UiIntent.SelectSlashCommand("plan")))
 
         assertTrue(store.state.value.planEnabled)
-        assertEquals("", store.state.value.document.text)
+        assertEquals("before  after", store.state.value.document.text)
+        assertEquals(TextRange(7), store.state.value.document.selection)
         assertFalse(store.state.value.slashPopupVisible)
     }
 
@@ -1626,35 +1641,36 @@ class AreaStoresTest {
         store.onEvent(AppEvent.UiIntentPublished(UiIntent.TogglePlanMode))
         store.onEvent(
             AppEvent.UiIntentPublished(
-                UiIntent.UpdateDocument(TextFieldValue("/plan", TextRange(5))),
+                UiIntent.UpdateDocument(TextFieldValue("before /plan after", TextRange(12))),
             ),
         )
 
         store.onEvent(AppEvent.UiIntentPublished(UiIntent.SelectSlashCommand("plan")))
 
         assertFalse(store.state.value.planEnabled)
-        assertEquals("", store.state.value.document.text)
+        assertEquals("before  after", store.state.value.document.text)
         assertFalse(store.state.value.slashPopupVisible)
     }
 
     @Test
-    fun `selecting slash auto toggles execution mode and clears trigger text`() {
+    fun `selecting slash auto toggles execution mode and clears current token`() {
         val store = SubmissionAreaStore()
         store.onEvent(
             AppEvent.UiIntentPublished(
-                UiIntent.UpdateDocument(TextFieldValue("/auto", TextRange(5))),
+                UiIntent.UpdateDocument(TextFieldValue("before /auto after", TextRange(12))),
             ),
         )
 
         store.onEvent(AppEvent.UiIntentPublished(UiIntent.SelectSlashCommand("auto")))
 
         assertEquals(SubmissionMode.APPROVAL, store.state.value.executionMode)
-        assertEquals("", store.state.value.document.text)
+        assertEquals("before  after", store.state.value.document.text)
+        assertEquals(TextRange(7), store.state.value.document.selection)
         assertFalse(store.state.value.slashPopupVisible)
 
         store.onEvent(
             AppEvent.UiIntentPublished(
-                UiIntent.UpdateDocument(TextFieldValue("/auto", TextRange(5))),
+                UiIntent.UpdateDocument(TextFieldValue("before /auto after", TextRange(12))),
             ),
         )
         store.onEvent(AppEvent.UiIntentPublished(UiIntent.SelectSlashCommand("auto")))
@@ -1701,13 +1717,13 @@ class AreaStoresTest {
     }
 
     @Test
-    fun `selecting slash new clears trigger text without changing local mode state`() {
+    fun `selecting slash new clears current token without changing local mode state`() {
         val store = SubmissionAreaStore()
         store.onEvent(AppEvent.UiIntentPublished(UiIntent.TogglePlanMode))
         store.onEvent(AppEvent.UiIntentPublished(UiIntent.ToggleExecutionMode))
         store.onEvent(
             AppEvent.UiIntentPublished(
-                UiIntent.UpdateDocument(TextFieldValue("/new", TextRange(4))),
+                UiIntent.UpdateDocument(TextFieldValue("before /new after", TextRange(11))),
             ),
         )
 
@@ -1715,7 +1731,7 @@ class AreaStoresTest {
 
         assertTrue(store.state.value.planEnabled)
         assertEquals(SubmissionMode.APPROVAL, store.state.value.executionMode)
-        assertEquals("", store.state.value.document.text)
+        assertEquals("before  after", store.state.value.document.text)
         assertFalse(store.state.value.slashPopupVisible)
     }
 

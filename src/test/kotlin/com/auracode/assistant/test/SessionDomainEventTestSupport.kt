@@ -51,8 +51,9 @@ internal fun historyPageFromProviderEvents(
     hasOlder: Boolean = false,
     olderCursor: String? = null,
 ): ConversationHistoryPage {
+    val mapper = ProviderProtocolDomainMapper(stampTurnCompletionTime = false)
     return ConversationHistoryPage(
-        events = mapProviderEvents(events),
+        events = events.flatMap(mapper::map),
         hasOlder = hasOlder,
         olderCursor = olderCursor,
     )

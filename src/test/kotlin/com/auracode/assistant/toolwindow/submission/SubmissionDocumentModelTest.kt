@@ -13,7 +13,7 @@ import kotlin.test.assertTrue
 
 class SubmissionDocumentModelTest {
     @Test
-    fun `slash query is resolved only at input start`() {
+    fun `slash query is resolved at input start`() {
         val query = findSlashQuery(
             value = TextFieldValue("/pl", TextRange(3)),
             mentions = emptyList(),
@@ -23,9 +23,39 @@ class SubmissionDocumentModelTest {
     }
 
     @Test
-    fun `slash query is ignored outside input start`() {
+    fun `slash query is resolved after whitespace`() {
         val query = findSlashQuery(
             value = TextFieldValue("hello /pl", TextRange(9)),
+            mentions = emptyList(),
+        )
+
+        assertEquals(SlashQueryMatch(query = "pl", start = 6, end = 9), query)
+    }
+
+    @Test
+    fun `slash query is ignored when slash follows non whitespace`() {
+        val query = findSlashQuery(
+            value = TextFieldValue("hello/pl", TextRange(8)),
+            mentions = emptyList(),
+        )
+
+        assertEquals(null, query)
+    }
+
+    @Test
+    fun `slash query is ignored in url token`() {
+        val query = findSlashQuery(
+            value = TextFieldValue("https://a.com/x", TextRange(15)),
+            mentions = emptyList(),
+        )
+
+        assertEquals(null, query)
+    }
+
+    @Test
+    fun `slash query is ignored in path token`() {
+        val query = findSlashQuery(
+            value = TextFieldValue("docs/a/b", TextRange(8)),
             mentions = emptyList(),
         )
 
@@ -414,14 +444,14 @@ class SubmissionDocumentModelTest {
         )
         store.onEvent(
             AppEvent.UiIntentPublished(
-                UiIntent.UpdateDocument(TextFieldValue("/bra", TextRange(4))),
+                UiIntent.UpdateDocument(TextFieldValue("note /bra", TextRange(9))),
             ),
         )
 
         store.onEvent(AppEvent.UiIntentPublished(UiIntent.SelectSlashSkill("brainstorming")))
 
-        assertEquals("\$brainstorming ", store.state.value.document.text)
-        assertEquals(TextRange(15), store.state.value.document.selection)
-        assertEquals("\$brainstorming", store.state.value.serializedPrompt())
+        assertEquals("note \$brainstorming ", store.state.value.document.text)
+        assertEquals(TextRange(20), store.state.value.document.selection)
+        assertEquals("note \$brainstorming", store.state.value.serializedPrompt())
     }
 }

@@ -75,7 +75,7 @@ class ToolWindowCoordinatorRestoreTest {
 
         val state = conversationStore.state.value
         assertEquals(listOf("hello", "world"), state.nodes.filterIsInstance<ConversationActivityItem.MessageNode>().map { it.text })
-        assertEquals(1, state.nodes.filterIsInstance<ConversationActivityItem.TurnDurationNode>().size)
+        assertEquals(0, state.nodes.filterIsInstance<ConversationActivityItem.TurnDurationNode>().size)
         assertFalse(state.isRunning)
 
         coordinator.dispose()
@@ -145,19 +145,17 @@ class ToolWindowCoordinatorRestoreTest {
         val coordinator = createCoordinator(service, settings, conversationStore)
         waitUntil(timeoutMs = 2_000) {
             conversationStore.state.value.nodes.filterIsInstance<ConversationActivityItem.MessageNode>().size == 2 &&
-                conversationStore.state.value.nodes.filterIsInstance<ConversationActivityItem.ToolCallNode>().size == 1 &&
-                conversationStore.state.value.nodes.filterIsInstance<ConversationActivityItem.TurnDurationNode>().size == 1
+                conversationStore.state.value.nodes.filterIsInstance<ConversationActivityItem.ToolCallNode>().size == 1
         }
 
         val state = conversationStore.state.value
-        assertEquals(4, state.nodes.size)
+        assertEquals(3, state.nodes.size)
         val userNode = assertIs<ConversationActivityItem.MessageNode>(state.nodes[0])
         assertEquals("look at this", userNode.text)
         assertEquals(1, userNode.attachments.size)
         assertEquals("/assets/preview.png", userNode.attachments.single().assetPath)
         assertIs<ConversationActivityItem.ToolCallNode>(state.nodes[1])
         assertEquals("done", assertIs<ConversationActivityItem.MessageNode>(state.nodes[2]).text)
-        assertIs<ConversationActivityItem.TurnDurationNode>(state.nodes[3])
 
         coordinator.dispose()
         service.dispose()
@@ -202,8 +200,7 @@ class ToolWindowCoordinatorRestoreTest {
             historyPageSize = 2,
         )
         waitUntil(timeoutMs = 2_000) {
-            conversationStore.state.value.nodes.filterIsInstance<ConversationActivityItem.MessageNode>().size == 2 &&
-                conversationStore.state.value.nodes.filterIsInstance<ConversationActivityItem.TurnDurationNode>().size == 2
+            conversationStore.state.value.nodes.filterIsInstance<ConversationActivityItem.MessageNode>().size == 2
         }
 
         assertTrue(conversationStore.state.value.nodes.first() is ConversationActivityItem.LoadMoreNode)
@@ -211,18 +208,17 @@ class ToolWindowCoordinatorRestoreTest {
             listOf("third", "fourth"),
             conversationStore.state.value.nodes.filterIsInstance<ConversationActivityItem.MessageNode>().map { it.text },
         )
-        assertEquals(2, conversationStore.state.value.nodes.filterIsInstance<ConversationActivityItem.TurnDurationNode>().size)
+        assertEquals(0, conversationStore.state.value.nodes.filterIsInstance<ConversationActivityItem.TurnDurationNode>().size)
         assertTrue(conversationStore.state.value.hasOlder)
 
         eventHub.publishUiIntent(UiIntent.LoadOlderMessages)
         waitUntil(timeoutMs = 2_000) {
-            conversationStore.state.value.nodes.filterIsInstance<ConversationActivityItem.MessageNode>().size == 4 &&
-                conversationStore.state.value.nodes.filterIsInstance<ConversationActivityItem.TurnDurationNode>().size == 4
+            conversationStore.state.value.nodes.filterIsInstance<ConversationActivityItem.MessageNode>().size == 4
         }
 
         val state = conversationStore.state.value
         assertEquals(listOf("first", "second", "third", "fourth"), state.nodes.filterIsInstance<ConversationActivityItem.MessageNode>().map { it.text })
-        assertEquals(4, state.nodes.filterIsInstance<ConversationActivityItem.TurnDurationNode>().size)
+        assertEquals(0, state.nodes.filterIsInstance<ConversationActivityItem.TurnDurationNode>().size)
         assertFalse(state.hasOlder)
 
         coordinator.dispose()
@@ -303,7 +299,7 @@ class ToolWindowCoordinatorRestoreTest {
             messages.map { it.text },
         )
         assertEquals(
-            2,
+            1,
             conversationStore.state.value.nodes.filterIsInstance<ConversationActivityItem.TurnDurationNode>().size,
         )
 

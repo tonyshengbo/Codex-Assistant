@@ -267,7 +267,7 @@ internal class ClaudeLocalHistoryReader(
             }
         }
 
-        val mapper = ProviderProtocolDomainMapper()
+        val mapper = ProviderProtocolDomainMapper(stampTurnCompletionTime = false)
         return ConversationHistoryPage(
             events = events.flatMap(mapper::map),
             hasOlder = false,

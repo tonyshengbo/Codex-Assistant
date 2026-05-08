@@ -153,7 +153,7 @@ internal fun buildConversationHistoryPage(
         requestId = "history:$providerId",
         diagnosticLogger = diagnosticLogger,
     )
-    val mapper = ProviderProtocolDomainMapper()
+    val mapper = ProviderProtocolDomainMapper(stampTurnCompletionTime = false)
     return ConversationHistoryPage(
         events = turns.subList(startInclusive, endExclusive).flatMap { turn ->
             parser.parseHistoricalTurn(turn).flatMap(mapper::map)

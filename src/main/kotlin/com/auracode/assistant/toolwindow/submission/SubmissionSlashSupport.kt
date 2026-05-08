@@ -100,18 +100,30 @@ internal fun findSlashQuery(
     if (mentions.any { cursor in it.start until it.endExclusive }) return null
 
     val text = value.text
-    if (!text.startsWith('/')) return null
-    val tokenEndExclusive = text.indexOfFirst(Char::isWhitespace).let { index ->
-        if (index >= 0) index else text.length
+    if (cursor <= 0) return null
+
+    var tokenStart = cursor - 1
+    while (tokenStart > 0 && !text[tokenStart - 1].isWhitespace()) {
+        tokenStart--
     }
-    if (cursor <= 0 || cursor > tokenEndExclusive) return null
-    val rawQuery = text.substring(1, cursor)
+
+    if (text.getOrNull(tokenStart) != '/') return null
+    if (tokenStart > 0 && !text[tokenStart - 1].isWhitespace()) return null
+    if (mentions.any { tokenStart in it.start until it.endExclusive }) return null
+
+    var tokenEndExclusive = tokenStart + 1
+    while (tokenEndExclusive < text.length && !text[tokenEndExclusive].isWhitespace()) {
+        tokenEndExclusive++
+    }
+    if (cursor > tokenEndExclusive) return null
+
+    val rawQuery = text.substring(tokenStart + 1, cursor)
     if (rawQuery.any { !it.isLetterOrDigit() && it != '.' && it != '_' && it != '-' }) {
         return null
     }
     return SlashQueryMatch(
         query = rawQuery,
-        start = 0,
+        start = tokenStart,
         end = tokenEndExclusive,
     )
 }
@@ -125,12 +137,14 @@ internal fun replaceSlashQuery(
 ): TextFieldValue? {
     val match = findSlashQuery(document, mentions) ?: return null
     val nextText = buildString {
+        append(document.text.substring(0, match.start))
         append(replacement)
         append(document.text.substring(match.end))
     }
+    val nextSelection = match.start + replacement.length
     return document.copy(
         text = nextText,
-        selection = TextRange(replacement.length),
+        selection = TextRange(nextSelection),
     )
 }
 

@@ -37,6 +37,7 @@ internal class ProviderProtocolDomainMapper(
     private val toolClassifier: ToolSemanticClassifier = ToolSemanticClassifier(),
     private val fileChangeParser: FileChangeSemanticParser = FileChangeSemanticParser(),
     private val clock: () -> Long = System::currentTimeMillis,
+    private val stampTurnCompletionTime: Boolean = true,
 ) {
     private var activeThreadId: String? = null
     private var activeTurnId: String? = null
@@ -127,7 +128,7 @@ internal class ProviderProtocolDomainMapper(
                             com.auracode.assistant.protocol.TurnOutcome.RUNNING ->
                                 com.auracode.assistant.session.kernel.SessionTurnOutcome.SUCCESS
                         },
-                        completedAtMs = clock(),
+                        completedAtMs = clock().takeIf { stampTurnCompletionTime },
                     ),
                 )
             }

@@ -193,6 +193,29 @@ class ProviderProtocolDomainMapperTest {
     }
 
     /**
+     * Verifies that history replay can opt out of synthetic completion timestamps.
+     */
+    @Test
+    fun `maps turn completed without completion timestamp for history replay`() {
+        val mapper = ProviderProtocolDomainMapper(
+            clock = { 42L },
+            stampTurnCompletionTime = false,
+        )
+
+        val event = assertIs<SessionDomainEvent.TurnCompleted>(
+            mapper.map(
+                ProviderEvent.TurnCompleted(
+                    turnId = "turn-1",
+                    outcome = com.auracode.assistant.protocol.TurnOutcome.SUCCESS,
+                ),
+            ).single(),
+        )
+
+        assertEquals("turn-1", event.turnId)
+        assertEquals(null, event.completedAtMs)
+    }
+
+    /**
      * Verifies that provider collaboration snapshots stay on the domain ingress path.
      */
     @Test
