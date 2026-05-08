@@ -16,6 +16,8 @@ import com.auracode.assistant.session.kernel.SessionToolUserInputQuestion
 import com.auracode.assistant.session.kernel.SessionToolUserInputRequest
 import com.auracode.assistant.toolwindow.shared.UiText
 import com.auracode.assistant.toolwindow.conversation.ConversationActivityItem
+import com.auracode.assistant.toolwindow.shared.AssistantUiText
+import com.auracode.assistant.i18n.AuraCodeBundle
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
@@ -222,6 +224,42 @@ class ConversationUiProjectionTest {
         assertEquals("Plan", node.title)
         assertEquals("- [completed] Build session projection\n- [in_progress] Replace timeline mapper usage", node.body)
         assertEquals(com.auracode.assistant.protocol.ItemStatus.SUCCESS, node.status)
+    }
+
+    /**
+     * Verifies that completed turn-duration summaries project into lightweight timeline nodes.
+     */
+    @Test
+    fun `projects turn duration summary into conversation timeline duration node`() {
+        val state = SessionStateReducer().reduceAll(
+            initialState = SessionState.empty(
+                sessionId = "session-1",
+                engineId = "codex",
+            ),
+            events = listOf(
+                SessionDomainEvent.TurnStarted(
+                    turnId = "turn-1",
+                    threadId = "thread-1",
+                    startedAtMs = 1_000L,
+                ),
+                SessionDomainEvent.TurnCompleted(
+                    turnId = "turn-1",
+                    outcome = com.auracode.assistant.session.kernel.SessionTurnOutcome.SUCCESS,
+                    completedAtMs = 926_000L,
+                ),
+            ),
+        )
+
+        val projection = SessionUiProjectionBuilder().project(state)
+        val node = assertIs<ConversationActivityItem.TurnDurationNode>(projection.conversation.nodes.single())
+
+        assertEquals(AssistantUiText.formatClockTime(926_000L), node.clockText)
+        assertEquals(
+            AuraCodeBundle.message("timeline.turnDuration.label", AssistantUiText.formatDuration(925_000L)),
+            node.durationText,
+        )
+        assertEquals(926_000L, node.timestamp)
+        assertEquals(925_000L, node.durationMs)
     }
 
     /**

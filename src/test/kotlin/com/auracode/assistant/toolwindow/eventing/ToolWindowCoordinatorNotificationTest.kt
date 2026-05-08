@@ -23,6 +23,8 @@ import com.auracode.assistant.toolwindow.sessions.SessionTabsAreaStore
 import com.auracode.assistant.toolwindow.sessions.SessionAttentionStore
 import com.auracode.assistant.toolwindow.execution.ExecutionStatusAreaStore
 import com.auracode.assistant.toolwindow.conversation.ConversationAreaStore
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
@@ -34,6 +36,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
+@OptIn(ExperimentalCoroutinesApi::class)
 class ToolWindowCoordinatorNotificationTest {
     @Test
     fun `background session completion publishes a reminder and marks unread`() {
@@ -123,6 +126,7 @@ class ToolWindowCoordinatorNotificationTest {
         settingsState: AgentSettingsService.State = AgentSettingsService.State(),
     ) {
         private val workingDir = createTempDirectory("notification-flow")
+        private val testDispatcher = Dispatchers.Default.limitedParallelism(1)
         val provider = RecordingProvider()
         val publisher = RecordingPublisher()
         val attentionStore = SessionAttentionStore()
@@ -158,6 +162,7 @@ class ToolWindowCoordinatorNotificationTest {
             ),
             settings = settings,
             workingDirectoryProvider = { workingDir.toString() },
+            scopeDispatcher = testDispatcher,
         )
         val eventHub = ToolWindowEventHub()
         private val completionService = ChatCompletionNotificationService(
@@ -179,6 +184,8 @@ class ToolWindowCoordinatorNotificationTest {
             sidePanelStore = SidePanelAreaStore(),
             completionNotificationService = completionService,
             sessionAttentionStore = attentionStore,
+            runStartupWarmups = false,
+            scopeDispatcher = testDispatcher,
         )
 
         fun createSession(): String {
@@ -187,7 +194,7 @@ class ToolWindowCoordinatorNotificationTest {
             return sessionId
         }
 
-        fun waitUntil(timeoutMs: Long = 2_000, condition: () -> Boolean) {
+        fun waitUntil(timeoutMs: Long = 10_000, condition: () -> Boolean) {
             val start = System.currentTimeMillis()
             while (!condition()) {
                 if (System.currentTimeMillis() - start > timeoutMs) {

@@ -145,6 +145,14 @@ internal sealed interface SessionConversationEntry {
         val body: String,
     ) : SessionConversationEntry
 
+    /** Stores one completed turn duration summary entry. */
+    data class TurnDurationSummary(
+        override val id: String,
+        val turnId: String,
+        val completedAtMs: Long,
+        val durationMs: Long,
+    ) : SessionConversationEntry
+
     /** Stores one terminal error entry. */
     data class Error(
         override val id: String,

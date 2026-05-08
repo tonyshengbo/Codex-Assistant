@@ -196,10 +196,21 @@ class ConversationActivityRegionLogicTest {
             cursor = null,
         )
         val loadMore = ConversationActivityItem.LoadMoreNode(isLoading = false)
+        val turnDuration = ConversationActivityItem.TurnDurationNode(
+            id = "turn-duration",
+            sourceId = "turn-duration:turn-1",
+            clockText = "14:32",
+            durationText = "Turn duration 15m 26s",
+            timestamp = 1L,
+            durationMs = 926_000L,
+            status = ItemStatus.SUCCESS,
+            turnId = "turn-1",
+        )
 
         assertEquals(null, conversationActivityCopyText(fileChange))
         assertEquals(null, conversationActivityCopyText(blankMessage))
         assertEquals(null, conversationActivityCopyText(loadMore))
+        assertEquals(null, conversationActivityCopyText(turnDuration))
     }
 
     @Test

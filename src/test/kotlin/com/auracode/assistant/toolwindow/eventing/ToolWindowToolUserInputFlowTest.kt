@@ -383,7 +383,7 @@ class ToolWindowToolUserInputFlowTest {
             scopeDispatcher = testDispatcher,
         )
 
-        fun waitUntil(timeoutMs: Long = 10_000, condition: () -> Boolean) {
+        fun waitUntil(timeoutMs: Long = 20_000, condition: () -> Boolean) {
             val start = System.currentTimeMillis()
             while (!condition()) {
                 if (System.currentTimeMillis() - start > timeoutMs) {

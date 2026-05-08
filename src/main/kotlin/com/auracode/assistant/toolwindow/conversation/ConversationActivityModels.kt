@@ -146,6 +146,17 @@ internal sealed interface ConversationActivityItem {
         override val turnId: String?,
     ) : ConversationActivityItem
 
+    data class TurnDurationNode(
+        override val id: String,
+        override val sourceId: String,
+        val clockText: String,
+        val durationText: String,
+        val timestamp: Long,
+        val durationMs: Long,
+        override val status: ItemStatus,
+        override val turnId: String?,
+    ) : ConversationActivityItem
+
     data class UserInputNode(
         override val id: String,
         override val sourceId: String,

@@ -14,6 +14,7 @@ import com.auracode.assistant.toolwindow.conversation.ConversationFileChangeKind
 import com.auracode.assistant.toolwindow.conversation.ConversationMessageAttachment
 import com.auracode.assistant.toolwindow.conversation.ConversationActivityItem
 import com.auracode.assistant.toolwindow.conversation.ConversationAttachmentKind
+import com.auracode.assistant.toolwindow.shared.AssistantUiText
 import java.nio.file.Path
 import kotlin.io.path.name
 
@@ -57,6 +58,7 @@ internal class ConversationUiProjectionBuilder {
                     is SessionConversationEntry.FileChanges -> addAll(entry.toNodes())
                     is SessionConversationEntry.Approval -> add(entry.toNode())
                     is SessionConversationEntry.Plan -> add(entry.toNode())
+                    is SessionConversationEntry.TurnDurationSummary -> add(entry.toNode())
                     is SessionConversationEntry.ToolUserInput -> add(entry.toNode())
                     is SessionConversationEntry.ContextCompaction -> add(entry.toNode())
                     is SessionConversationEntry.Error -> add(entry.toNode())
@@ -239,6 +241,23 @@ internal class ConversationUiProjectionBuilder {
             title = AuraCodeBundle.message("timeline.plan.title"),
             body = body,
             status = status.toItemStatus(),
+            turnId = turnId,
+        )
+    }
+
+    /** Converts one completed turn duration summary entry into a lightweight divider node. */
+    private fun SessionConversationEntry.TurnDurationSummary.toNode(): ConversationActivityItem.TurnDurationNode {
+        return ConversationActivityItem.TurnDurationNode(
+            id = activityNodeId(prefix = "turn-duration", turnId = turnId, sourceId = id),
+            sourceId = id,
+            clockText = AssistantUiText.formatClockTime(completedAtMs),
+            durationText = AuraCodeBundle.message(
+                "timeline.turnDuration.label",
+                AssistantUiText.formatDuration(durationMs),
+            ),
+            timestamp = completedAtMs,
+            durationMs = durationMs,
+            status = ItemStatus.SUCCESS,
             turnId = turnId,
         )
     }

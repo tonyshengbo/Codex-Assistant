@@ -3,6 +3,7 @@ package com.auracode.assistant.session.kernel
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
@@ -142,6 +143,103 @@ class SessionStateReducerTest {
                 state.conversation.entries.getValue("tool-input:turn-2:call-2"),
             ).responseSummary,
         )
+    }
+
+    /**
+     * Verifies that successful turn completion appends one duration summary entry.
+     */
+    @Test
+    fun `reducer appends turn duration summary after successful completion`() {
+        val state = SessionStateReducer().reduceAll(
+            initialState = SessionState.empty(
+                sessionId = "session-1",
+                engineId = "codex",
+            ),
+            events = listOf(
+                SessionDomainEvent.TurnStarted(
+                    turnId = "turn-1",
+                    threadId = "thread-1",
+                    startedAtMs = 1_000L,
+                ),
+                SessionDomainEvent.MessageAppended(
+                    messageId = "message-1",
+                    turnId = "turn-1",
+                    role = SessionMessageRole.ASSISTANT,
+                    text = "Done.",
+                ),
+                SessionDomainEvent.TurnCompleted(
+                    turnId = "turn-1",
+                    outcome = SessionTurnOutcome.SUCCESS,
+                    completedAtMs = 16_000L,
+                ),
+            ),
+        )
+
+        assertEquals(
+            listOf("message-1", "turn-duration:turn-1"),
+            state.conversation.order,
+        )
+        val entry = assertIs<SessionConversationEntry.TurnDurationSummary>(
+            state.conversation.entries.getValue("turn-duration:turn-1"),
+        )
+        assertEquals("turn-1", entry.turnId)
+        assertEquals(16_000L, entry.completedAtMs)
+        assertEquals(15_000L, entry.durationMs)
+        assertNull(state.runtime.turnStartedAtMs)
+    }
+
+    /**
+     * Verifies that the reducer preserves the earliest local start time for one turn.
+     */
+    @Test
+    fun `reducer keeps earliest turn start timestamp when provider restarts same turn`() {
+        val state = SessionStateReducer().reduceAll(
+            initialState = SessionState.empty(
+                sessionId = "session-1",
+                engineId = "codex",
+            ),
+            events = listOf(
+                SessionDomainEvent.TurnStarted(
+                    turnId = "turn-1",
+                    threadId = "thread-1",
+                    startedAtMs = 1_000L,
+                ),
+                SessionDomainEvent.TurnStarted(
+                    turnId = "turn-1",
+                    threadId = "thread-1",
+                    startedAtMs = 5_000L,
+                ),
+            ),
+        )
+
+        assertEquals(1_000L, state.runtime.turnStartedAtMs)
+    }
+
+    /**
+     * Verifies that failed turns do not append one duration summary entry.
+     */
+    @Test
+    fun `reducer skips turn duration summary for failed turns`() {
+        val state = SessionStateReducer().reduceAll(
+            initialState = SessionState.empty(
+                sessionId = "session-1",
+                engineId = "codex",
+            ),
+            events = listOf(
+                SessionDomainEvent.TurnStarted(
+                    turnId = "turn-1",
+                    threadId = "thread-1",
+                    startedAtMs = 1_000L,
+                ),
+                SessionDomainEvent.TurnCompleted(
+                    turnId = "turn-1",
+                    outcome = SessionTurnOutcome.FAILED,
+                    completedAtMs = 16_000L,
+                ),
+            ),
+        )
+
+        assertTrue("turn-duration:turn-1" !in state.conversation.entries)
     }
 }
 

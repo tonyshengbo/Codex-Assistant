@@ -173,6 +173,26 @@ class ProviderProtocolDomainMapperTest {
     }
 
     /**
+     * Verifies that provider turn completion captures a reducer-ready completion timestamp.
+     */
+    @Test
+    fun `maps turn completed attaching completion timestamp`() {
+        val mapper = ProviderProtocolDomainMapper(clock = { 42L })
+
+        val event = assertIs<SessionDomainEvent.TurnCompleted>(
+            mapper.map(
+                ProviderEvent.TurnCompleted(
+                    turnId = "turn-1",
+                    outcome = com.auracode.assistant.protocol.TurnOutcome.SUCCESS,
+                ),
+            ).single(),
+        )
+
+        assertEquals("turn-1", event.turnId)
+        assertEquals(42L, event.completedAtMs)
+    }
+
+    /**
      * Verifies that provider collaboration snapshots stay on the domain ingress path.
      */
     @Test

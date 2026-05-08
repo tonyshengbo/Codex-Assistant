@@ -78,6 +78,7 @@ internal class ConversationFlowHandler(
                 SessionDomainEvent.TurnCompleted(
                     turnId = "",
                     outcome = SessionTurnOutcome.CANCELLED,
+                    completedAtMs = System.currentTimeMillis(),
                 ),
             ),
         )

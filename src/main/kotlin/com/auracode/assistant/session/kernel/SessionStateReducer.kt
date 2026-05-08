@@ -22,7 +22,10 @@ internal class SessionStateReducer {
                     activeTurnId = event.turnId,
                     runStatus = SessionRunStatus.RUNNING,
                     lastOutcome = null,
-                    turnStartedAtMs = event.startedAtMs ?: state.runtime.turnStartedAtMs,
+                    turnStartedAtMs = resolveTurnStartedAtMs(
+                        runtime = state.runtime,
+                        event = event,
+                    ),
                 ),
             )
 
@@ -300,10 +303,15 @@ internal class SessionStateReducer {
             )
 
             is SessionDomainEvent.TurnCompleted -> {
-                val updatedConversation = finalizeTurnPlanEntry(
+                val planFinalizedConversation = finalizeTurnPlanEntry(
                     conversation = state.conversation,
                     turnId = event.turnId,
                     outcome = event.outcome,
+                )
+                val updatedConversation = appendTurnDurationSummaryIfNeeded(
+                    conversation = planFinalizedConversation,
+                    runtime = state.runtime,
+                    event = event,
                 )
                 state.copy(
                     runtime = state.runtime.copy(
@@ -336,6 +344,20 @@ internal class SessionStateReducer {
     ): SessionState {
         return events.fold(initialState) { currentState, event ->
             reduce(currentState, event)
+        }
+    }
+
+    /** Resolves the turn start timestamp while preserving the earliest local start for one turn. */
+    private fun resolveTurnStartedAtMs(
+        runtime: SessionRuntimeState,
+        event: SessionDomainEvent.TurnStarted,
+    ): Long? {
+        val incomingStartedAtMs = event.startedAtMs
+        val currentStartedAtMs = runtime.turnStartedAtMs
+        return when {
+            incomingStartedAtMs == null -> currentStartedAtMs
+            runtime.activeTurnId == event.turnId && currentStartedAtMs != null -> currentStartedAtMs
+            else -> incomingStartedAtMs
         }
     }
 
@@ -391,6 +413,11 @@ internal class SessionStateReducer {
         return listOfNotNull("plan", turnId?.takeIf { it.isNotBlank() }).joinToString(":")
     }
 
+    /** Builds the stable conversation entry id for one completed turn-duration summary node. */
+    private fun turnDurationEntryId(turnId: String): String {
+        return "turn-duration:$turnId"
+    }
+
     /** Finalizes one running plan entry when the owning turn completes. */
     private fun finalizeTurnPlanEntry(
         conversation: SessionConversationState,
@@ -408,6 +435,28 @@ internal class SessionStateReducer {
                     SessionTurnOutcome.FAILED -> SessionActivityStatus.FAILED
                     SessionTurnOutcome.CANCELLED -> SessionActivityStatus.SKIPPED
                 },
+            ),
+        )
+    }
+
+    /** Appends one completed turn-duration summary entry when the turn finished successfully. */
+    private fun appendTurnDurationSummaryIfNeeded(
+        conversation: SessionConversationState,
+        runtime: SessionRuntimeState,
+        event: SessionDomainEvent.TurnCompleted,
+    ): SessionConversationState {
+        val startedAtMs = runtime.turnStartedAtMs ?: return conversation
+        val completedAtMs = event.completedAtMs ?: return conversation
+        if (event.outcome != SessionTurnOutcome.SUCCESS || completedAtMs < startedAtMs) {
+            return conversation
+        }
+        return appendConversationEntry(
+            conversation = conversation,
+            entry = SessionConversationEntry.TurnDurationSummary(
+                id = turnDurationEntryId(event.turnId),
+                turnId = event.turnId,
+                completedAtMs = completedAtMs,
+                durationMs = completedAtMs - startedAtMs,
             ),
         )
     }

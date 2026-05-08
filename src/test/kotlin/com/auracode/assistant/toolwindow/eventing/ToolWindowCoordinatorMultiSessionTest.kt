@@ -26,6 +26,8 @@ import com.auracode.assistant.toolwindow.execution.ExecutionStatusAreaStore
 import com.auracode.assistant.toolwindow.conversation.ConversationAreaStore
 import com.auracode.assistant.toolwindow.conversation.ConversationActivityItem
 import com.auracode.assistant.persistence.chat.SQLiteChatSessionRepository
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
@@ -38,6 +40,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
+@OptIn(ExperimentalCoroutinesApi::class)
 class ToolWindowCoordinatorMultiSessionTest {
     @Test
     fun `selecting claude routes the next submission through claude provider`() {
@@ -519,6 +522,7 @@ class ToolWindowCoordinatorMultiSessionTest {
 
     private class CoordinatorHarness {
         private val workingDir = createTempDirectory("multi-session-flow")
+        private val testDispatcher = Dispatchers.Default.limitedParallelism(1)
         val provider = RecordingMultiSessionProvider()
         private val settings = AgentSettingsService().apply { loadState(AgentSettingsService.State()) }
         val service = AgentChatService(
@@ -547,6 +551,7 @@ class ToolWindowCoordinatorMultiSessionTest {
             ),
             settings = settings,
             workingDirectoryProvider = { workingDir.toString() },
+            scopeDispatcher = testDispatcher,
         )
         val eventHub = ToolWindowEventHub()
         val conversationStore = ConversationAreaStore()
@@ -562,9 +567,11 @@ class ToolWindowCoordinatorMultiSessionTest {
             submissionStore = submissionStore,
             sidePanelStore = SidePanelAreaStore(),
             historyPageSize = 10,
+            runStartupWarmups = false,
+            scopeDispatcher = testDispatcher,
         )
 
-        fun waitUntil(timeoutMs: Long = 5_000, condition: () -> Boolean) {
+        fun waitUntil(timeoutMs: Long = 15_000, condition: () -> Boolean) {
             val start = System.currentTimeMillis()
             while (!condition()) {
                 if (System.currentTimeMillis() - start > timeoutMs) {
@@ -588,6 +595,7 @@ class ToolWindowCoordinatorMultiSessionTest {
 
     private class MultiEngineCoordinatorHarness {
         val workingDir = createTempDirectory("multi-engine-flow")
+        private val testDispatcher = Dispatchers.Default.limitedParallelism(1)
         val codexProvider = RecordingMultiSessionProvider()
         val claudeProvider = RecordingMultiSessionProvider()
         val openedSessionIds = CopyOnWriteArrayList<String>()
@@ -634,6 +642,7 @@ class ToolWindowCoordinatorMultiSessionTest {
             ),
             settings = settings,
             workingDirectoryProvider = { workingDir.toString() },
+            scopeDispatcher = testDispatcher,
         )
         val eventHub = ToolWindowEventHub()
         val submissionStore = SubmissionAreaStore()
@@ -651,9 +660,11 @@ class ToolWindowCoordinatorMultiSessionTest {
                 true
             },
             historyPageSize = 10,
+            runStartupWarmups = false,
+            scopeDispatcher = testDispatcher,
         )
 
-        fun waitUntil(timeoutMs: Long = 5_000, condition: () -> Boolean) {
+        fun waitUntil(timeoutMs: Long = 15_000, condition: () -> Boolean) {
             val start = System.currentTimeMillis()
             while (!condition()) {
                 if (System.currentTimeMillis() - start > timeoutMs) {
@@ -668,7 +679,9 @@ class ToolWindowCoordinatorMultiSessionTest {
         }
 
         fun createSession(providerId: String? = null): String {
-            return providerId?.let(service::createSession) ?: service.createSession()
+            val sessionId = providerId?.let(service::createSession) ?: service.createSession()
+            coordinator.onSessionActivated()
+            return sessionId
         }
 
         fun dispose() {

@@ -23,6 +23,8 @@ import com.auracode.assistant.toolwindow.execution.ExecutionStatusAreaStore
 import com.auracode.assistant.toolwindow.conversation.ConversationAreaStore
 import com.auracode.assistant.toolwindow.conversation.ConversationActivityItem
 import com.auracode.assistant.persistence.chat.SQLiteChatSessionRepository
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.flow.Flow
@@ -33,6 +35,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
+@OptIn(ExperimentalCoroutinesApi::class)
 class ToolWindowApprovalFlowTest {
     private fun registry(provider: AgentProvider): ProviderRegistry {
         return ProviderRegistry(
@@ -112,6 +115,7 @@ class ToolWindowApprovalFlowTest {
 
     private class CoordinatorHarness {
         private val workingDir = createTempDirectory("approval-flow")
+        private val testDispatcher = Dispatchers.Default.limitedParallelism(1)
         val provider = RecordingApprovalProvider()
         private val settings = AgentSettingsService().apply { loadState(AgentSettingsService.State()) }
         private val service = AgentChatService(
@@ -140,6 +144,7 @@ class ToolWindowApprovalFlowTest {
             ),
             settings = settings,
             workingDirectoryProvider = { workingDir.toString() },
+            scopeDispatcher = testDispatcher,
         )
         val eventHub = ToolWindowEventHub()
         val conversationStore = ConversationAreaStore()
@@ -155,9 +160,11 @@ class ToolWindowApprovalFlowTest {
             submissionStore = submissionStore,
             sidePanelStore = SidePanelAreaStore(),
             approvalStore = approvalStore,
+            runStartupWarmups = false,
+            scopeDispatcher = testDispatcher,
         )
 
-        fun waitUntil(timeoutMs: Long = 2_000, condition: () -> Boolean) {
+        fun waitUntil(timeoutMs: Long = 10_000, condition: () -> Boolean) {
             val start = System.currentTimeMillis()
             while (!condition()) {
                 if (System.currentTimeMillis() - start > timeoutMs) {

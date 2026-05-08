@@ -446,6 +446,11 @@ internal fun ConversationActivityRegion(
                             onOpenMarkdownFilePath = { path -> onIntent(UiIntent.OpenConversationFilePath(path)) },
                         )
 
+                        is ConversationActivityItem.TurnDurationNode -> ConversationTurnDurationItem(
+                            node = node,
+                            palette = p,
+                        )
+
                         is ConversationActivityItem.UserInputNode -> ConversationUserInputItem(
                             node = node,
                             palette = p,

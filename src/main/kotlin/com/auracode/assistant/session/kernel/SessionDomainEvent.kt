@@ -144,6 +144,7 @@ internal sealed interface SessionDomainEvent {
     data class TurnCompleted(
         val turnId: String,
         val outcome: SessionTurnOutcome,
+        val completedAtMs: Long? = null,
     ) : SessionDomainEvent
 }
 

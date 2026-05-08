@@ -127,6 +127,7 @@ internal class ProviderProtocolDomainMapper(
                             com.auracode.assistant.protocol.TurnOutcome.RUNNING ->
                                 com.auracode.assistant.session.kernel.SessionTurnOutcome.SUCCESS
                         },
+                        completedAtMs = clock(),
                     ),
                 )
             }

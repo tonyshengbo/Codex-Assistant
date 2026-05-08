@@ -1,9 +1,15 @@
 package com.auracode.assistant.toolwindow.shared
 
 import com.auracode.assistant.i18n.AuraCodeBundle
+import java.time.Instant
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 import kotlin.math.floor
 
 object AssistantUiText {
+    private val clockTimeFormatter: DateTimeFormatter =
+        DateTimeFormatter.ofPattern("HH:mm").withZone(ZoneId.systemDefault())
+
     const val PRIMARY_TOOL_WINDOW_ID = "Aura Code"
     val COMPOSER_HINT: String
         get() = AuraCodeBundle.message("composer.hint")
@@ -28,6 +34,13 @@ object AssistantUiText {
             minutes > 0L -> "%dm %02ds".format(minutes, seconds)
             else -> "${totalSeconds}s"
         }
+    }
+
+    fun formatClockTime(epochMs: Long): String {
+        if (epochMs <= 0L) {
+            return "00:00"
+        }
+        return clockTimeFormatter.format(Instant.ofEpochMilli(epochMs))
     }
 
     fun runningStatus(elapsedMs: Long): String {

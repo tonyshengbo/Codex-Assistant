@@ -49,6 +49,7 @@ internal fun conversationActivityCopyText(node: ConversationActivityItem): Strin
         is ConversationActivityItem.UnknownActivityNode -> node.body.takeIf { it.isNotBlank() }
         is ConversationActivityItem.ErrorNode -> node.body.takeIf { it.isNotBlank() }
         is ConversationActivityItem.EngineSwitchedNode -> node.body.takeIf { it.isNotBlank() }
+        is ConversationActivityItem.TurnDurationNode,
         is ConversationActivityItem.FileChangeNode,
         is ConversationActivityItem.LoadMoreNode,
         -> null

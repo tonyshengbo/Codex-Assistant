@@ -192,6 +192,18 @@ private val CHECKLIST_LINE = Regex("""[-*]\s+\[[^\]]*]\s+(.*)""")
 private val PLAIN_LIST_PREFIX = Regex("""^[-*]\s+""")
 
 @Composable
+internal fun ConversationTurnDurationItem(
+    node: ConversationActivityItem.TurnDurationNode,
+    palette: DesignPalette,
+) {
+    ConversationTurnDurationDivider(
+        clockText = node.clockText,
+        durationText = node.durationText,
+        palette = palette,
+    )
+}
+
+@Composable
 internal fun ConversationUserInputItem(
     node: ConversationActivityItem.UserInputNode,
     palette: DesignPalette,
