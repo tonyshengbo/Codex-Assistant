@@ -303,6 +303,7 @@ internal class CodexRuntimeProvider(
             val prompt: String?,
             val receiverThreadIds: List<String>,
             val agentStatesByThreadId: Map<String, JsonObject>,
+            val explicitAgentStatesByThreadId: Map<String, JsonObject>,
         )
 
         private val narrativeBuffers = mutableMapOf<String, StringBuilder>()
@@ -973,6 +974,7 @@ internal class CodexRuntimeProvider(
             val rawTool = snapshot?.tool?.trim()?.lowercase()
             val receiverThreadIds = snapshot?.receiverThreadIds.orEmpty()
             val agentStates = snapshot?.agentStatesByThreadId.orEmpty()
+            val explicitAgentStates = snapshot?.explicitAgentStatesByThreadId.orEmpty()
             val prompt = snapshot?.prompt.orEmpty()
             if (receiverThreadIds.isEmpty()) {
                 return null
@@ -990,23 +992,37 @@ internal class CodexRuntimeProvider(
                 } else if (threadId in closedSubagentThreadIds) {
                     return@forEach
                 }
+                val existing = subagentSnapshotsByThreadId[threadId]
                 val state = agentStates[threadId]
+                val explicitState = explicitAgentStates[threadId]
                 val displayName = deriveSubagentDisplayName(prompt)
                 val mentionSlug = ensureUniqueMentionSlug(
                     baseSlug = deriveSubagentMentionSlug(prompt),
                     threadId = threadId,
                 )
-                val rawStatus = state?.string("status").orEmpty()
-                val summary = state?.string("message")
+                val explicitStatus = explicitState?.string("status")
                     ?.trim()
                     ?.takeIf(String::isNotBlank)
+                val rawStatus = explicitStatus
+                    ?: existing?.statusText
+                    ?: state?.string("status")
+                        ?.trim()
+                        ?.takeIf(String::isNotBlank)
+                    ?: "pending"
+                val summary = explicitState?.string("message")
+                    ?.trim()
+                    ?.takeIf(String::isNotBlank)
+                    ?: existing?.summary
+                    ?: state?.string("message")
+                        ?.trim()
+                        ?.takeIf(String::isNotBlank)
                     ?: prompt.trim().takeIf(String::isNotBlank)
                 subagentSnapshotsByThreadId[threadId] = ProviderAgentSnapshot(
                     threadId = threadId,
                     displayName = displayNameForSlug(mentionSlug, displayName),
                     mentionSlug = mentionSlug,
                     status = normalizeSubagentStatus(rawStatus),
-                    statusText = rawStatus.ifBlank { "pending" },
+                    statusText = rawStatus,
                     summary = summary,
                     updatedAt = System.currentTimeMillis(),
                 )
@@ -1100,6 +1116,7 @@ internal class CodexRuntimeProvider(
          * Derives a human-readable display name from the collaboration prompt.
          */
         private fun deriveSubagentDisplayName(prompt: String): String {
+            derivePromptTaskTitle(prompt)?.let { return it }
             return displayNameForSlug(deriveSubagentMentionSlug(prompt), null)
         }
 
@@ -1185,7 +1202,46 @@ internal class CodexRuntimeProvider(
                 prompt = item.string("prompt") ?: cached?.prompt ?: senderCached?.prompt,
                 receiverThreadIds = receiverThreadIds,
                 agentStatesByThreadId = mergedStates,
+                explicitAgentStatesByThreadId = currentStates,
             )
+        }
+
+        /**
+         * Extracts a compact task title from Chinese prompts so the tray avoids generic Agent labels.
+         */
+        private fun derivePromptTaskTitle(prompt: String): String? {
+            if (!prompt.contains(Regex("[\\p{IsHan}]"))) return null
+            val normalized = prompt
+                .replace(Regex("\\s+"), " ")
+                .trim()
+            if (normalized.isBlank()) return null
+            val primarySentence = normalized
+                .substringBefore("输出要求")
+                .substringBefore('\n')
+                .substringBefore("当前工作目录是")
+                .substringBefore("只读，不改文件")
+                .substringBefore("不做修改")
+                .trim()
+            val core = primarySentence
+                .removePrefix("你负责")
+                .removePrefix("请你")
+                .removePrefix("请")
+                .removePrefix("负责")
+                .substringBefore('。')
+                .substringBefore('，')
+                .substringBefore(';')
+                .substringBefore('；')
+                .trim(' ', '：', ':', '“', '”', '"')
+                .ifBlank { normalized }
+            val cleaned = core
+                .replace(Regex("^(只做|只负责|仅做|仅负责)"), "")
+                .replace(Regex("(只读|不改文件|不做修改)$"), "")
+                .trim(' ', '：', ':', '“', '”', '"')
+                .takeIf { it.isNotBlank() }
+                ?: return null
+            return cleaned.take(18).let { title ->
+                if (cleaned.length > 18) "$title…" else title
+            }
         }
 
         /**

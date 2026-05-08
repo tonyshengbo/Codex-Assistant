@@ -673,6 +673,230 @@ class CodexRuntimeProviderTest {
     }
 
     @Test
+    fun `wait started without explicit agent states preserves current active subagent status`() {
+        val parser = CodexRuntimeProvider.CodexRuntimeNotificationParser(
+            requestId = "req-1",
+            diagnosticLogger = {},
+        )
+
+        parser.parseNotification(
+            method = "item/completed",
+            params = buildJsonObject {
+                put(
+                    "item",
+                    buildJsonObject {
+                        put("type", "collabAgentToolCall")
+                        put("id", "call_spawn_1")
+                        put("tool", "spawnAgent")
+                        put("status", "completed")
+                        put("senderThreadId", "thread-main-1")
+                        put("prompt", "Perform a code review of the latest diff.")
+                        put(
+                            "receiverThreadIds",
+                            buildJsonArray {
+                                add(JsonPrimitive("thread-review-1"))
+                            },
+                        )
+                        put(
+                            "agentsStates",
+                            buildJsonObject {
+                                put(
+                                    "thread-review-1",
+                                    buildJsonObject {
+                                        put("status", "pendingInit")
+                                    },
+                                )
+                            },
+                        )
+                    },
+                )
+            },
+        )
+        parser.parseNotification(
+            method = "thread/status/changed",
+            params = buildJsonObject {
+                put("threadId", "thread-review-1")
+                put(
+                    "status",
+                    buildJsonObject {
+                        put("type", "active")
+                    },
+                )
+            },
+        )
+
+        val events = parser.parseNotification(
+            method = "item/started",
+            params = buildJsonObject {
+                put(
+                    "item",
+                    buildJsonObject {
+                        put("type", "collabAgentToolCall")
+                        put("id", "call_wait_1")
+                        put("tool", "wait")
+                        put("status", "inProgress")
+                        put("senderThreadId", "thread-main-1")
+                        put(
+                            "receiverThreadIds",
+                            buildJsonArray {
+                                add(JsonPrimitive("thread-review-1"))
+                            },
+                        )
+                        put("agentsStates", buildJsonObject {})
+                    },
+                )
+            },
+        )
+
+        val updated = assertIs<ProviderEvent.SubagentsUpdated>(events.last())
+        assertEquals(ProviderAgentStatus.ACTIVE, updated.agents.single().status)
+        assertEquals("active", updated.agents.single().statusText)
+    }
+
+    @Test
+    fun `wait completion with explicit completed state overwrites active subagent summary`() {
+        val parser = CodexRuntimeProvider.CodexRuntimeNotificationParser(
+            requestId = "req-1",
+            diagnosticLogger = {},
+        )
+
+        parser.parseNotification(
+            method = "item/completed",
+            params = buildJsonObject {
+                put(
+                    "item",
+                    buildJsonObject {
+                        put("type", "collabAgentToolCall")
+                        put("id", "call_spawn_1")
+                        put("tool", "spawnAgent")
+                        put("status", "completed")
+                        put("senderThreadId", "thread-main-1")
+                        put("prompt", "Perform a code review of the latest diff.")
+                        put(
+                            "receiverThreadIds",
+                            buildJsonArray {
+                                add(JsonPrimitive("thread-review-1"))
+                            },
+                        )
+                        put(
+                            "agentsStates",
+                            buildJsonObject {
+                                put(
+                                    "thread-review-1",
+                                    buildJsonObject {
+                                        put("status", "pendingInit")
+                                        put("message", "Waiting for initialization")
+                                    },
+                                )
+                            },
+                        )
+                    },
+                )
+            },
+        )
+        parser.parseNotification(
+            method = "thread/status/changed",
+            params = buildJsonObject {
+                put("threadId", "thread-review-1")
+                put(
+                    "status",
+                    buildJsonObject {
+                        put("type", "active")
+                    },
+                )
+            },
+        )
+
+        val events = parser.parseNotification(
+            method = "item/completed",
+            params = buildJsonObject {
+                put(
+                    "item",
+                    buildJsonObject {
+                        put("type", "collabAgentToolCall")
+                        put("id", "call_wait_1")
+                        put("tool", "wait")
+                        put("status", "completed")
+                        put("senderThreadId", "thread-main-1")
+                        put(
+                            "receiverThreadIds",
+                            buildJsonArray {
+                                add(JsonPrimitive("thread-review-1"))
+                            },
+                        )
+                        put(
+                            "agentsStates",
+                            buildJsonObject {
+                                put(
+                                    "thread-review-1",
+                                    buildJsonObject {
+                                        put("status", "completed")
+                                        put("message", "Review finished with actionable findings")
+                                    },
+                                )
+                            },
+                        )
+                    },
+                )
+            },
+        )
+
+        val updated = assertIs<ProviderEvent.SubagentsUpdated>(events.last())
+        assertEquals(ProviderAgentStatus.COMPLETED, updated.agents.single().status)
+        assertEquals("completed", updated.agents.single().statusText)
+        assertEquals("Review finished with actionable findings", updated.agents.single().summary)
+    }
+
+    @Test
+    fun `chinese collaboration prompt derives task title instead of generic agent label`() {
+        val parser = CodexRuntimeProvider.CodexRuntimeNotificationParser(
+            requestId = "req-1",
+            diagnosticLogger = {},
+        )
+
+        val events = parser.parseNotification(
+            method = "item/completed",
+            params = buildJsonObject {
+                put(
+                    "item",
+                    buildJsonObject {
+                        put("type", "collabAgentToolCall")
+                        put("id", "call_zh_1")
+                        put("tool", "spawnAgent")
+                        put("status", "completed")
+                        put(
+                            "prompt",
+                            "你负责只做代码库梳理，不做修改。当前工作目录是 /Users/tonysheng/DataGripProjects。请识别“当前项目”是什么、它主要是干嘛的，并给出可验证结论。只读，不改文件。",
+                        )
+                        put(
+                            "receiverThreadIds",
+                            buildJsonArray {
+                                add(JsonPrimitive("thread-agent-1"))
+                            },
+                        )
+                        put(
+                            "agentsStates",
+                            buildJsonObject {
+                                put(
+                                    "thread-agent-1",
+                                    buildJsonObject {
+                                        put("status", "pendingInit")
+                                    },
+                                )
+                            },
+                        )
+                    },
+                )
+            },
+        )
+
+        val updated = assertIs<ProviderEvent.SubagentsUpdated>(events.last())
+        assertEquals("代码库梳理", updated.agents.single().displayName)
+        assertTrue(updated.agents.single().displayName != "Agent")
+        assertEquals("agent", updated.agents.single().mentionSlug)
+    }
+
+    @Test
     fun `thread status changed refreshes existing subagent snapshot`() {
         val parser = CodexRuntimeProvider.CodexRuntimeNotificationParser(
             requestId = "req-1",
