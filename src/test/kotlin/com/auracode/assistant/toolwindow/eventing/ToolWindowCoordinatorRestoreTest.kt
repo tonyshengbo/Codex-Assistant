@@ -17,6 +17,7 @@ import com.auracode.assistant.protocol.ItemKind
 import com.auracode.assistant.protocol.ItemStatus
 import com.auracode.assistant.protocol.TurnOutcome
 import com.auracode.assistant.protocol.ProviderEvent
+import com.auracode.assistant.protocol.ProviderFileChange
 import com.auracode.assistant.protocol.ProviderItem
 import com.auracode.assistant.settings.AgentSettingsService
 import com.auracode.assistant.service.AgentChatService
@@ -162,6 +163,120 @@ class ToolWindowCoordinatorRestoreTest {
     }
 
     @Test
+    fun `rehydrate keeps timeline file changes but hides submission edited files`() {
+        val settings = AgentSettingsService().apply { loadState(AgentSettingsService.State()) }
+        val repository = SQLiteChatSessionRepository(createTempDirectory("coordinator-history-files").resolve("chat.db"))
+        repository.upsertSession(
+            PersistedChatSession(
+                id = "session-1",
+                providerId = "codex",
+                title = "edit file",
+                createdAt = 1L,
+                updatedAt = 2L,
+                messageCount = 2,
+                remoteConversationId = "thread-1",
+                usageSnapshot = null,
+                isActive = true,
+            ),
+        )
+        val provider = HistoryBackedProvider(
+            historyTurns = mutableListOf(
+                historyTurn(
+                    turnId = "turn-1",
+                    userText = "edit file",
+                    assistantText = "done",
+                    extraItems = listOf(fileChangeItem(id = "diff-1", turnId = "turn-1", path = "/tmp/HistoryOnly.kt")),
+                ),
+            ),
+        )
+        val service = AgentChatService(
+            repository = repository,
+            registry = registry(provider),
+            settings = settings,
+        )
+
+        val conversationStore = ConversationAreaStore()
+        val submissionStore = SubmissionAreaStore()
+        val coordinator = ToolWindowCoordinator(
+            chatService = service,
+            settingsService = settings,
+            eventHub = ToolWindowEventHub(),
+            sessionTabsStore = SessionTabsAreaStore(),
+            executionStatusStore = ExecutionStatusAreaStore(),
+            conversationStore = conversationStore,
+            submissionStore = submissionStore,
+            sidePanelStore = SidePanelAreaStore(),
+            historyPageSize = 10,
+        )
+        waitUntil(timeoutMs = 2_000) {
+            conversationStore.state.value.nodes.filterIsInstance<ConversationActivityItem.FileChangeNode>().size == 1
+        }
+
+        assertTrue(submissionStore.state.value.editedFiles.isEmpty())
+
+        coordinator.dispose()
+        service.dispose()
+    }
+
+    @Test
+    fun `rehydrate incomplete history does not restore running banner or stop state`() {
+        val settings = AgentSettingsService().apply { loadState(AgentSettingsService.State()) }
+        val repository = SQLiteChatSessionRepository(createTempDirectory("coordinator-history-running-ui").resolve("chat.db"))
+        repository.upsertSession(
+            PersistedChatSession(
+                id = "session-1",
+                providerId = "codex",
+                title = "running history",
+                createdAt = 1L,
+                updatedAt = 2L,
+                messageCount = 1,
+                remoteConversationId = "thread-1",
+                usageSnapshot = null,
+                isActive = true,
+            ),
+        )
+        val provider = HistoryBackedProvider(
+            historyTurns = mutableListOf(
+                incompleteHistoryTurn(
+                    turnId = "turn-1",
+                    userText = "explore project",
+                    assistantText = "working...",
+                ),
+            ),
+        )
+        val service = AgentChatService(
+            repository = repository,
+            registry = registry(provider),
+            settings = settings,
+        )
+
+        val conversationStore = ConversationAreaStore()
+        val submissionStore = SubmissionAreaStore()
+        val executionStatusStore = ExecutionStatusAreaStore()
+        val coordinator = ToolWindowCoordinator(
+            chatService = service,
+            settingsService = settings,
+            eventHub = ToolWindowEventHub(),
+            sessionTabsStore = SessionTabsAreaStore(),
+            executionStatusStore = executionStatusStore,
+            conversationStore = conversationStore,
+            submissionStore = submissionStore,
+            sidePanelStore = SidePanelAreaStore(),
+            historyPageSize = 10,
+        )
+        waitUntil(timeoutMs = 2_000) {
+            conversationStore.state.value.nodes.filterIsInstance<ConversationActivityItem.MessageNode>().size == 2
+        }
+
+        assertFalse(conversationStore.state.value.isRunning)
+        assertFalse(submissionStore.state.value.sessionIsRunning)
+        assertEquals(null, executionStatusStore.state.value.turnStatus)
+
+        coordinator.dispose()
+        service.dispose()
+    }
+
+    @Test
     fun `load older intent prepends older history without resetting newer messages`() {
         val settings = AgentSettingsService().apply { loadState(AgentSettingsService.State()) }
         val repository = SQLiteChatSessionRepository(createTempDirectory("coordinator-history").resolve("chat.db"))
@@ -220,6 +335,70 @@ class ToolWindowCoordinatorRestoreTest {
         assertEquals(listOf("first", "second", "third", "fourth"), state.nodes.filterIsInstance<ConversationActivityItem.MessageNode>().map { it.text })
         assertEquals(0, state.nodes.filterIsInstance<ConversationActivityItem.TurnDurationNode>().size)
         assertFalse(state.hasOlder)
+
+        coordinator.dispose()
+    }
+
+    @Test
+    fun `load older history keeps submission edited files hidden`() {
+        val settings = AgentSettingsService().apply { loadState(AgentSettingsService.State()) }
+        val repository = SQLiteChatSessionRepository(createTempDirectory("coordinator-history-hidden-older").resolve("chat.db"))
+        repository.upsertSession(
+            PersistedChatSession(
+                id = "session-1",
+                providerId = "codex",
+                title = "history files",
+                createdAt = 1L,
+                updatedAt = 4L,
+                messageCount = 4,
+                remoteConversationId = "thread-1",
+                usageSnapshot = null,
+                isActive = true,
+            ),
+        )
+        val provider = HistoryBackedProvider(
+            historyTurns = mutableListOf(
+                historyTurn(
+                    turnId = "turn-1",
+                    userText = "first",
+                    assistantText = "",
+                    extraItems = listOf(fileChangeItem(id = "diff-1", turnId = "turn-1", path = "/tmp/Older.kt")),
+                ),
+                historyTurn(turnId = "turn-2", userText = "second", assistantText = ""),
+                historyTurn(turnId = "turn-3", userText = "third", assistantText = ""),
+                historyTurn(
+                    turnId = "turn-4",
+                    userText = "fourth",
+                    assistantText = "",
+                    extraItems = listOf(fileChangeItem(id = "diff-4", turnId = "turn-4", path = "/tmp/Newer.kt")),
+                ),
+            ),
+        )
+        val eventHub = ToolWindowEventHub()
+        val conversationStore = ConversationAreaStore()
+        val submissionStore = SubmissionAreaStore()
+        val coordinator = ToolWindowCoordinator(
+            chatService = AgentChatService(repository = repository, registry = registry(provider), settings = settings),
+            settingsService = settings,
+            eventHub = eventHub,
+            sessionTabsStore = SessionTabsAreaStore(),
+            executionStatusStore = ExecutionStatusAreaStore(),
+            conversationStore = conversationStore,
+            submissionStore = submissionStore,
+            sidePanelStore = SidePanelAreaStore(),
+            historyPageSize = 2,
+        )
+        waitUntil(timeoutMs = 2_000) {
+            conversationStore.state.value.nodes.filterIsInstance<ConversationActivityItem.MessageNode>().size == 2
+        }
+        assertTrue(submissionStore.state.value.editedFiles.isEmpty())
+
+        eventHub.publishUiIntent(UiIntent.LoadOlderMessages)
+        waitUntil(timeoutMs = 2_000) {
+            conversationStore.state.value.nodes.filterIsInstance<ConversationActivityItem.MessageNode>().size == 4
+        }
+
+        assertTrue(submissionStore.state.value.editedFiles.isEmpty())
 
         coordinator.dispose()
     }
@@ -302,6 +481,91 @@ class ToolWindowCoordinatorRestoreTest {
             1,
             conversationStore.state.value.nodes.filterIsInstance<ConversationActivityItem.TurnDurationNode>().size,
         )
+
+        coordinator.dispose()
+        service.dispose()
+    }
+
+    @Test
+    fun `rehydrate then continue chat shows only new edited files in submission`() {
+        val settings = AgentSettingsService().apply { loadState(AgentSettingsService.State()) }
+        val repository = SQLiteChatSessionRepository(createTempDirectory("coordinator-history-continue-files").resolve("chat.db"))
+        repository.upsertSession(
+            PersistedChatSession(
+                id = "session-1",
+                providerId = "codex",
+                title = "old edit",
+                createdAt = 1L,
+                updatedAt = 2L,
+                messageCount = 2,
+                remoteConversationId = "thread-1",
+                usageSnapshot = null,
+                isActive = true,
+            ),
+        )
+        val provider = HistoryBackedProvider(
+            historyTurns = mutableListOf(
+                historyTurn(
+                    turnId = "turn-1",
+                    userText = "old edit",
+                    assistantText = "old answer",
+                    extraItems = listOf(fileChangeItem(id = "diff-history", turnId = "turn-1", path = "/tmp/HistoryOnly.kt")),
+                ),
+            ),
+            liveStream = { request ->
+                com.auracode.assistant.test.providerEventFlow {
+                    emit(ProviderEvent.ThreadStarted(threadId = "thread-1"))
+                    emit(ProviderEvent.TurnStarted(turnId = "turn-2", threadId = "thread-1"))
+                    emit(
+                        ProviderEvent.ItemUpdated(
+                            fileChangeItem(id = "diff-live", turnId = "turn-2", path = "/tmp/LiveOnly.kt"),
+                        ),
+                    )
+                    emit(
+                        ProviderEvent.ItemUpdated(
+                            ProviderItem(
+                                id = "${request.requestId}:assistant",
+                                kind = ItemKind.NARRATIVE,
+                                status = ItemStatus.SUCCESS,
+                                name = "message",
+                                text = "new answer",
+                            ),
+                        ),
+                    )
+                    emit(ProviderEvent.TurnCompleted(turnId = "turn-2", outcome = TurnOutcome.SUCCESS))
+                }
+            },
+        )
+        val service = AgentChatService(
+            repository = repository,
+            registry = registry(provider),
+            settings = settings,
+        )
+
+        val eventHub = ToolWindowEventHub()
+        val conversationStore = ConversationAreaStore()
+        val submissionStore = SubmissionAreaStore()
+        val coordinator = ToolWindowCoordinator(
+            chatService = service,
+            settingsService = settings,
+            eventHub = eventHub,
+            sessionTabsStore = SessionTabsAreaStore(),
+            executionStatusStore = ExecutionStatusAreaStore(),
+            conversationStore = conversationStore,
+            submissionStore = submissionStore,
+            sidePanelStore = SidePanelAreaStore(),
+            historyPageSize = 10,
+        )
+        waitUntil(timeoutMs = 2_000) { conversationStore.state.value.nodes.filterIsInstance<ConversationActivityItem.MessageNode>().size == 2 }
+        assertTrue(submissionStore.state.value.editedFiles.isEmpty())
+
+        eventHub.publishUiIntent(UiIntent.InputChanged("new question"))
+        eventHub.publishUiIntent(UiIntent.SendPrompt)
+
+        waitUntil(timeoutMs = 2_000) {
+            submissionStore.state.value.editedFiles.size == 1 &&
+                submissionStore.state.value.editedFiles.single().path == "/tmp/LiveOnly.kt"
+        }
 
         coordinator.dispose()
         service.dispose()
@@ -428,6 +692,75 @@ class ToolWindowCoordinatorRestoreTest {
                 }
                 add(ProviderEvent.TurnCompleted(turnId = turnId, outcome = TurnOutcome.SUCCESS))
             }
+        }
+
+        fun incompleteHistoryTurn(
+            turnId: String,
+            userText: String,
+            assistantText: String,
+            extraItems: List<ProviderItem> = emptyList(),
+        ): List<ProviderEvent> {
+            return buildList {
+                add(ProviderEvent.TurnStarted(turnId = turnId, threadId = "thread-1"))
+                add(
+                    ProviderEvent.ItemUpdated(
+                        ProviderItem(
+                            id = "history:user:$turnId",
+                            kind = ItemKind.NARRATIVE,
+                            status = ItemStatus.SUCCESS,
+                            name = "user_message",
+                            text = userText,
+                        ),
+                    ),
+                )
+                extraItems.forEach { add(ProviderEvent.ItemUpdated(it.copy(id = "history:${it.id}:$turnId"))) }
+                if (assistantText.isNotBlank()) {
+                    add(
+                        ProviderEvent.ItemUpdated(
+                            ProviderItem(
+                                id = "history:assistant:$turnId",
+                                kind = ItemKind.NARRATIVE,
+                                status = ItemStatus.SUCCESS,
+                                name = "message",
+                                text = assistantText,
+                            ),
+                        ),
+                    )
+                }
+            }
+        }
+
+        fun fileChangeItem(
+            id: String,
+            turnId: String,
+            path: String,
+        ): ProviderItem {
+            return ProviderItem(
+                id = id,
+                kind = ItemKind.DIFF_APPLY,
+                status = ItemStatus.SUCCESS,
+                fileChanges = listOf(
+                    ProviderFileChange(
+                        sourceScopedId = "$id:$path",
+                        turnId = turnId,
+                        path = path,
+                        kind = "updated",
+                        timestamp = 1L,
+                        addedLines = 1,
+                        deletedLines = 1,
+                        unifiedDiff = """
+                            diff --git a/$path b/$path
+                            --- a/$path
+                            +++ b/$path
+                            @@ -1 +1 @@
+                            -old
+                            +new
+                        """.trimIndent(),
+                        oldContent = "old\n",
+                        newContent = "new\n",
+                    ),
+                ),
+            )
         }
     }
 }

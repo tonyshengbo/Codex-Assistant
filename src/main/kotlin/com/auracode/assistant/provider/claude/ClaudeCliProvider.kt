@@ -91,6 +91,7 @@ internal class ClaudeCliProvider(
                                         approvalRequestId = unified.request.requestId,
                                         decision = ApprovalAction.ALLOW,
                                         permissionSuggestions = unified.request.permissionSuggestions,
+                                        toolInputJson = unified.request.toolInputJson,
                                     ),
                                 )
                                 diagnosticLogger(
@@ -124,6 +125,7 @@ internal class ClaudeCliProvider(
                                         approvalRequestId = unified.request.requestId,
                                         decision = decision,
                                         permissionSuggestions = unified.request.permissionSuggestions,
+                                        toolInputJson = unified.request.toolInputJson,
                                     ),
                                 )
                                 diagnosticLogger(
@@ -299,26 +301,33 @@ internal class ClaudeCliProvider(
         diagnosticLogger("Claude CLI cancelled: requestId=$requestId")
     }
 
-    /** 构造发回 Claude CLI stdin 的 control_response JSON 行。 */
+    /** 构造发回 Claude CLI stdin 的 control_response JSON 行。
+     *  allow 时必须回传 updatedInput（原始工具输入），否则 CLI 端 zod 校验失败。
+     *  deny 时必须带 message 字段，否则 CLI 端 zod 校验失败。
+     */
     private fun buildControlResponse(
         approvalRequestId: String,
         decision: ApprovalAction,
         permissionSuggestions: List<String> = emptyList(),
+        toolInputJson: String = "{}",
     ): String {
-        val behavior = when (decision) {
-            ApprovalAction.ALLOW, ApprovalAction.ALLOW_FOR_SESSION -> "allow"
-            ApprovalAction.REJECT -> "deny"
+        val innerResponse = when (decision) {
+            ApprovalAction.ALLOW, ApprovalAction.ALLOW_FOR_SESSION -> buildJsonObject {
+                put("behavior", "allow")
+                val inputElement = runCatching { Json.parseToJsonElement(toolInputJson) }.getOrNull()
+                if (inputElement != null) put("updatedInput", inputElement)
+            }
+            ApprovalAction.REJECT -> buildJsonObject {
+                put("behavior", "deny")
+                put("message", "User denied the request.")
+            }
         }
-        // Claude CLI 协议三层封装：顶层 type=control_response，response 内含 subtype/request_id，
-        // 再嵌套真正的 can_use_tool 决策载荷（behavior）。与 buildToolUserInputResponse 保持一致。
         val response = buildJsonObject {
             put("type", "control_response")
             put("response", buildJsonObject {
                 put("subtype", "success")
                 put("request_id", approvalRequestId)
-                put("response", buildJsonObject {
-                    put("behavior", behavior)
-                })
+                put("response", innerResponse)
             })
         }
         val json = response.toString()

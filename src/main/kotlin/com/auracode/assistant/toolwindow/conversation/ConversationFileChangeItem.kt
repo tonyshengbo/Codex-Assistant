@@ -24,6 +24,7 @@ import com.auracode.assistant.toolwindow.shared.assistantUiTokens
 internal fun ConversationFileChangeItem(
     node: ConversationActivityItem.FileChangeNode,
     palette: DesignPalette,
+    animateStatusIndicator: Boolean,
     expanded: Boolean,
     onToggleExpanded: () -> Unit,
     onOpenPath: (String) -> Unit,
@@ -42,6 +43,7 @@ internal fun ConversationFileChangeItem(
         expandedBodyMaxHeight = conversationFileChangeExpandedBodyMaxHeight(),
         cardBackground = palette.timelineCardBg.copy(alpha = 0.94f),
         bodyBackground = palette.topStripBg.copy(alpha = 0.48f),
+        animateStatusIndicator = animateStatusIndicator,
     ) {
         change?.let {
             ConversationInlineDiff(

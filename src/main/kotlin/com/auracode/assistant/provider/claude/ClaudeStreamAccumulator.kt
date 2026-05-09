@@ -87,6 +87,7 @@ internal class ClaudeStreamAccumulator {
                                 toolName = event.toolName,
                                 toolInput = event.toolInput,
                                 permissionSuggestions = event.permissionSuggestions,
+                                toolInputJson = event.toolInputJson,
                             ),
                         )
                     }

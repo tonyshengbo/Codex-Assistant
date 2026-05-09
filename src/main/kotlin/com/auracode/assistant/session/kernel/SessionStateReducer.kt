@@ -303,19 +303,37 @@ internal class SessionStateReducer {
             )
 
             is SessionDomainEvent.TurnCompleted -> {
-                val planFinalizedConversation = finalizeTurnPlanEntry(
-                    conversation = state.conversation,
-                    turnId = event.turnId,
-                    outcome = event.outcome,
-                )
+                val effectiveTurnId = event.turnId.takeIf { it.isNotBlank() }
+                    ?: state.runtime.activeTurnId.orEmpty()
+                val finalizedConversation = when {
+                    event.outcome == SessionTurnOutcome.CANCELLED -> finalizeAllRunningConversationEntries(
+                        conversation = effectiveTurnId.takeIf { it.isNotBlank() }?.let { turnId ->
+                            finalizeTurnConversationEntries(
+                                conversation = state.conversation,
+                                turnId = turnId,
+                                outcome = event.outcome,
+                            )
+                        } ?: state.conversation,
+                        outcome = event.outcome,
+                    )
+
+                    effectiveTurnId.isNotBlank() -> finalizeTurnConversationEntries(
+                        conversation = state.conversation,
+                        turnId = effectiveTurnId,
+                        outcome = event.outcome,
+                    )
+
+                    else -> state.conversation
+                }
                 val updatedConversation = appendTurnDurationSummaryIfNeeded(
-                    conversation = planFinalizedConversation,
+                    conversation = finalizedConversation,
                     runtime = state.runtime,
+                    turnId = effectiveTurnId,
                     event = event,
                 )
                 state.copy(
                     runtime = state.runtime.copy(
-                        activeTurnId = event.turnId,
+                        activeTurnId = effectiveTurnId.takeIf { it.isNotBlank() } ?: state.runtime.activeTurnId,
                         runStatus = SessionRunStatus.IDLE,
                         lastOutcome = event.outcome,
                         turnStartedAtMs = null,
@@ -418,33 +436,51 @@ internal class SessionStateReducer {
         return "turn-duration:$turnId"
     }
 
-    /** Finalizes one running plan entry when the owning turn completes. */
-    private fun finalizeTurnPlanEntry(
+    /** Finalizes all running turn-scoped conversation entries when the owning turn completes. */
+    private fun finalizeTurnConversationEntries(
         conversation: SessionConversationState,
         turnId: String,
         outcome: SessionTurnOutcome,
     ): SessionConversationState {
-        val entryId = runningPlanEntryId(turnId)
-        val existing = conversation.entries[entryId] as? SessionConversationEntry.Plan ?: return conversation
-        if (existing.status != SessionActivityStatus.RUNNING) return conversation
-        return upsertConversationEntry(
-            conversation = conversation,
-            entry = existing.copy(
-                status = when (outcome) {
-                    SessionTurnOutcome.SUCCESS -> SessionActivityStatus.SUCCESS
-                    SessionTurnOutcome.FAILED -> SessionActivityStatus.FAILED
-                    SessionTurnOutcome.CANCELLED -> SessionActivityStatus.SKIPPED
-                },
-            ),
-        )
+        if (turnId.isBlank()) return conversation
+        val terminalStatus = when (outcome) {
+            SessionTurnOutcome.SUCCESS -> SessionActivityStatus.SUCCESS
+            SessionTurnOutcome.FAILED -> SessionActivityStatus.FAILED
+            SessionTurnOutcome.CANCELLED -> SessionActivityStatus.SKIPPED
+        }
+        val nextEntries = conversation.entries.mapValues { (_, entry) ->
+            entry.finalizeTurnScopedStatus(
+                turnId = turnId,
+                terminalStatus = terminalStatus,
+            )
+        }
+        return conversation.copy(entries = nextEntries)
+    }
+
+    /** Finalizes every running turn-scoped entry when cancellation arrives without one resolvable turn id. */
+    private fun finalizeAllRunningConversationEntries(
+        conversation: SessionConversationState,
+        outcome: SessionTurnOutcome,
+    ): SessionConversationState {
+        val terminalStatus = when (outcome) {
+            SessionTurnOutcome.SUCCESS -> SessionActivityStatus.SUCCESS
+            SessionTurnOutcome.FAILED -> SessionActivityStatus.FAILED
+            SessionTurnOutcome.CANCELLED -> SessionActivityStatus.SKIPPED
+        }
+        val nextEntries = conversation.entries.mapValues { (_, entry) ->
+            entry.finalizeAnyRunningStatus(terminalStatus = terminalStatus)
+        }
+        return conversation.copy(entries = nextEntries)
     }
 
     /** Appends one completed turn-duration summary entry when the turn finished successfully. */
     private fun appendTurnDurationSummaryIfNeeded(
         conversation: SessionConversationState,
         runtime: SessionRuntimeState,
+        turnId: String,
         event: SessionDomainEvent.TurnCompleted,
     ): SessionConversationState {
+        if (turnId.isBlank()) return conversation
         val startedAtMs = runtime.turnStartedAtMs ?: return conversation
         val completedAtMs = event.completedAtMs ?: return conversation
         if (event.outcome != SessionTurnOutcome.SUCCESS || completedAtMs < startedAtMs) {
@@ -453,12 +489,87 @@ internal class SessionStateReducer {
         return appendConversationEntry(
             conversation = conversation,
             entry = SessionConversationEntry.TurnDurationSummary(
-                id = turnDurationEntryId(event.turnId),
-                turnId = event.turnId,
+                id = turnDurationEntryId(turnId),
+                turnId = turnId,
                 completedAtMs = completedAtMs,
                 durationMs = completedAtMs - startedAtMs,
             ),
         )
+    }
+
+    /** Finalizes one mutable turn-scoped entry when the owner turn reaches a terminal outcome. */
+    private fun SessionConversationEntry.finalizeTurnScopedStatus(
+        turnId: String,
+        terminalStatus: SessionActivityStatus,
+    ): SessionConversationEntry {
+        return when (this) {
+            is SessionConversationEntry.Reasoning ->
+                if (this.turnId == turnId && status == SessionActivityStatus.RUNNING) copy(status = terminalStatus) else this
+
+            is SessionConversationEntry.Command ->
+                if (this.turnId == turnId && status == SessionActivityStatus.RUNNING) copy(status = terminalStatus) else this
+
+            is SessionConversationEntry.Tool ->
+                if (this.turnId == turnId && status == SessionActivityStatus.RUNNING) copy(status = terminalStatus) else this
+
+            is SessionConversationEntry.FileChanges ->
+                if (this.turnId == turnId && status == SessionActivityStatus.RUNNING) copy(status = terminalStatus) else this
+
+            is SessionConversationEntry.Approval ->
+                if (this.turnId == turnId && status == SessionActivityStatus.RUNNING) copy(status = terminalStatus) else this
+
+            is SessionConversationEntry.ToolUserInput ->
+                if (this.turnId == turnId && status == SessionActivityStatus.RUNNING) copy(status = terminalStatus) else this
+
+            is SessionConversationEntry.Plan ->
+                if (this.turnId == turnId && status == SessionActivityStatus.RUNNING) copy(status = terminalStatus) else this
+
+            is SessionConversationEntry.ContextCompaction ->
+                if (this.turnId == turnId && status == SessionActivityStatus.RUNNING) copy(status = terminalStatus) else this
+
+            is SessionConversationEntry.Message,
+            is SessionConversationEntry.TurnDurationSummary,
+            is SessionConversationEntry.Error,
+            is SessionConversationEntry.EngineSwitched,
+            -> this
+        }
+    }
+
+    /** Finalizes one running entry without requiring a turn match for cancellation fallback paths. */
+    private fun SessionConversationEntry.finalizeAnyRunningStatus(
+        terminalStatus: SessionActivityStatus,
+    ): SessionConversationEntry {
+        return when (this) {
+            is SessionConversationEntry.Reasoning ->
+                if (status == SessionActivityStatus.RUNNING) copy(status = terminalStatus) else this
+
+            is SessionConversationEntry.Command ->
+                if (status == SessionActivityStatus.RUNNING) copy(status = terminalStatus) else this
+
+            is SessionConversationEntry.Tool ->
+                if (status == SessionActivityStatus.RUNNING) copy(status = terminalStatus) else this
+
+            is SessionConversationEntry.FileChanges ->
+                if (status == SessionActivityStatus.RUNNING) copy(status = terminalStatus) else this
+
+            is SessionConversationEntry.Approval ->
+                if (status == SessionActivityStatus.RUNNING) copy(status = terminalStatus) else this
+
+            is SessionConversationEntry.ToolUserInput ->
+                if (status == SessionActivityStatus.RUNNING) copy(status = terminalStatus) else this
+
+            is SessionConversationEntry.Plan ->
+                if (status == SessionActivityStatus.RUNNING) copy(status = terminalStatus) else this
+
+            is SessionConversationEntry.ContextCompaction ->
+                if (status == SessionActivityStatus.RUNNING) copy(status = terminalStatus) else this
+
+            is SessionConversationEntry.Message,
+            is SessionConversationEntry.TurnDurationSummary,
+            is SessionConversationEntry.Error,
+            is SessionConversationEntry.EngineSwitched,
+            -> this
+        }
     }
 
     /** Merges structured edited-file details into the session submission slice by file path. */

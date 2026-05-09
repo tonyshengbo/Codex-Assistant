@@ -49,7 +49,7 @@ class SessionStateReducerTest {
         val tool = assertIs<SessionConversationEntry.Tool>(
             state.conversation.entries.getValue("tool-1"),
         )
-        assertEquals(SessionActivityStatus.RUNNING, tool.status)
+        assertEquals(SessionActivityStatus.SUCCESS, tool.status)
         assertEquals(SessionToolKind.FILE_READ, tool.toolKind)
         assertEquals("Read", tool.toolName)
         assertEquals("Inspecting README.md", tool.summary)
@@ -142,6 +142,42 @@ class SessionStateReducerTest {
             assertIs<SessionConversationEntry.ToolUserInput>(
                 state.conversation.entries.getValue("tool-input:turn-2:call-2"),
             ).responseSummary,
+        )
+    }
+
+    /**
+     * Verifies that cancellation still finalizes live entries when the completion event has no turn id.
+     */
+    @Test
+    fun `reducer finalizes running entries for blank-turn cancellation`() {
+        val reducer = SessionStateReducer()
+        val state = reducer.reduceAll(
+            initialState = SessionState.empty(
+                sessionId = "session-1",
+                engineId = "codex",
+            ),
+            events = listOf(
+                SessionDomainEvent.ToolUpdated(
+                    itemId = "tool-1",
+                    turnId = null,
+                    status = SessionActivityStatus.RUNNING,
+                    toolKind = SessionToolKind.GENERIC,
+                    toolName = "Agent",
+                    summary = "Working",
+                ),
+                SessionDomainEvent.TurnCompleted(
+                    turnId = "",
+                    outcome = SessionTurnOutcome.CANCELLED,
+                ),
+            ),
+        )
+
+        assertEquals(SessionRunStatus.IDLE, state.runtime.runStatus)
+        assertEquals(
+            SessionActivityStatus.SKIPPED,
+            assertIs<SessionConversationEntry.Tool>(
+                state.conversation.entries.getValue("tool-1"),
+            ).status,
         )
     }
 

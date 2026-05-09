@@ -85,6 +85,7 @@ internal fun ConversationExpandableCard(
     cardBackground: androidx.compose.ui.graphics.Color? = null,
     bodyBackground: androidx.compose.ui.graphics.Color? = null,
     useBodyContainer: Boolean = true,
+    animateStatusIndicator: Boolean = true,
     copyText: String? = null,
     content: @Composable () -> Unit,
 ) {
@@ -145,6 +146,7 @@ internal fun ConversationExpandableCard(
                             palette = palette,
                             dotSize = t.spacing.sm,
                             accentColor = accentColor,
+                            animatePulse = animateStatusIndicator,
                         )
                     }
                     if (expanded) {
@@ -211,6 +213,7 @@ internal fun ConversationMarkdownActivityBody(
     cardBackground: androidx.compose.ui.graphics.Color? = null,
     bodyBackground: androidx.compose.ui.graphics.Color? = null,
     useBodyContainer: Boolean = true,
+    animateStatusIndicator: Boolean = true,
     copyText: String? = body.takeIf { it.isNotBlank() },
 ) {
     ConversationExpandableCard(
@@ -230,6 +233,7 @@ internal fun ConversationMarkdownActivityBody(
         cardBackground = cardBackground,
         bodyBackground = bodyBackground,
         useBodyContainer = useBodyContainer,
+        animateStatusIndicator = animateStatusIndicator,
         copyText = copyText,
     ) {
         ConversationMarkdown(

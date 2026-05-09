@@ -240,6 +240,8 @@ internal sealed interface ClaudeStreamEvent {
         val sessionId: String? = null,
         /** Claude CLI 建议的权限更新列表，原始 JSON 字符串，Allow 时需回传给 CLI。 */
         val permissionSuggestions: List<String> = emptyList(),
+        /** 原始 input 的 JSON 紧凑串，allow 时需作为 updatedInput 原样回传，否则 CLI 端 zod 校验失败。 */
+        val toolInputJson: String = "{}",
     ) : ClaudeStreamEvent
 
     /**

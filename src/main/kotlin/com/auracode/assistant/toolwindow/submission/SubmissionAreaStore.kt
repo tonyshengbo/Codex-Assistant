@@ -1186,7 +1186,6 @@ internal class SubmissionAreaStore(
             approvalPrompt = base.approvalPrompt,
             toolUserInputQueue = base.toolUserInputQueue,
             toolUserInputPrompt = base.toolUserInputPrompt,
-            runningPlan = base.runningPlan,
             // Restore queued submissions from the cached session-local composer state.
             pendingSubmissions = pendingSubmissions,
         ).withResolvedContextEntries()

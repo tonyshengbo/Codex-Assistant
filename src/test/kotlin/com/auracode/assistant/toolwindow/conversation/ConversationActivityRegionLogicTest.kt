@@ -46,6 +46,34 @@ class ConversationActivityRegionLogicTest {
     }
 
     @Test
+    fun `status indicator animates only for active running turn node`() {
+        val activeState = ConversationAreaState(
+            isRunning = true,
+            activeTurnId = "turn-live",
+        )
+        val liveNode = ConversationActivityItem.ToolCallNode(
+            id = "tool-live",
+            sourceId = "tool-live",
+            title = "Agent",
+            body = "Working",
+            status = ItemStatus.RUNNING,
+            turnId = "turn-live",
+        )
+        val restoredNode = liveNode.copy(id = "tool-restored", sourceId = "tool-restored", turnId = "turn-history")
+        val terminalNode = liveNode.copy(id = "tool-done", sourceId = "tool-done", status = ItemStatus.SUCCESS)
+
+        assertTrue(conversationShouldAnimateStatusIndicator(activeState, liveNode))
+        assertFalse(conversationShouldAnimateStatusIndicator(activeState, restoredNode))
+        assertFalse(conversationShouldAnimateStatusIndicator(activeState, terminalNode))
+        assertFalse(
+            conversationShouldAnimateStatusIndicator(
+                activeState.copy(isRunning = false),
+                liveNode,
+            ),
+        )
+    }
+
+    @Test
     fun `expanded activity body max height stays compact`() {
         assertEquals(220.dp, conversationExpandedBodyMaxHeight())
     }
@@ -200,7 +228,7 @@ class ConversationActivityRegionLogicTest {
             id = "turn-duration",
             sourceId = "turn-duration:turn-1",
             clockText = "14:32",
-            durationText = "Turn duration 15m 26s",
+            durationText = "Completed in 15m 26s",
             timestamp = 1L,
             durationMs = 926_000L,
             status = ItemStatus.SUCCESS,

@@ -208,6 +208,19 @@ internal fun conversationQuickScrollVisibility(
     )
 }
 
+/**
+ * Restricts timeline pulse playback to the currently active running turn.
+ */
+internal fun conversationShouldAnimateStatusIndicator(
+    state: ConversationAreaState,
+    node: ConversationActivityItem,
+): Boolean {
+    val activeTurnId = state.activeTurnId?.trim()?.takeIf { it.isNotBlank() } ?: return false
+    return state.isRunning &&
+        node.status == com.auracode.assistant.protocol.ItemStatus.RUNNING &&
+        node.turnId == activeTurnId
+}
+
 @Composable
 internal fun ConversationActivityRegion(
     modifier: Modifier,
@@ -392,6 +405,7 @@ internal fun ConversationActivityRegion(
                         is ConversationActivityItem.ReasoningNode -> ConversationReasoningItem(
                             node = node,
                             palette = p,
+                            animateStatusIndicator = conversationShouldAnimateStatusIndicator(state, node),
                             expanded = state.expandedNodeIds.contains(node.id),
                             onToggleExpanded = { onIntent(UiIntent.ToggleNodeExpanded(node.id)) },
                             onOpenMarkdownFilePath = { path -> onIntent(UiIntent.OpenConversationFilePath(path)) },
@@ -400,6 +414,7 @@ internal fun ConversationActivityRegion(
                         is ConversationActivityItem.FileChangeNode -> ConversationFileChangeItem(
                             node = node,
                             palette = p,
+                            animateStatusIndicator = conversationShouldAnimateStatusIndicator(state, node),
                             expanded = state.expandedNodeIds.contains(node.id),
                             onToggleExpanded = { onIntent(UiIntent.ToggleNodeExpanded(node.id)) },
                             onOpenPath = { path -> onIntent(UiIntent.OpenConversationFilePath(path)) },
@@ -408,6 +423,7 @@ internal fun ConversationActivityRegion(
                         is ConversationActivityItem.ToolCallNode -> ConversationToolCallItem(
                             node = node,
                             palette = p,
+                            animateStatusIndicator = conversationShouldAnimateStatusIndicator(state, node),
                             expanded = state.expandedNodeIds.contains(node.id),
                             onToggleExpanded = { onIntent(UiIntent.ToggleNodeExpanded(node.id)) },
                             onOpenTitleTarget = { path -> onIntent(UiIntent.OpenConversationFilePath(path)) },
@@ -417,6 +433,7 @@ internal fun ConversationActivityRegion(
                         is ConversationActivityItem.CommandNode -> ConversationCommandItem(
                             node = node,
                             palette = p,
+                            animateStatusIndicator = conversationShouldAnimateStatusIndicator(state, node),
                             expanded = state.expandedNodeIds.contains(node.id),
                             onToggleExpanded = { onIntent(UiIntent.ToggleNodeExpanded(node.id)) },
                             onOpenTitleTarget = { path -> onIntent(UiIntent.OpenConversationFilePath(path)) },
@@ -425,6 +442,7 @@ internal fun ConversationActivityRegion(
                         is ConversationActivityItem.ApprovalNode -> ConversationApprovalItem(
                             node = node,
                             palette = p,
+                            animateStatusIndicator = conversationShouldAnimateStatusIndicator(state, node),
                             expanded = state.expandedNodeIds.contains(node.id),
                             onToggleExpanded = { onIntent(UiIntent.ToggleNodeExpanded(node.id)) },
                             onOpenMarkdownFilePath = { path -> onIntent(UiIntent.OpenConversationFilePath(path)) },
@@ -433,6 +451,7 @@ internal fun ConversationActivityRegion(
                         is ConversationActivityItem.ContextCompactionNode -> ConversationContextCompactionItem(
                             node = node,
                             palette = p,
+                            animateStatusIndicator = conversationShouldAnimateStatusIndicator(state, node),
                             expanded = state.expandedNodeIds.contains(node.id),
                             onToggleExpanded = { onIntent(UiIntent.ToggleNodeExpanded(node.id)) },
                             onOpenMarkdownFilePath = { path -> onIntent(UiIntent.OpenConversationFilePath(path)) },
@@ -441,6 +460,7 @@ internal fun ConversationActivityRegion(
                         is ConversationActivityItem.PlanNode -> ConversationPlanItem(
                             node = node,
                             palette = p,
+                            animateStatusIndicator = conversationShouldAnimateStatusIndicator(state, node),
                             expanded = state.expandedNodeIds.contains(node.id),
                             onToggleExpanded = { onIntent(UiIntent.ToggleNodeExpanded(node.id)) },
                             onOpenMarkdownFilePath = { path -> onIntent(UiIntent.OpenConversationFilePath(path)) },
@@ -454,6 +474,7 @@ internal fun ConversationActivityRegion(
                         is ConversationActivityItem.UserInputNode -> ConversationUserInputItem(
                             node = node,
                             palette = p,
+                            animateStatusIndicator = conversationShouldAnimateStatusIndicator(state, node),
                             expanded = state.expandedNodeIds.contains(node.id),
                             onToggleExpanded = { onIntent(UiIntent.ToggleNodeExpanded(node.id)) },
                             onOpenMarkdownFilePath = { path -> onIntent(UiIntent.OpenConversationFilePath(path)) },
@@ -462,6 +483,7 @@ internal fun ConversationActivityRegion(
                         is ConversationActivityItem.UnknownActivityNode -> ConversationUnknownActivityItem(
                             node = node,
                             palette = p,
+                            animateStatusIndicator = conversationShouldAnimateStatusIndicator(state, node),
                             expanded = state.expandedNodeIds.contains(node.id),
                             onToggleExpanded = { onIntent(UiIntent.ToggleNodeExpanded(node.id)) },
                             onOpenMarkdownFilePath = { path -> onIntent(UiIntent.OpenConversationFilePath(path)) },
@@ -470,6 +492,7 @@ internal fun ConversationActivityRegion(
                         is ConversationActivityItem.ErrorNode -> ConversationErrorItem(
                             node = node,
                             palette = p,
+                            animateStatusIndicator = conversationShouldAnimateStatusIndicator(state, node),
                             expanded = state.expandedNodeIds.contains(node.id),
                             onToggleExpanded = { onIntent(UiIntent.ToggleNodeExpanded(node.id)) },
                             onOpenMarkdownFilePath = { path -> onIntent(UiIntent.OpenConversationFilePath(path)) },
@@ -478,6 +501,7 @@ internal fun ConversationActivityRegion(
                         is ConversationActivityItem.EngineSwitchedNode -> ConversationEngineSwitchItem(
                             node = node,
                             palette = p,
+                            animateStatusIndicator = conversationShouldAnimateStatusIndicator(state, node),
                             expanded = state.expandedNodeIds.contains(node.id),
                             onToggleExpanded = { onIntent(UiIntent.ToggleNodeExpanded(node.id)) },
                             onOpenMarkdownFilePath = { path -> onIntent(UiIntent.OpenConversationFilePath(path)) },

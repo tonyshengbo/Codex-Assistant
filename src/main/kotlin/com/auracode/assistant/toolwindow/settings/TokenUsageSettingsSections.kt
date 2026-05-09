@@ -14,9 +14,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.MaterialTheme
 import androidx.compose.material.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.auracode.assistant.i18n.AuraCodeBundle
@@ -288,32 +286,15 @@ private fun TokenUsageMetricRow(
         modifier = Modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(t.spacing.xs),
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(t.spacing.md),
-        ) {
-            Text(
-                text = title,
-                color = p.textPrimary,
-                style = MaterialTheme.typography.body2,
-                fontWeight = FontWeight.SemiBold,
-                modifier = Modifier.weight(1f),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Text(
-                text = "$primary: $primaryValue",
-                color = p.accent,
-                style = MaterialTheme.typography.body2,
-                fontWeight = FontWeight.Medium,
-                maxLines = 1,
-            )
-        }
-        Text(
-            text = secondary.joinToString("   ") { (label, value) -> "$label: $value" },
-            color = p.textSecondary,
-            style = MaterialTheme.typography.caption,
+        TokenUsageResponsiveHeader(
+            p = p,
+            title = title,
+            primaryLabel = primary,
+            primaryValue = primaryValue,
+        )
+        TokenUsageSecondaryMetricsGrid(
+            p = p,
+            items = secondary,
         )
     }
 }

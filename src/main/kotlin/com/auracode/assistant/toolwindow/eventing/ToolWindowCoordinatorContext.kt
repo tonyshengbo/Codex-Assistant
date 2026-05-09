@@ -77,6 +77,7 @@ internal class ToolWindowCoordinatorContext(
     val dispatchSessionEvent: (String, AppEvent) -> Unit,
     val captureSessionViewState: (String) -> Unit,
     val restoreSessionViewState: (String) -> Boolean,
+    val dropSessionViewState: (String) -> Unit,
     val publishSessionSnapshot: () -> Unit,
     val publishSettingsSnapshot: () -> Unit,
     val publishConversationCapabilities: () -> Unit,

@@ -24,6 +24,7 @@ import kotlin.io.path.name
 internal data class ConversationUiProjection(
     val nodes: List<ConversationActivityItem>,
     val isRunning: Boolean,
+    val activeTurnId: String?,
     val latestError: String? = null,
 )
 
@@ -41,6 +42,7 @@ internal class ConversationUiProjectionBuilder {
         return ConversationUiProjection(
             nodes = buildNodes(state),
             isRunning = state.runtime.runStatus == com.auracode.assistant.session.kernel.SessionRunStatus.RUNNING,
+            activeTurnId = state.runtime.activeTurnId,
             latestError = latestError,
         )
     }

@@ -29,6 +29,7 @@ import com.auracode.assistant.settings.mcp.McpManagementAdapterRegistry
 import com.auracode.assistant.provider.runtime.RuntimeExecutableCheckService
 import com.auracode.assistant.toolwindow.execution.ApprovalAreaStore
 import com.auracode.assistant.toolwindow.submission.SubmissionAreaStore
+import com.auracode.assistant.toolwindow.submission.EditedFileAggregate
 import com.auracode.assistant.toolwindow.shell.SidePanelAreaStore
 import com.auracode.assistant.toolwindow.shell.SidePanelKind
 import com.auracode.assistant.toolwindow.shared.UiText
@@ -145,6 +146,8 @@ internal class ToolWindowCoordinator(
     private val sessionKernelManager = SessionKernelManager()
     private val sessionProjectionBuilder = SessionUiProjectionBuilder()
     private val sessionConversationPagingBySessionId = linkedMapOf<String, SessionConversationPaging>()
+    private val sessionHistoryEditedFilesFilterRegistry = SessionHistoryEditedFilesFilterRegistry()
+    private val sessionHistoryTransientUiRegistry = SessionHistoryTransientUiRegistry()
     private val sessionSubmissionViewStateRegistry = SessionSubmissionViewStateRegistry()
     private val sessionConversationUiStateRegistry = SessionConversationUiStateRegistry()
     private val pendingSubmissionsBySessionId = linkedMapOf<String, ArrayDeque<com.auracode.assistant.toolwindow.submission.PendingSubmission>>()
@@ -208,6 +211,7 @@ internal class ToolWindowCoordinator(
         dispatchSessionEvent = { sessionId, event -> dispatchSessionEvent(sessionId, event) },
         captureSessionViewState = { sessionId -> captureSessionViewState(sessionId) },
         restoreSessionViewState = { sessionId -> restoreSessionViewState(sessionId) },
+        dropSessionViewState = { sessionId -> dropSessionViewState(sessionId) },
         publishSessionSnapshot = { publishSessionSnapshot() },
         publishSettingsSnapshot = { publishSettingsSnapshot() },
         publishConversationCapabilities = { publishConversationCapabilities() },
@@ -502,10 +506,29 @@ internal class ToolWindowCoordinator(
         prepend: Boolean,
     ) {
         val kernel = kernelForSession(sessionId)
+        val beforeEditedFiles = if (prepend) {
+            projectEditedFiles(kernel.currentState)
+        } else {
+            emptyList()
+        }
         if (prepend) {
             kernel.prependHistory(page.events)
         } else {
             kernel.restoreHistory(page.events)
+        }
+        sessionHistoryTransientUiRegistry.markHistoryRestored(sessionId)
+        val restoredEditedFiles = projectEditedFiles(kernel.currentState)
+        if (prepend) {
+            sessionHistoryEditedFilesFilterRegistry.capturePrependedHistory(
+                sessionId = sessionId,
+                before = beforeEditedFiles,
+                after = restoredEditedFiles,
+            )
+        } else {
+            sessionHistoryEditedFilesFilterRegistry.replaceBaseline(
+                sessionId = sessionId,
+                editedFiles = restoredEditedFiles,
+            )
         }
         sessionConversationPagingBySessionId[sessionId] = SessionConversationPaging(
             oldestCursor = page.olderCursor,
@@ -548,7 +571,14 @@ internal class ToolWindowCoordinator(
 
     /** Rebuilds the read-only projection for one session and pushes it into scoped UI stores. */
     private fun syncSessionUiProjection(sessionId: String) {
-        val projection = sessionProjectionBuilder.project(kernelForSession(sessionId).currentState)
+        val projection = normalizeHistoryTransientUi(
+            sessionId = sessionId,
+            projection = sessionProjectionBuilder.project(kernelForSession(sessionId).currentState),
+        )
+        val visibleEditedFiles = sessionHistoryEditedFilesFilterRegistry.filterVisible(
+            sessionId = sessionId,
+            editedFiles = projection.submission.editedFiles,
+        )
         val paging = sessionConversationPagingBySessionId[sessionId] ?: SessionConversationPaging()
         dispatchSessionEvent(
             sessionId,
@@ -557,6 +587,7 @@ internal class ToolWindowCoordinator(
                 oldestCursor = paging.oldestCursor,
                 hasOlder = paging.hasOlder,
                 isRunning = projection.conversation.isRunning,
+                activeTurnId = projection.conversation.activeTurnId,
                 latestError = projection.conversation.latestError,
             ),
         )
@@ -564,7 +595,7 @@ internal class ToolWindowCoordinator(
             sessionId,
             AppEvent.SubmissionUiProjectionUpdated(
                 isRunning = projection.submission.isRunning,
-                editedFiles = projection.submission.editedFiles,
+                editedFiles = visibleEditedFiles,
             ),
         )
         dispatchSessionEvent(
@@ -596,6 +627,27 @@ internal class ToolWindowCoordinator(
         sessionId = sessionId,
         engineId = chatService.sessionProviderId(sessionId),
     )
+
+    /** Projects only the edited-file submission slice for one session snapshot. */
+    private fun projectEditedFiles(state: com.auracode.assistant.session.kernel.SessionState): List<EditedFileAggregate> {
+        return sessionProjectionBuilder.project(state).submission.editedFiles
+    }
+
+    /** Hides replayed transient running UI for history-restored sessions that are not actually running now. */
+    private fun normalizeHistoryTransientUi(
+        sessionId: String,
+        projection: com.auracode.assistant.session.projection.SessionUiProjection,
+    ): com.auracode.assistant.session.projection.SessionUiProjection {
+        val actuallyRunning = chatService.listSessions().firstOrNull { it.id == sessionId }?.isRunning == true
+        if (!sessionHistoryTransientUiRegistry.shouldSuppress(sessionId) || actuallyRunning) {
+            return projection
+        }
+        return projection.copy(
+            conversation = projection.conversation.copy(isRunning = false),
+            submission = projection.submission.copy(isRunning = false),
+            execution = projection.execution.copy(turnStatus = null),
+        )
+    }
 
     private fun publishSessionSnapshot() {
         eventHub.publish(
@@ -680,10 +732,8 @@ internal class ToolWindowCoordinator(
         )
 
         if (switchedInPlace) {
+            dropSessionViewState(currentSessionId)
             sessionKernelManager.remove(currentSessionId)
-            sessionConversationPagingBySessionId.remove(currentSessionId)
-            sessionSubmissionViewStateRegistry.drop(currentSessionId)
-            sessionConversationUiStateRegistry.drop(currentSessionId)
             if (switchedEmptySession) {
                 // Rebuild an empty projection immediately so the reused session no longer carries stale running UI state.
                 syncSessionUiProjection(currentSessionId)
@@ -776,6 +826,15 @@ internal class ToolWindowCoordinator(
             ),
         )
         return hasKernel
+    }
+
+    /** Drops every session-scoped UI cache owned by the coordinator. */
+    private fun dropSessionViewState(sessionId: String) {
+        sessionConversationPagingBySessionId.remove(sessionId)
+        sessionHistoryEditedFilesFilterRegistry.drop(sessionId)
+        sessionHistoryTransientUiRegistry.drop(sessionId)
+        sessionSubmissionViewStateRegistry.drop(sessionId)
+        sessionConversationUiStateRegistry.drop(sessionId)
     }
 
     override fun dispose() {

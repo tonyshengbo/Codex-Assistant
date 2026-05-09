@@ -12,9 +12,12 @@ import com.auracode.assistant.provider.ProviderRegistry
 import com.auracode.assistant.provider.claude.ClaudeModelCatalog
 import com.auracode.assistant.protocol.ItemKind
 import com.auracode.assistant.protocol.ItemStatus
+import com.auracode.assistant.protocol.ProviderRunningPlanPresentation
 import com.auracode.assistant.protocol.TurnOutcome
 import com.auracode.assistant.protocol.ProviderEvent
+import com.auracode.assistant.protocol.ProviderFileChange
 import com.auracode.assistant.protocol.ProviderItem
+import com.auracode.assistant.protocol.ProviderPlanStep
 import com.auracode.assistant.protocol.ProviderToolUserInputPrompt
 import com.auracode.assistant.protocol.ProviderToolUserInputQuestion
 import com.auracode.assistant.service.AgentChatService
@@ -38,6 +41,7 @@ import kotlin.io.path.createTempDirectory
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -215,6 +219,100 @@ class ToolWindowCoordinatorMultiSessionTest {
         assertTrue(
             harness.conversationStore.state.value.nodes.none { it is ConversationActivityItem.EngineSwitchedNode },
         )
+
+        harness.dispose()
+    }
+
+    @Test
+    fun `cancelling the active run finalizes running tool cards and stops timeline running state`() {
+        val harness = MultiEngineCoordinatorHarness()
+        harness.settleStartup()
+
+        harness.eventHub.publishUiIntent(UiIntent.UpdateDocument(TextFieldValue("run-codex", TextRange(9))))
+        harness.eventHub.publishUiIntent(UiIntent.SendPrompt)
+        harness.waitUntil { harness.codexProvider.requests.size == 1 }
+        harness.codexProvider.emit("run-codex", ProviderEvent.ThreadStarted(threadId = "thread-codex"))
+        harness.codexProvider.emit("run-codex", ProviderEvent.TurnStarted(turnId = "turn-codex", threadId = "thread-codex"))
+        harness.codexProvider.emit(
+            "run-codex",
+            ProviderEvent.ItemUpdated(
+                ProviderItem(
+                    id = "tool-live",
+                    kind = ItemKind.TOOL_CALL,
+                    status = ItemStatus.RUNNING,
+                    name = "Agent",
+                    text = "Type: Explore",
+                ),
+            ),
+        )
+        harness.waitUntil {
+            harness.conversationStore.state.value.isRunning &&
+                harness.conversationStore.state.value.nodes
+                    .filterIsInstance<ConversationActivityItem.ToolCallNode>()
+                    .any { it.sourceId == "tool-live" && it.status == ItemStatus.RUNNING }
+        }
+
+        harness.eventHub.publishUiIntent(UiIntent.CancelRun)
+
+        harness.waitUntil {
+            !harness.conversationStore.state.value.isRunning &&
+                harness.conversationStore.state.value.nodes
+                    .filterIsInstance<ConversationActivityItem.ToolCallNode>()
+                    .any { it.sourceId == "tool-live" && it.status == ItemStatus.SKIPPED }
+        }
+
+        assertFalse(harness.service.listSessions().first { it.id == harness.service.getCurrentSessionId() }.isRunning)
+
+        harness.dispose()
+    }
+
+    @Test
+    fun `switching tabs preserves live edited file entry`() {
+        val harness = MultiEngineCoordinatorHarness()
+        harness.settleStartup()
+        val sessionA = harness.service.getCurrentSessionId()
+        val sessionB = harness.createSession(providerId = "codex")
+
+        harness.eventHub.publishUiIntent(UiIntent.SwitchSession(sessionA))
+        harness.waitUntil { harness.service.getCurrentSessionId() == sessionA }
+        harness.eventHub.publishUiIntent(UiIntent.UpdateDocument(TextFieldValue("run-codex", TextRange(9))))
+        harness.eventHub.publishUiIntent(UiIntent.SendPrompt)
+        harness.waitUntil { harness.codexProvider.requests.size == 1 }
+        harness.codexProvider.emit("run-codex", ProviderEvent.ThreadStarted(threadId = "thread-codex"))
+        harness.codexProvider.emit("run-codex", ProviderEvent.TurnStarted(turnId = "turn-codex", threadId = "thread-codex"))
+        harness.codexProvider.emit(
+            "run-codex",
+            ProviderEvent.ItemUpdated(
+                ProviderItem(
+                    id = "diff-live",
+                    kind = ItemKind.DIFF_APPLY,
+                    status = ItemStatus.SUCCESS,
+                    fileChanges = listOf(
+                        ProviderFileChange(
+                            sourceScopedId = "diff-live:/tmp/LiveKeep.kt",
+                            turnId = "turn-codex",
+                            path = "/tmp/LiveKeep.kt",
+                            kind = "updated",
+                            timestamp = 10L,
+                            addedLines = 1,
+                            deletedLines = 1,
+                            unifiedDiff = "@@ -1 +1 @@\n-old\n+new",
+                            oldContent = "old\n",
+                            newContent = "new\n",
+                        ),
+                    ),
+                ),
+            ),
+        )
+        harness.waitUntil { harness.submissionStore.state.value.editedFiles.singleOrNull()?.path == "/tmp/LiveKeep.kt" }
+
+        harness.eventHub.publishUiIntent(UiIntent.SwitchSession(sessionB))
+        harness.waitUntil { harness.service.getCurrentSessionId() == sessionB }
+        harness.eventHub.publishUiIntent(UiIntent.SwitchSession(sessionA))
+        harness.waitUntil { harness.service.getCurrentSessionId() == sessionA }
+        harness.waitUntil { harness.submissionStore.state.value.editedFiles.singleOrNull()?.path == "/tmp/LiveKeep.kt" }
+
+        assertEquals("/tmp/LiveKeep.kt", harness.submissionStore.state.value.editedFiles.single().path)
 
         harness.dispose()
     }
@@ -497,6 +595,124 @@ class ToolWindowCoordinatorMultiSessionTest {
                 it.status == ItemStatus.FAILED
             }
         }
+
+        harness.dispose()
+    }
+
+    @Test
+    fun `switching to another tab does not reuse the previous session running plan panel`() {
+        val harness = CoordinatorHarness()
+
+        val sessionA = harness.service.getCurrentSessionId()
+        val sessionB = harness.createSession()
+
+        harness.eventHub.publishUiIntent(UiIntent.SwitchSession(sessionB))
+        harness.waitUntil { harness.chatService.getCurrentSessionId() == sessionB }
+        harness.eventHub.publishUiIntent(UiIntent.UpdateDocument(TextFieldValue("draft-b", TextRange(7))))
+
+        harness.eventHub.publishUiIntent(UiIntent.SwitchSession(sessionA))
+        harness.waitUntil { harness.chatService.getCurrentSessionId() == sessionA }
+        harness.eventHub.publishUiIntent(UiIntent.TogglePlanMode)
+        harness.eventHub.publishUiIntent(UiIntent.UpdateDocument(TextFieldValue("plan-a", TextRange(6))))
+        harness.eventHub.publishUiIntent(UiIntent.SendPrompt)
+        harness.waitUntil { harness.provider.requests.size == 1 }
+        harness.provider.emit("plan-a", ProviderEvent.ThreadStarted(threadId = "thread-a"))
+        harness.provider.emit("plan-a", ProviderEvent.TurnStarted(turnId = "turn-a", threadId = "thread-a"))
+        harness.provider.emit(
+            "plan-a",
+            ProviderEvent.RunningPlanUpdated(
+                threadId = "thread-a",
+                turnId = "turn-a",
+                explanation = "Working through session A",
+                steps = listOf(
+                    ProviderPlanStep(step = "Inspect session scope", status = "completed"),
+                    ProviderPlanStep(step = "Keep panel isolated", status = "in_progress"),
+                ),
+                body = "- [completed] Inspect session scope\n- [in_progress] Keep panel isolated",
+                presentation = ProviderRunningPlanPresentation.SUBMISSION_PANEL,
+            ),
+        )
+        harness.waitUntil { harness.submissionStore.state.value.runningPlan?.turnId == "turn-a" }
+
+        harness.eventHub.publishUiIntent(UiIntent.SwitchSession(sessionB))
+        harness.waitUntil {
+            harness.chatService.getCurrentSessionId() == sessionB &&
+                harness.submissionStore.state.value.runningPlan == null &&
+                harness.submissionStore.state.value.document.text == "draft-b"
+        }
+
+        assertNull(harness.submissionStore.state.value.runningPlan)
+        assertEquals("draft-b", harness.submissionStore.state.value.document.text)
+
+        harness.dispose()
+    }
+
+    @Test
+    fun `background running plan updates restore the latest session scoped panel after switching back`() {
+        val harness = CoordinatorHarness()
+
+        val sessionA = harness.service.getCurrentSessionId()
+        val sessionB = harness.createSession()
+        harness.eventHub.publishUiIntent(UiIntent.SwitchSession(sessionA))
+        harness.waitUntil { harness.chatService.getCurrentSessionId() == sessionA }
+
+        harness.eventHub.publishUiIntent(UiIntent.TogglePlanMode)
+        harness.eventHub.publishUiIntent(UiIntent.UpdateDocument(TextFieldValue("plan-a", TextRange(6))))
+        harness.eventHub.publishUiIntent(UiIntent.SendPrompt)
+        harness.waitUntil { harness.provider.requests.size == 1 }
+        harness.provider.emit("plan-a", ProviderEvent.ThreadStarted(threadId = "thread-a"))
+        harness.provider.emit("plan-a", ProviderEvent.TurnStarted(turnId = "turn-a", threadId = "thread-a"))
+        harness.provider.emit(
+            "plan-a",
+            ProviderEvent.RunningPlanUpdated(
+                threadId = "thread-a",
+                turnId = "turn-a",
+                explanation = "Initial plan",
+                steps = listOf(
+                    ProviderPlanStep(step = "Inspect state", status = "completed"),
+                    ProviderPlanStep(step = "Render panel", status = "in_progress"),
+                ),
+                body = "- [completed] Inspect state\n- [in_progress] Render panel",
+                presentation = ProviderRunningPlanPresentation.SUBMISSION_PANEL,
+            ),
+        )
+        harness.waitUntil { harness.submissionStore.state.value.runningPlan?.explanation == "Initial plan" }
+
+        harness.eventHub.publishUiIntent(UiIntent.SwitchSession(sessionB))
+        harness.waitUntil {
+            harness.chatService.getCurrentSessionId() == sessionB &&
+                harness.submissionStore.state.value.runningPlan == null
+        }
+        assertNull(harness.submissionStore.state.value.runningPlan)
+
+        harness.provider.emit(
+            "plan-a",
+            ProviderEvent.RunningPlanUpdated(
+                threadId = "thread-a",
+                turnId = "turn-a",
+                explanation = "Updated in background",
+                steps = listOf(
+                    ProviderPlanStep(step = "Inspect state", status = "completed"),
+                    ProviderPlanStep(step = "Render panel", status = "completed"),
+                    ProviderPlanStep(step = "Sync cache", status = "in_progress"),
+                ),
+                body = """
+                    - [completed] Inspect state
+                    - [completed] Render panel
+                    - [in_progress] Sync cache
+                """.trimIndent(),
+                presentation = ProviderRunningPlanPresentation.SUBMISSION_PANEL,
+            ),
+        )
+        Thread.sleep(150)
+
+        harness.eventHub.publishUiIntent(UiIntent.SwitchSession(sessionA))
+        harness.waitUntil { harness.chatService.getCurrentSessionId() == sessionA }
+        harness.waitUntil { harness.submissionStore.state.value.runningPlan?.explanation == "Updated in background" }
+
+        val runningPlan = harness.submissionStore.state.value.runningPlan
+        assertEquals("turn-a", runningPlan?.turnId)
+        assertTrue(runningPlan?.steps?.any { it.step == "Sync cache" } == true)
 
         harness.dispose()
     }

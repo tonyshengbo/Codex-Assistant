@@ -273,10 +273,7 @@ internal fun SubmissionControlBar(
  * Resolves the execution mode tooltip text so the UI stays aligned with the active approval behavior.
  */
 internal fun resolveExecutionModeTooltip(executionMode: SubmissionMode): String {
-    return when (executionMode) {
-        SubmissionMode.AUTO -> AuraCodeBundle.message("composer.mode.auto.tooltip")
-        SubmissionMode.APPROVAL -> AuraCodeBundle.message("composer.mode.approval.tooltip")
-    }
+    return AuraCodeBundle.message("composer.mode.auto.tooltip")
 }
 
 internal fun resolvePlanModeTooltip(

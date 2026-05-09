@@ -316,6 +316,7 @@ internal class ClaudeStreamEventParser(
             toolInput = toolInput,
             sessionId = payload.string("session_id", "sessionId"),
             permissionSuggestions = permissionSuggestions,
+            toolInputJson = inputObj.toString(),
         )
     }
 

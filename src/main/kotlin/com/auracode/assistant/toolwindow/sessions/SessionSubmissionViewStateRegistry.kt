@@ -52,6 +52,7 @@ internal class SessionSubmissionViewStateRegistry {
 private fun AppEvent.affectsBackgroundSubmissionState(): Boolean {
     return when (this) {
         is AppEvent.PendingSubmissionsUpdated,
+        is AppEvent.RunningPlanUpdated,
         is AppEvent.PlanCompletionPromptUpdated,
         is AppEvent.SessionNavigationUiProjectionUpdated,
         -> true

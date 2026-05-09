@@ -28,13 +28,19 @@ class ConversationTimelineStatusIndicatorTest {
         )
 
         assertEquals(palette.accent, appearance.color)
-        assertEquals(8.dp, appearance.containerSize)
+        assertEquals(8.dp * 2.65f + 1.35.dp * 2, appearance.containerSize)
         assertEquals(8.dp, appearance.coreDotSize)
-        assertEquals(8.dp, appearance.pulseRingSize)
         assertTrue(appearance.pulseEnabled)
-        assertEquals(1400, appearance.pulseDurationMs)
-        assertEquals(1.15f, appearance.pulseStartScale)
-        assertEquals(2.2f, appearance.pulseEndScale)
+        assertEquals(1180, appearance.pulseDurationMs)
+        assertEquals(1.28f, appearance.glowStartScale)
+        assertEquals(1.92f, appearance.glowEndScale)
+        assertEquals(0.28f, appearance.glowStartAlpha)
+        assertEquals(0f, appearance.glowEndAlpha)
+        assertEquals(1.18f, appearance.pulseStartScale)
+        assertEquals(2.65f, appearance.pulseEndScale)
+        assertEquals(0.78f, appearance.pulseStartAlpha)
+        assertEquals(0f, appearance.pulseEndAlpha)
+        assertEquals(TimelineStatusIndicatorRenderMode.PULSE, timelineStatusIndicatorRenderMode(appearance))
     }
 
     /**
@@ -66,6 +72,9 @@ class ConversationTimelineStatusIndicatorTest {
         assertEquals(palette.success, successAppearance.color)
         assertEquals(palette.danger, failedAppearance.color)
         assertEquals(palette.success, skippedAppearance.color)
+        assertEquals(TimelineStatusIndicatorRenderMode.STATIC, timelineStatusIndicatorRenderMode(successAppearance))
+        assertEquals(TimelineStatusIndicatorRenderMode.STATIC, timelineStatusIndicatorRenderMode(failedAppearance))
+        assertEquals(TimelineStatusIndicatorRenderMode.STATIC, timelineStatusIndicatorRenderMode(skippedAppearance))
     }
 
     /**
@@ -93,5 +102,24 @@ class ConversationTimelineStatusIndicatorTest {
         assertEquals(overrideColor, runningAppearance.color)
         assertFalse(successAppearance.pulseEnabled)
         assertTrue(runningAppearance.pulseEnabled)
+    }
+
+    /**
+     * Verifies that session-level gating can stop the pulse without changing running-state color mapping.
+     */
+    @Test
+    fun `running status indicator can disable pulse when animation is gated off`() {
+        val palette = assistantPalette(EffectiveTheme.DARK)
+
+        val appearance = timelineStatusIndicatorAppearance(
+            status = ItemStatus.RUNNING,
+            palette = palette,
+            dotSize = 8.dp,
+            animatePulse = false,
+        )
+
+        assertEquals(palette.accent, appearance.color)
+        assertFalse(appearance.pulseEnabled)
+        assertEquals(TimelineStatusIndicatorRenderMode.STATIC, timelineStatusIndicatorRenderMode(appearance))
     }
 }

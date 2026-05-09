@@ -387,6 +387,7 @@ internal class ClaudeProviderEventMapper(
             command = command,
             allowForSession = true,
             permissionSuggestions = event.permissionSuggestions,
+            toolInputJson = event.toolInputJson,
         )
     }
 

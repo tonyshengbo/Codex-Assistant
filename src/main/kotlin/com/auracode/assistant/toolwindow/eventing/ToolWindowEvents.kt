@@ -338,6 +338,7 @@ internal sealed interface AppEvent {
         val oldestCursor: String?,
         val hasOlder: Boolean,
         val isRunning: Boolean,
+        val activeTurnId: String? = null,
         val latestError: String?,
     ) : AppEvent
     data class ExecutionUiProjectionUpdated(

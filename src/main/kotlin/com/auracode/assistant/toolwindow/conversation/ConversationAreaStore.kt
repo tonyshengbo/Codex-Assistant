@@ -20,6 +20,7 @@ internal data class ConversationAreaState(
     val hasOlder: Boolean = false,
     val isLoadingOlder: Boolean = false,
     val isRunning: Boolean = false,
+    val activeTurnId: String? = null,
     val expandedNodeIds: Set<String> = emptySet(),
     val scrollSnapshot: ConversationScrollSnapshot? = null,
     val renderVersion: Long = 0L,
@@ -68,6 +69,7 @@ internal class ConversationAreaStore {
                     oldestCursor = event.oldestCursor,
                     hasOlder = event.hasOlder,
                     isRunning = event.isRunning,
+                    activeTurnId = event.activeTurnId,
                     latestError = event.latestError,
                 )
             }
@@ -126,6 +128,7 @@ internal class ConversationAreaStore {
         oldestCursor: String?,
         hasOlder: Boolean,
         isRunning: Boolean,
+        activeTurnId: String?,
         latestError: String?,
     ) {
         val previous = _state.value
@@ -152,6 +155,7 @@ internal class ConversationAreaStore {
             hasOlder = hasOlder,
             isLoadingOlder = false,
             isRunning = isRunning,
+            activeTurnId = activeTurnId,
             latestError = latestError,
             renderVersion = previous.renderVersion + 1,
             renderCause = renderCause,

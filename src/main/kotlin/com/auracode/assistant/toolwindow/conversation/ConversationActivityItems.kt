@@ -8,6 +8,7 @@ import com.auracode.assistant.toolwindow.shared.DesignPalette
 internal fun ConversationReasoningItem(
     node: ConversationActivityItem.ReasoningNode,
     palette: DesignPalette,
+    animateStatusIndicator: Boolean,
     expanded: Boolean,
     onToggleExpanded: () -> Unit,
     onOpenMarkdownFilePath: ((String) -> Unit)? = null,
@@ -18,6 +19,7 @@ internal fun ConversationReasoningItem(
         status = node.status,
         expanded = expanded,
         palette = palette,
+        animateStatusIndicator = animateStatusIndicator,
         onToggleExpanded = onToggleExpanded,
         onOpenMarkdownFilePath = onOpenMarkdownFilePath,
     )
@@ -27,6 +29,7 @@ internal fun ConversationReasoningItem(
 internal fun ConversationToolCallItem(
     node: ConversationActivityItem.ToolCallNode,
     palette: DesignPalette,
+    animateStatusIndicator: Boolean,
     expanded: Boolean,
     onToggleExpanded: () -> Unit,
     onOpenTitleTarget: (String) -> Unit,
@@ -41,6 +44,7 @@ internal fun ConversationToolCallItem(
         status = node.status,
         expanded = expanded,
         palette = palette,
+        animateStatusIndicator = animateStatusIndicator,
         onToggleExpanded = onToggleExpanded,
         onOpenTitleTarget = onOpenTitleTarget,
         onOpenMarkdownFilePath = onOpenMarkdownFilePath,
@@ -51,6 +55,7 @@ internal fun ConversationToolCallItem(
 internal fun ConversationCommandItem(
     node: ConversationActivityItem.CommandNode,
     palette: DesignPalette,
+    animateStatusIndicator: Boolean,
     expanded: Boolean,
     onToggleExpanded: () -> Unit,
     onOpenTitleTarget: (String) -> Unit,
@@ -69,6 +74,7 @@ internal fun ConversationCommandItem(
         // auto-follow without competing against the outer timeline activity container.
         expandedBodyMaxHeight = null,
         bodyBackground = palette.topStripBg.copy(alpha = 0.24f),
+        animateStatusIndicator = animateStatusIndicator,
         copyText = conversationActivityCopyText(node),
     ) {
         ConversationCommandExecutionPanel(
@@ -83,6 +89,7 @@ internal fun ConversationCommandItem(
 internal fun ConversationApprovalItem(
     node: ConversationActivityItem.ApprovalNode,
     palette: DesignPalette,
+    animateStatusIndicator: Boolean,
     expanded: Boolean,
     onToggleExpanded: () -> Unit,
     onOpenMarkdownFilePath: ((String) -> Unit)? = null,
@@ -93,6 +100,7 @@ internal fun ConversationApprovalItem(
         status = node.status,
         expanded = expanded,
         palette = palette,
+        animateStatusIndicator = animateStatusIndicator,
         onToggleExpanded = onToggleExpanded,
         onOpenMarkdownFilePath = onOpenMarkdownFilePath,
     )
@@ -102,6 +110,7 @@ internal fun ConversationApprovalItem(
 internal fun ConversationContextCompactionItem(
     node: ConversationActivityItem.ContextCompactionNode,
     palette: DesignPalette,
+    animateStatusIndicator: Boolean,
     expanded: Boolean,
     onToggleExpanded: () -> Unit,
     onOpenMarkdownFilePath: ((String) -> Unit)? = null,
@@ -113,6 +122,7 @@ internal fun ConversationContextCompactionItem(
         status = node.status,
         expanded = expanded,
         palette = palette,
+        animateStatusIndicator = animateStatusIndicator,
         onToggleExpanded = onToggleExpanded,
         onOpenMarkdownFilePath = onOpenMarkdownFilePath,
     )
@@ -122,6 +132,7 @@ internal fun ConversationContextCompactionItem(
 internal fun ConversationPlanItem(
     node: ConversationActivityItem.PlanNode,
     palette: DesignPalette,
+    animateStatusIndicator: Boolean,
     expanded: Boolean,
     onToggleExpanded: () -> Unit,
     onOpenMarkdownFilePath: ((String) -> Unit)? = null,
@@ -134,6 +145,7 @@ internal fun ConversationPlanItem(
         status = node.status,
         expanded = expanded,
         palette = palette,
+        animateStatusIndicator = animateStatusIndicator,
         onToggleExpanded = onToggleExpanded,
         expandedBodyMaxHeight = conversationPlanExpandedBodyMaxHeight(),
         accentColor = palette.accent,
@@ -207,6 +219,7 @@ internal fun ConversationTurnDurationItem(
 internal fun ConversationUserInputItem(
     node: ConversationActivityItem.UserInputNode,
     palette: DesignPalette,
+    animateStatusIndicator: Boolean,
     expanded: Boolean,
     onToggleExpanded: () -> Unit,
     onOpenMarkdownFilePath: ((String) -> Unit)? = null,
@@ -218,6 +231,7 @@ internal fun ConversationUserInputItem(
         status = node.status,
         expanded = expanded,
         palette = palette,
+        animateStatusIndicator = animateStatusIndicator,
         onToggleExpanded = onToggleExpanded,
         onOpenMarkdownFilePath = onOpenMarkdownFilePath,
     )
@@ -227,6 +241,7 @@ internal fun ConversationUserInputItem(
 internal fun ConversationUnknownActivityItem(
     node: ConversationActivityItem.UnknownActivityNode,
     palette: DesignPalette,
+    animateStatusIndicator: Boolean,
     expanded: Boolean,
     onToggleExpanded: () -> Unit,
     onOpenMarkdownFilePath: ((String) -> Unit)? = null,
@@ -237,6 +252,7 @@ internal fun ConversationUnknownActivityItem(
         status = node.status,
         expanded = expanded,
         palette = palette,
+        animateStatusIndicator = animateStatusIndicator,
         onToggleExpanded = onToggleExpanded,
         onOpenMarkdownFilePath = onOpenMarkdownFilePath,
     )
@@ -246,6 +262,7 @@ internal fun ConversationUnknownActivityItem(
 internal fun ConversationErrorItem(
     node: ConversationActivityItem.ErrorNode,
     palette: DesignPalette,
+    animateStatusIndicator: Boolean,
     expanded: Boolean,
     onToggleExpanded: () -> Unit,
     onOpenMarkdownFilePath: ((String) -> Unit)? = null,
@@ -256,6 +273,7 @@ internal fun ConversationErrorItem(
         status = node.status,
         expanded = expanded,
         palette = palette,
+        animateStatusIndicator = animateStatusIndicator,
         onToggleExpanded = onToggleExpanded,
         accentColor = palette.danger,
         onOpenMarkdownFilePath = onOpenMarkdownFilePath,
@@ -266,6 +284,7 @@ internal fun ConversationErrorItem(
 internal fun ConversationEngineSwitchItem(
     node: ConversationActivityItem.EngineSwitchedNode,
     palette: DesignPalette,
+    animateStatusIndicator: Boolean,
     expanded: Boolean,
     onToggleExpanded: () -> Unit,
     onOpenMarkdownFilePath: ((String) -> Unit)? = null,
@@ -278,6 +297,7 @@ internal fun ConversationEngineSwitchItem(
         status = node.status,
         expanded = expanded,
         palette = palette,
+        animateStatusIndicator = animateStatusIndicator,
         onToggleExpanded = onToggleExpanded,
         accentColor = palette.accent,
         onOpenMarkdownFilePath = onOpenMarkdownFilePath,

@@ -8,6 +8,7 @@ import com.auracode.assistant.model.AgentCollaborationMode
 import com.auracode.assistant.model.FileAttachment
 import com.auracode.assistant.model.ImageAttachment
 import com.auracode.assistant.persistence.chat.PersistedAttachmentKind
+import com.auracode.assistant.protocol.ItemStatus
 import com.auracode.assistant.session.kernel.SessionDomainEvent
 import com.auracode.assistant.session.kernel.SessionTurnOutcome
 import com.auracode.assistant.toolwindow.submission.PendingSubmission
@@ -19,6 +20,7 @@ internal class ConversationFlowHandler(
 ) {
     fun deleteSession(onRestoreHistory: () -> Unit, sessionId: String) {
         if (!context.chatService.deleteSession(sessionId)) return
+        context.dropSessionViewState(sessionId)
         context.sessionAttentionStore.drop(sessionId)
         context.pendingSubmissionsBySessionId.remove(sessionId)
         context.activePlanRunContexts.remove(sessionId)
@@ -69,6 +71,7 @@ internal class ConversationFlowHandler(
     }
 
     fun cancelPromptRun(onResetPlanFlowState: () -> Unit) {
+        val activeTurnId = resolveActiveTurnIdForCancellation()
         context.chatService.cancelCurrent()
         onResetPlanFlowState()
         context.eventHub.publish(AppEvent.ActiveRunCancelled)
@@ -76,7 +79,7 @@ internal class ConversationFlowHandler(
             context.activeSessionId(),
             listOf(
                 SessionDomainEvent.TurnCompleted(
-                    turnId = "",
+                    turnId = activeTurnId,
                     outcome = SessionTurnOutcome.CANCELLED,
                     completedAtMs = System.currentTimeMillis(),
                 ),
@@ -248,6 +251,24 @@ internal class ConversationFlowHandler(
             onSessionDomainEvents = { events -> context.applySessionDomainEvents(sessionId, events) },
             onRunStateChanged = { context.publishSessionSnapshot() },
         )
+    }
+
+    /** Resolves the best-known live turn id before cancellation clears runtime state. */
+    private fun resolveActiveTurnIdForCancellation(): String {
+        val projectedTurnId = context.executionStatusStore.state.value.turnStatus?.turnId
+            ?.trim()
+            ?.takeIf { it.isNotBlank() }
+        if (projectedTurnId != null) {
+            return projectedTurnId
+        }
+        return context.conversationStore.state.value.nodes
+            .asReversed()
+            .firstNotNullOfOrNull { node ->
+                node.turnId
+                    ?.trim()
+                    ?.takeIf { turnId -> turnId.isNotBlank() && node.status == ItemStatus.RUNNING }
+            }
+            .orEmpty()
     }
 
     private fun SubmissionMode.toApprovalMode(): AgentApprovalMode {
