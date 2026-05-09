@@ -352,6 +352,11 @@ class ComposeToolWindowPanel(
                         eventHub.publishUiIntent(intent)
                         sessionTabCoordinator.startNewSession()
                     }
+                    SlashCommandDispatch.START_NEW_TAB -> {
+                        // Route slash-created tabs through the existing tab coordinator so limits and activation stay consistent.
+                        eventHub.publishUiIntent(intent)
+                        sessionTabCoordinator.startNewWindowTab()
+                    }
                 }
             }
             UiIntent.NewSession -> sessionTabCoordinator.startNewSession()

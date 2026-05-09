@@ -45,6 +45,7 @@ internal enum class SubmissionSlashCommand(
     PLAN("/plan"),
     AUTO("/auto"),
     NEW("/new"),
+    TAB("/tab"),
 }
 
 internal fun normalizeSlashCommand(command: String): String = command.trim().removePrefix("/")
@@ -86,6 +87,11 @@ private fun SubmissionSlashCommand.toSuggestion(state: SubmissionAreaState): Sla
             command = token,
             title = token,
             description = AuraCodeBundle.message("composer.slash.new.description"),
+        )
+        SubmissionSlashCommand.TAB -> SlashSuggestionItem.Command(
+            command = token,
+            title = token,
+            description = AuraCodeBundle.message("composer.slash.tab.description"),
         )
     }
 }

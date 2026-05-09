@@ -9,12 +9,13 @@ import com.auracode.assistant.toolwindow.submission.normalizeSlashCommand
 internal enum class SlashCommandDispatch {
     PUBLISH_ONLY,
     START_NEW_SESSION,
+    START_NEW_TAB,
 }
 
 internal fun resolveSlashCommandDispatch(command: String): SlashCommandDispatch {
-    return if (normalizeSlashCommand(command) == "new") {
-        SlashCommandDispatch.START_NEW_SESSION
-    } else {
-        SlashCommandDispatch.PUBLISH_ONLY
+    return when (normalizeSlashCommand(command)) {
+        "new" -> SlashCommandDispatch.START_NEW_SESSION
+        "tab" -> SlashCommandDispatch.START_NEW_TAB
+        else -> SlashCommandDispatch.PUBLISH_ONLY
     }
 }
