@@ -424,6 +424,30 @@ class AgentChatService private constructor(
     }
 
     /**
+     * Synchronizes one session title from external metadata such as a restored history summary.
+     */
+    internal fun syncSessionTitle(
+        sessionId: String,
+        title: String,
+    ): Boolean {
+        val normalizedTitle = title.trim()
+        if (sessionId.isBlank() || normalizedTitle.isBlank()) return false
+        val updated = synchronized(stateLock) {
+            val session = sessions[sessionId] ?: return@synchronized false
+            if (session.title == normalizedTitle) {
+                return@synchronized false
+            }
+            session.title = normalizedTitle
+            session.updatedAt = System.currentTimeMillis()
+            true
+        }
+        if (updated) {
+            persistSessionSnapshot(sessionId)
+        }
+        return updated
+    }
+
+    /**
      * Resets the current session's engine binding so the next submission starts a fresh remote conversation.
      */
     fun resetSessionForEngineSwitch(

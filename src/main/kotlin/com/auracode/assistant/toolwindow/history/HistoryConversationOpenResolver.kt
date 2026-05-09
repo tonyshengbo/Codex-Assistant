@@ -8,7 +8,6 @@ internal class HistoryConversationOpenResolver {
     fun resolve(
         remoteConversationId: String,
         providerId: String,
-        activeSessionId: String,
         sessions: List<AgentChatService.SessionSummary>,
         openSessionTabIds: Set<String>,
     ): HistoryConversationOpenAction {
@@ -23,17 +22,6 @@ internal class HistoryConversationOpenResolver {
         if (openedSession != null) {
             return HistoryConversationOpenAction.SwitchToExistingSession(openedSession.id)
         }
-        val existingSession = sessions.firstOrNull { session ->
-            session.providerId == normalizedProviderId &&
-                session.remoteConversationId.trim() == normalizedRemoteId
-        }
-        if (existingSession != null) {
-            return HistoryConversationOpenAction.SwitchToExistingSession(existingSession.id)
-        }
-        val activeSession = sessions.firstOrNull { it.id == activeSessionId }
-        if (activeSession != null && activeSession.messageCount == 0 && activeSession.remoteConversationId.isBlank()) {
-            return HistoryConversationOpenAction.ReuseActiveEmptySession
-        }
         return HistoryConversationOpenAction.OpenInNewSessionTab
     }
 }
@@ -41,7 +29,6 @@ internal class HistoryConversationOpenResolver {
 /** Represents the resolved history-open action before any side effects are executed. */
 internal sealed interface HistoryConversationOpenAction {
     data class SwitchToExistingSession(val sessionId: String) : HistoryConversationOpenAction
-    data object ReuseActiveEmptySession : HistoryConversationOpenAction
     data object OpenInNewSessionTab : HistoryConversationOpenAction
     data object NoOp : HistoryConversationOpenAction
 }

@@ -2,8 +2,12 @@ package com.auracode.assistant.toolwindow.submission
 
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.unit.dp
+import com.auracode.assistant.toolwindow.shared.EffectiveTheme
+import com.auracode.assistant.toolwindow.shared.assistantPalette
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
 
 class SubmissionRunningPlanSectionTest {
     @Test
@@ -91,5 +95,52 @@ class SubmissionRunningPlanSectionTest {
         assertEquals(0.dp, spec.dotTopPadding)
         assertEquals(6.dp, spec.inactiveDotSize)
         assertEquals(7.dp, spec.activeDotSize)
+    }
+
+    /**
+     * Verifies that the running-plan pulse uses a compact footprint while preserving accent semantics.
+     */
+    @Test
+    fun `in progress dot appearance stays compact and animated`() {
+        val palette = assistantPalette(EffectiveTheme.DARK)
+
+        val appearance = runningPlanInProgressDotAppearance(palette = palette)
+
+        assertEquals(palette.accent, appearance.color)
+        assertEquals(7.dp * 1.92f + 1.dp * 2, appearance.containerSize)
+        assertEquals(7.dp, appearance.coreDotSize)
+        assertEquals(1.dp, appearance.pulseBorderWidth)
+        assertTrue(appearance.pulseEnabled)
+        assertEquals(1180, appearance.pulseDurationMs)
+        assertEquals(1.12f, appearance.glowStartScale)
+        assertEquals(1.52f, appearance.glowEndScale)
+        assertEquals(1.08f, appearance.pulseStartScale)
+        assertEquals(1.92f, appearance.pulseEndScale)
+    }
+
+    /**
+     * Verifies that only in-progress steps opt into the animated running indicator.
+     */
+    @Test
+    fun `only in progress steps use animated indicator`() {
+        assertTrue(runningPlanUsesAnimatedIndicator(SubmissionRunningPlanStepStatus.IN_PROGRESS))
+        assertFalse(runningPlanUsesAnimatedIndicator(SubmissionRunningPlanStepStatus.COMPLETED))
+        assertFalse(runningPlanUsesAnimatedIndicator(SubmissionRunningPlanStepStatus.PENDING))
+    }
+
+    /**
+     * Verifies that the compact appearance can still render statically when animation is gated off.
+     */
+    @Test
+    fun `in progress dot appearance can disable pulse when gated off`() {
+        val palette = assistantPalette(EffectiveTheme.DARK)
+
+        val appearance = runningPlanInProgressDotAppearance(
+            palette = palette,
+            animatePulse = false,
+        )
+
+        assertEquals(palette.accent, appearance.color)
+        assertFalse(appearance.pulseEnabled)
     }
 }

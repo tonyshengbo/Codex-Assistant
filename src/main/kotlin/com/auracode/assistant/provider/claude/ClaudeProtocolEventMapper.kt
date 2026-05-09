@@ -101,6 +101,10 @@ internal class ClaudeProviderEventMapper(
                                 ),
                             )
                         }
+                    } else if (event.isError && event.completed) {
+                        // tool_use_error：工具框架层报错（如参数校验失败），落到错误节点而非工具卡片
+                        val errorMessage = extractToolUseErrorMessage(event.outputText, event.toolName)
+                        add(ProviderEvent.Error(message = errorMessage, terminal = false))
                     } else {
                         toolCallItemMapper.map(ownerId = request.requestId, event = event)?.let { item ->
                             add(ProviderEvent.ItemUpdated(item))
@@ -580,5 +584,17 @@ internal class ClaudeProviderEventMapper(
                 )
             },
         )
+    }
+
+    /**
+     * 从 tool_use_error 内容中提取可读错误信息。
+     * Claude CLI 将框架层错误包裹在 <tool_use_error>...</tool_use_error> 标签中。
+     */
+    private fun extractToolUseErrorMessage(outputText: String?, toolName: String): String {
+        val raw = outputText?.trim().orEmpty()
+        val inner = Regex("<tool_use_error>(.*?)</tool_use_error>", RegexOption.DOT_MATCHES_ALL)
+            .find(raw)?.groupValues?.getOrNull(1)?.trim()
+        val body = inner?.takeIf { it.isNotBlank() } ?: raw.takeIf { it.isNotBlank() } ?: "Tool execution failed"
+        return "$toolName: $body"
     }
 }

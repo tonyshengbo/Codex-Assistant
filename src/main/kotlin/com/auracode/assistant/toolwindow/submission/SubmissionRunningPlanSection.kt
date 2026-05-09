@@ -29,15 +29,31 @@ import androidx.compose.material.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.auracode.assistant.i18n.AuraCodeBundle
 import com.auracode.assistant.toolwindow.eventing.UiIntent
+import com.auracode.assistant.toolwindow.shared.AnimatedStatusDot
+import com.auracode.assistant.toolwindow.shared.AnimatedStatusDotAppearance
 import com.auracode.assistant.toolwindow.shared.DesignPalette
+import com.auracode.assistant.toolwindow.shared.animatedStatusDotAppearance
 import com.auracode.assistant.toolwindow.shared.assistantUiTokens
+
+private const val RUNNING_PLAN_PULSE_DURATION_MS: Int = 1180
+private const val RUNNING_PLAN_GLOW_START_SCALE: Float = 1.12f
+private const val RUNNING_PLAN_GLOW_END_SCALE: Float = 1.52f
+private const val RUNNING_PLAN_GLOW_START_ALPHA: Float = 0.24f
+private const val RUNNING_PLAN_GLOW_END_ALPHA: Float = 0f
+private const val RUNNING_PLAN_PULSE_START_SCALE: Float = 1.08f
+private const val RUNNING_PLAN_PULSE_END_SCALE: Float = 1.92f
+private const val RUNNING_PLAN_PULSE_START_ALPHA: Float = 0.7f
+private const val RUNNING_PLAN_PULSE_END_ALPHA: Float = 0f
 
 /**
  * Collects the compact visual chrome used by the running plan progress badge.
@@ -120,6 +136,38 @@ internal fun runningPlanStepRowSpec(): RunningPlanStepRowSpec {
         activeDotSize = 7.dp,
     )
 }
+
+/**
+ * Builds the compact running-plan appearance so the pulse reads like timeline while preserving row density.
+ */
+internal fun runningPlanInProgressDotAppearance(
+    palette: DesignPalette,
+    dotSize: Dp = runningPlanStepRowSpec().activeDotSize,
+    animatePulse: Boolean = true,
+): AnimatedStatusDotAppearance {
+    return animatedStatusDotAppearance(
+        color = palette.accent,
+        dotSize = dotSize,
+        pulseEnabled = animatePulse,
+        pulseDurationMs = RUNNING_PLAN_PULSE_DURATION_MS,
+        glowStartScale = RUNNING_PLAN_GLOW_START_SCALE,
+        glowEndScale = RUNNING_PLAN_GLOW_END_SCALE,
+        glowStartAlpha = RUNNING_PLAN_GLOW_START_ALPHA,
+        glowEndAlpha = RUNNING_PLAN_GLOW_END_ALPHA,
+        pulseStartScale = RUNNING_PLAN_PULSE_START_SCALE,
+        pulseEndScale = RUNNING_PLAN_PULSE_END_SCALE,
+        pulseStartAlpha = RUNNING_PLAN_PULSE_START_ALPHA,
+        pulseEndAlpha = RUNNING_PLAN_PULSE_END_ALPHA,
+        pulseBorderWidth = 1.dp,
+    )
+}
+
+/**
+ * Identifies whether one running-plan step should render the animated running indicator.
+ */
+internal fun runningPlanUsesAnimatedIndicator(
+    status: SubmissionRunningPlanStepStatus,
+): Boolean = status == SubmissionRunningPlanStepStatus.IN_PROGRESS
 
 @Composable
 internal fun SubmissionRunningPlanSection(
@@ -232,18 +280,19 @@ internal fun SubmissionRunningPlanSection(
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
                         verticalAlignment = stepRowSpec.rowVerticalAlignment,
                     ) {
-                        Box(
-                            modifier = Modifier
-                                .padding(top = stepRowSpec.dotTopPadding)
-                                .size(
-                                    if (step.status == SubmissionRunningPlanStepStatus.IN_PROGRESS) {
-                                        stepRowSpec.activeDotSize
-                                    } else {
-                                        stepRowSpec.inactiveDotSize
-                                    },
-                                )
-                                .background(step.status.dotColor(p), CircleShape),
-                        )
+                        if (runningPlanUsesAnimatedIndicator(step.status)) {
+                            RunningPlanAnimatedIndicator(
+                                appearance = runningPlanInProgressDotAppearance(palette = p),
+                                reservedDotSize = stepRowSpec.activeDotSize,
+                            )
+                        } else {
+                            Box(
+                                modifier = Modifier
+                                    .padding(top = stepRowSpec.dotTopPadding)
+                                    .size(stepRowSpec.inactiveDotSize)
+                                    .background(step.status.dotColor(p), CircleShape),
+                            )
+                        }
                         Text(
                             text = step.step,
                             color = step.status.textColor(p),
@@ -259,6 +308,38 @@ internal fun SubmissionRunningPlanSection(
             }
         }
     }
+}
+
+/**
+ * Renders the animated running-plan indicator while preserving the original dot slot width.
+ */
+@Composable
+private fun RunningPlanAnimatedIndicator(
+    appearance: AnimatedStatusDotAppearance,
+    reservedDotSize: Dp,
+) {
+    AnimatedStatusDot(
+        appearance = appearance,
+        modifier = Modifier.layout { measurable, _ ->
+            val reservedDotSizePx = reservedDotSize.roundToPx()
+            val containerSizePx = appearance.containerSize.roundToPx()
+            val placeable = measurable.measure(
+                Constraints.fixed(
+                    containerSizePx,
+                    containerSizePx,
+                ),
+            )
+            layout(
+                width = reservedDotSizePx,
+                height = reservedDotSizePx,
+            ) {
+                placeable.placeRelative(
+                    x = (reservedDotSizePx - placeable.width) / 2,
+                    y = (reservedDotSizePx - placeable.height) / 2,
+                )
+            }
+        },
+    )
 }
 
 @Composable

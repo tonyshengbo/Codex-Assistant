@@ -87,6 +87,31 @@ class AgentChatServicePersistenceTest {
     }
 
     @Test
+    fun `syncing a restored history title persists across reload`() = runBlocking {
+        val dbPath = createTempDirectory("chat-service-history-title").resolve("chat.db")
+        val settings = AgentSettingsService().apply { loadState(AgentSettingsService.State()) }
+        val provider = RecordingHistoryProvider(threadId = "thread-1")
+        val service = AgentChatService(
+            repository = SQLiteChatSessionRepository(dbPath),
+            registry = registry(provider),
+            settings = settings,
+        )
+
+        val sessionId = service.getCurrentSessionId()
+        assertTrue(service.syncSessionTitle(sessionId = sessionId, title = "History session title"))
+        service.dispose()
+
+        val reloaded = AgentChatService(
+            repository = SQLiteChatSessionRepository(dbPath),
+            registry = registry(provider),
+            settings = settings,
+        )
+
+        assertEquals("History session title", reloaded.listSessions().single { it.id == sessionId }.title)
+        reloaded.dispose()
+    }
+
+    @Test
     fun `restores remote history after reload without local timeline persistence`() = runBlocking {
         val dbPath = createTempDirectory("chat-service-persistence").resolve("chat.db")
         val settings = AgentSettingsService().apply { loadState(AgentSettingsService.State()) }

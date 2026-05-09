@@ -50,25 +50,16 @@ internal class ConversationHistoryHandler(
         val action = openResolver.resolve(
             remoteConversationId = targetRemoteConversationId,
             providerId = providerId,
-            activeSessionId = currentSessionId,
             sessions = context.chatService.listSessions(),
             openSessionTabIds = context.openSessionTabIds(),
         )
         when (action) {
             is HistoryConversationOpenAction.SwitchToExistingSession -> {
-                context.activateSessionTab(action.sessionId)
-            }
-
-            HistoryConversationOpenAction.ReuseActiveEmptySession -> {
-                val bound = context.chatService.bindRemoteConversationToEmptySession(
-                    sessionId = currentSessionId,
-                    remoteConversationId = targetRemoteConversationId,
-                    suggestedTitle = title,
-                    providerId = providerId,
+                context.chatService.syncSessionTitle(
+                    sessionId = action.sessionId,
+                    title = title,
                 )
-                if (!bound) return
-                context.publishSessionSnapshot()
-                restoreCurrentSessionHistory()
+                context.activateSessionTab(action.sessionId)
             }
 
             HistoryConversationOpenAction.OpenInNewSessionTab -> {
@@ -83,7 +74,7 @@ internal class ConversationHistoryHandler(
             HistoryConversationOpenAction.NoOp -> return
         }
         context.eventHub.publishUiIntent(UiIntent.CloseSidePanel)
-        context.onSessionSnapshotPublished()
+        context.publishSessionSnapshot()
     }
 
     fun exportRemoteConversation(remoteConversationId: String, title: String) {

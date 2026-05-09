@@ -13,7 +13,6 @@ class HistoryConversationOpenResolverTest {
         val result = resolver.resolve(
             remoteConversationId = "thread-1",
             providerId = "codex",
-            activeSessionId = "active-session",
             sessions = listOf(
                 session(id = "active-session", remoteConversationId = "", messageCount = 0),
                 session(id = "opened-session", remoteConversationId = "thread-1", messageCount = 4),
@@ -27,11 +26,10 @@ class HistoryConversationOpenResolverTest {
     }
 
     @Test
-    fun `reopens existing local session when target conversation already exists but tab is closed`() {
+    fun `opens a new tab when target conversation exists locally but its tab is closed`() {
         val result = resolver.resolve(
             remoteConversationId = "thread-2",
             providerId = "codex",
-            activeSessionId = "active-session",
             sessions = listOf(
                 session(id = "active-session", remoteConversationId = "", messageCount = 0),
                 session(id = "closed-session", remoteConversationId = "thread-2", messageCount = 2),
@@ -39,16 +37,14 @@ class HistoryConversationOpenResolverTest {
             openSessionTabIds = setOf("active-session"),
         )
 
-        assertIs<HistoryConversationOpenAction.SwitchToExistingSession>(result)
-        assertEquals("closed-session", result.sessionId)
+        assertIs<HistoryConversationOpenAction.OpenInNewSessionTab>(result)
     }
 
     @Test
-    fun `reuses current empty session when target conversation does not exist locally`() {
+    fun `opens a new tab when target conversation does not exist locally even if current session is empty`() {
         val result = resolver.resolve(
             remoteConversationId = "thread-2",
             providerId = "codex",
-            activeSessionId = "active-session",
             sessions = listOf(
                 session(id = "active-session", remoteConversationId = "", messageCount = 0),
                 session(id = "closed-session", remoteConversationId = "thread-2", messageCount = 2, providerId = "claude"),
@@ -56,7 +52,7 @@ class HistoryConversationOpenResolverTest {
             openSessionTabIds = setOf("active-session"),
         )
 
-        assertIs<HistoryConversationOpenAction.ReuseActiveEmptySession>(result)
+        assertIs<HistoryConversationOpenAction.OpenInNewSessionTab>(result)
     }
 
     @Test
@@ -64,7 +60,6 @@ class HistoryConversationOpenResolverTest {
         val result = resolver.resolve(
             remoteConversationId = "thread-2",
             providerId = "codex",
-            activeSessionId = "active-session",
             sessions = listOf(
                 session(id = "active-session", remoteConversationId = "thread-current", messageCount = 1),
                 session(id = "other-provider-session", remoteConversationId = "thread-2", messageCount = 2, providerId = "claude"),
