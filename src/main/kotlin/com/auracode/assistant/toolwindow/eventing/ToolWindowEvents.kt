@@ -253,6 +253,7 @@ internal sealed interface AppEvent {
         val codexCliPath: String,
         val claudeCliPath: String = "claude",
         val selectedEngineId: String = "codex",
+        val selectedModelsByEngine: Map<String, String> = emptyMap(),
         val availableEngines: List<com.auracode.assistant.provider.EngineDescriptor> = emptyList(),
         val nodePath: String = "",
         val languageMode: UiLanguageMode,

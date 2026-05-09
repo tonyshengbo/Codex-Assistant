@@ -96,7 +96,7 @@ class HistoryConversationFormatterTest {
         assertContains(markdown, "```sh\nrg timeline\n```")
         assertContains(markdown, "```text\n2 matches\n```")
         assertContains(markdown, "## File Change")
-        assertContains(markdown, "Updated `Timeline.kt`")
+        assertContains(markdown, "Edited `Timeline.kt`")
         assertContains(markdown, "```diff\n@@ -1 +1 @@\n-old\n+new\n```")
         assertContains(markdown, "## Assistant")
         assertContains(markdown, "Done.")

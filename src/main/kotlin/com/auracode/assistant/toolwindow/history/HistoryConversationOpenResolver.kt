@@ -7,17 +7,28 @@ internal class HistoryConversationOpenResolver {
     /** Computes the next open action without mutating any session or UI state. */
     fun resolve(
         remoteConversationId: String,
+        providerId: String,
         activeSessionId: String,
         sessions: List<AgentChatService.SessionSummary>,
         openSessionTabIds: Set<String>,
     ): HistoryConversationOpenAction {
         val normalizedRemoteId = remoteConversationId.trim()
+        val normalizedProviderId = providerId.trim()
         if (normalizedRemoteId.isBlank()) return HistoryConversationOpenAction.NoOp
         val openedSession = sessions.firstOrNull { session ->
-            session.id in openSessionTabIds && session.remoteConversationId.trim() == normalizedRemoteId
+            session.id in openSessionTabIds &&
+                session.providerId == normalizedProviderId &&
+                session.remoteConversationId.trim() == normalizedRemoteId
         }
         if (openedSession != null) {
             return HistoryConversationOpenAction.SwitchToExistingSession(openedSession.id)
+        }
+        val existingSession = sessions.firstOrNull { session ->
+            session.providerId == normalizedProviderId &&
+                session.remoteConversationId.trim() == normalizedRemoteId
+        }
+        if (existingSession != null) {
+            return HistoryConversationOpenAction.SwitchToExistingSession(existingSession.id)
         }
         val activeSession = sessions.firstOrNull { it.id == activeSessionId }
         if (activeSession != null && activeSession.messageCount == 0 && activeSession.remoteConversationId.isBlank()) {

@@ -428,6 +428,71 @@ class SubmissionAreaStoreTest {
     }
 
     @Test
+    fun `session snapshot restores remembered model for the active engine`() {
+        val store = SubmissionAreaStore()
+        store.onEvent(
+            AppEvent.SettingsSnapshotUpdated(
+                codexCliPath = "codex",
+                selectedEngineId = "codex",
+                selectedModelsByEngine = mapOf(
+                    "codex" to "gpt-5.4",
+                    "claude" to "claude-sonnet-4-6",
+                ),
+                availableEngines = listOf(
+                    EngineDescriptor(
+                        id = "codex",
+                        displayName = "Codex",
+                        models = listOf("gpt-5.4"),
+                        capabilities = EngineCapabilities(
+                            supportsThinking = true,
+                            supportsToolEvents = true,
+                            supportsCommandProposal = true,
+                            supportsDiffProposal = true,
+                        ),
+                    ),
+                    EngineDescriptor(
+                        id = "claude",
+                        displayName = "Claude",
+                        models = listOf("claude-opus-4-7", "claude-sonnet-4-6"),
+                        capabilities = EngineCapabilities(
+                            supportsThinking = true,
+                            supportsToolEvents = false,
+                            supportsCommandProposal = false,
+                            supportsDiffProposal = false,
+                            supportsReasoningEffortSelection = false,
+                        ),
+                    ),
+                ),
+                languageMode = com.auracode.assistant.settings.UiLanguageMode.FOLLOW_IDE,
+                themeMode = com.auracode.assistant.settings.UiThemeMode.FOLLOW_IDE,
+                autoContextEnabled = true,
+                savedAgents = emptyList(),
+                customModelIds = emptyList(),
+                selectedModel = "gpt-5.4",
+            ),
+        )
+
+        store.onEvent(
+            AppEvent.SessionSnapshotUpdated(
+                sessions = listOf(
+                    AgentChatService.SessionSummary(
+                        id = "s1",
+                        title = "Claude Session",
+                        updatedAt = 1L,
+                        messageCount = 0,
+                        remoteConversationId = "",
+                        providerId = "claude",
+                    ),
+                ),
+                activeSessionId = "s1",
+            ),
+        )
+
+        assertEquals("claude", store.state.value.selectedEngineId)
+        assertEquals("claude-sonnet-4-6", store.state.value.selectedModel)
+    }
+
+    @Test
     fun `session snapshot clears empty session hint once the conversation has history`() {
         val store = SubmissionAreaStore()
         store.onEvent(
@@ -585,6 +650,56 @@ class SubmissionAreaStoreTest {
 
         assertEquals("claude", store.state.value.selectedEngineId)
         assertEquals("claude-opus-4-7", store.state.value.selectedModel)
+    }
+
+    @Test
+    fun `selecting engine restores remembered model before falling back to default`() {
+        val store = SubmissionAreaStore()
+        store.onEvent(
+            AppEvent.SettingsSnapshotUpdated(
+                codexCliPath = "codex",
+                selectedEngineId = "codex",
+                selectedModelsByEngine = mapOf(
+                    "codex" to "gpt-5.4",
+                    "claude" to "claude-sonnet-4-6",
+                ),
+                availableEngines = listOf(
+                    EngineDescriptor(
+                        id = "codex",
+                        displayName = "Codex",
+                        models = listOf("gpt-5.4"),
+                        capabilities = EngineCapabilities(
+                            supportsThinking = true,
+                            supportsToolEvents = true,
+                            supportsCommandProposal = true,
+                            supportsDiffProposal = true,
+                        ),
+                    ),
+                    EngineDescriptor(
+                        id = "claude",
+                        displayName = "Claude",
+                        models = listOf("claude-opus-4-7", "claude-sonnet-4-6"),
+                        capabilities = EngineCapabilities(
+                            supportsThinking = true,
+                            supportsToolEvents = false,
+                            supportsCommandProposal = false,
+                            supportsDiffProposal = false,
+                        ),
+                    ),
+                ),
+                languageMode = com.auracode.assistant.settings.UiLanguageMode.FOLLOW_IDE,
+                themeMode = com.auracode.assistant.settings.UiThemeMode.FOLLOW_IDE,
+                autoContextEnabled = true,
+                savedAgents = emptyList(),
+                customModelIds = emptyList(),
+                selectedModel = "gpt-5.4",
+            ),
+        )
+
+        store.onEvent(AppEvent.UiIntentPublished(UiIntent.SelectEngine("claude")))
+
+        assertEquals("claude", store.state.value.selectedEngineId)
+        assertEquals("claude-sonnet-4-6", store.state.value.selectedModel)
     }
 
     @Test
@@ -1354,9 +1469,9 @@ class SubmissionAreaStoreTest {
         )
 
         assertEquals("claude-sonnet-4-6", store.state.value.selectedModel)
-        assertEquals("Sonnet 4.6", store.state.value.selectedModelOption?.shortName)
+        assertEquals("Sonnet 4.6 [1m]", store.state.value.selectedModelOption?.shortName)
         assertEquals(
-            listOf("Sonnet 4.6", "Haiku 4.5", "custom-model-1"),
+            listOf("Sonnet 4.6 [1m]", "Haiku 4.5 [200k]", "custom-model-1"),
             store.state.value.modelOptions.map { it.shortName },
         )
         assertEquals(

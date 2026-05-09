@@ -18,7 +18,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.Text
 import androidx.compose.material.Icon
@@ -92,12 +91,6 @@ internal fun ConversationExpandableCard(
     val t = assistantUiTokens()
     val interactionSource = remember { MutableInteractionSource() }
     val hovered by interactionSource.collectIsHoveredAsState()
-    val statusColor = when (status) {
-        ItemStatus.FAILED -> palette.danger
-        ItemStatus.RUNNING -> palette.accent
-        else -> palette.success
-    }
-    val indicatorColor = accentColor ?: statusColor
     HoverTooltip(text = if (expanded) AuraCodeBundle.message("timeline.collapse") else AuraCodeBundle.message("timeline.expand")) {
         Box(
             modifier = Modifier
@@ -147,10 +140,11 @@ internal fun ConversationExpandableCard(
                             )
                         }
                         Spacer(Modifier.weight(1f))
-                        Box(
-                            modifier = Modifier
-                                .size(t.spacing.sm)
-                                .background(indicatorColor, CircleShape),
+                        TimelineStatusIndicator(
+                            status = status,
+                            palette = palette,
+                            dotSize = t.spacing.sm,
+                            accentColor = accentColor,
                         )
                     }
                     if (expanded) {

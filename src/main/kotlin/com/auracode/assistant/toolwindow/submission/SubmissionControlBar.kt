@@ -249,9 +249,10 @@ internal fun SubmissionControlBar(
                 maxLines = 1,
             )
         }
-        state.usageSnapshot?.let { usage ->
-            ContextWindowIndicator(usage = usage, p = p)
-        }
+        // ContextWindowIndicator 暂时隐藏
+        // state.usageSnapshot?.let { usage ->
+        //     ContextWindowIndicator(usage = usage, p = p)
+        // }
         Spacer(Modifier.weight(1f))
         HoverTooltip(
             text = trailingActionState.tooltip,

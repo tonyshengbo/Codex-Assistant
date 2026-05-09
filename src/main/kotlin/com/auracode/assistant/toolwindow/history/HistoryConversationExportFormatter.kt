@@ -2,6 +2,7 @@ package com.auracode.assistant.toolwindow.history
 
 import com.auracode.assistant.conversation.ConversationSummary
 import com.auracode.assistant.conversation.presentation.ActivityTitleFormatter
+import com.auracode.assistant.i18n.AuraCodeBundle
 import com.auracode.assistant.session.kernel.SessionConversationEntry
 import com.auracode.assistant.session.kernel.SessionDomainEvent
 import com.auracode.assistant.session.kernel.SessionMessageRole
@@ -137,9 +138,10 @@ private fun genericSection(title: String, body: String?): String? {
 
 private fun com.auracode.assistant.session.kernel.SessionFileChange.kindLabel(): String {
     return when (kind.trim().lowercase()) {
-        "created", "create", "added", "add" -> "Created"
-        "deleted", "delete", "removed", "remove" -> "Deleted"
-        else -> "Updated"
+        "created", "create", "added", "add" -> AuraCodeBundle.message("timeline.fileChange.verb.created")
+        "deleted", "delete", "removed", "remove" -> AuraCodeBundle.message("timeline.fileChange.verb.deleted")
+        "updated", "update", "modified", "modify" -> AuraCodeBundle.message("timeline.fileChange.verb.edited")
+        else -> AuraCodeBundle.message("timeline.fileChange.verb.changed")
     }
 }
 

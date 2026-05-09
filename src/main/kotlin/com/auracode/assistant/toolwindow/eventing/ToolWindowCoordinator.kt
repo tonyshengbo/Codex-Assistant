@@ -616,6 +616,7 @@ internal class ToolWindowCoordinator(
                 codexCliPath = state.executablePathFor("codex"),
                 claudeCliPath = state.executablePathFor("claude"),
                 selectedEngineId = selectedEngineId,
+                selectedModelsByEngine = settingsService.selectedSubmissionModelsByEngine(),
                 availableEngines = chatService.availableEngines(),
                 nodePath = settingsService.nodeExecutablePath(),
                 languageMode = settingsService.uiLanguageMode(),

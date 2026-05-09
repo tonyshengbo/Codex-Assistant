@@ -81,8 +81,8 @@ class ProviderRegistryTest {
     fun `curated model catalogs expose display friendly short names`() {
         assertEquals("gpt-5.3-codex", CodexModelCatalog.option("gpt-5.3-codex")?.description)
         assertEquals("gpt-5.4", CodexModelCatalog.option("gpt-5.4")?.description)
-        assertEquals("Sonnet 4.6", ClaudeModelCatalog.option("claude-sonnet-4-6")?.shortName)
-        assertEquals("Haiku 4.5", ClaudeModelCatalog.option("claude-haiku-4-5-20251001")?.shortName)
+        assertEquals("Sonnet 4.6 [1m]", ClaudeModelCatalog.option("claude-sonnet-4-6")?.shortName)
+        assertEquals("Haiku 4.5 [200k]", ClaudeModelCatalog.option("claude-haiku-4-5-20251001")?.shortName)
     }
 
     @Test

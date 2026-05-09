@@ -20,6 +20,7 @@ import com.auracode.assistant.protocol.ItemStatus
 import com.auracode.assistant.protocol.TurnOutcome
 import com.auracode.assistant.protocol.ProviderEvent
 import com.auracode.assistant.protocol.ProviderItem
+import com.auracode.assistant.protocol.ProviderMessageAttachment
 import com.auracode.assistant.session.kernel.SessionDomainEvent
 import com.auracode.assistant.session.kernel.SessionMessageRole
 import com.auracode.assistant.settings.AgentSettingsService
@@ -196,6 +197,77 @@ class AgentChatServicePersistenceTest {
     }
 
     @Test
+    fun `preserves provider restored attachments while appending distinct local assets`() = runBlocking {
+        val dbPath = createTempDirectory("chat-service-restored-assets").resolve("chat.db")
+        val settings = AgentSettingsService().apply { loadState(AgentSettingsService.State()) }
+        val provider = RecordingHistoryProvider(threadId = "thread-1").apply {
+            enqueueAssistantReply("done")
+            emitUserAttachmentsInNextTurn(
+                listOf(
+                    ProviderMessageAttachment(
+                        id = "remote-attachment-1",
+                        kind = "image",
+                        displayName = "remote-preview.png",
+                        assetPath = "/remote/preview.png",
+                        originalPath = "/remote/original-preview.png",
+                        mimeType = "image/png",
+                        sizeBytes = 64L,
+                        status = ItemStatus.SUCCESS,
+                    ),
+                ),
+            )
+        }
+        val service = AgentChatService(
+            repository = SQLiteChatSessionRepository(dbPath),
+            registry = registry(provider),
+            settings = settings,
+        )
+        service.recordUserMessage(
+            prompt = "look at both",
+            turnId = "local-turn-1",
+            attachments = listOf(
+                PersistedMessageAttachment(
+                    id = "local-attachment-1",
+                    kind = PersistedAttachmentKind.IMAGE,
+                    displayName = "local-preview.png",
+                    assetPath = "/assets/local-preview.png",
+                    originalPath = "/tmp/local-preview.png",
+                    mimeType = "image/png",
+                    sizeBytes = 42L,
+                    status = ItemStatus.SUCCESS,
+                ),
+            ),
+        )
+
+        val finished = CompletableDeferred<Unit>()
+        service.runAgent(
+            engineId = "codex",
+            model = "gpt-5.3-codex",
+            prompt = "look at both",
+            localTurnId = "local-turn-1",
+            contextFiles = emptyList(),
+            onTurnPersisted = { finished.complete(Unit) },
+        )
+        withTimeout(2_000) { finished.await() }
+        service.dispose()
+
+        val reloaded = AgentChatService(
+            repository = SQLiteChatSessionRepository(dbPath),
+            registry = registry(provider),
+            settings = settings,
+        )
+        val history = reloaded.loadCurrentConversationHistory(limit = 10)
+        val userEvent = history.events.firstNarrative(role = MessageRole.USER)
+
+        assertEquals("look at both", userEvent.text)
+        assertEquals(2, userEvent.attachments.size)
+        assertTrue(userEvent.attachments.any { it.assetPath == "/remote/preview.png" })
+        assertTrue(userEvent.attachments.any { it.assetPath == "/assets/local-preview.png" })
+
+        reloaded.dispose()
+    }
+
+    @Test
     fun `falls back to unfiltered remote history summaries when cwd-scoped query is empty`() = runBlocking {
         val dbPath = createTempDirectory("chat-service-history-summary-fallback").resolve("chat.db")
         val settings = AgentSettingsService().apply { loadState(AgentSettingsService.State()) }
@@ -260,6 +332,7 @@ class AgentChatServicePersistenceTest {
         private val turns = mutableListOf<List<ProviderEvent>>()
         private val pendingAssistantReplies = ArrayDeque<String>()
         private var pendingTool: ProviderItem? = null
+        private var pendingUserAttachments: List<ProviderMessageAttachment> = emptyList()
         private var nextTurnNumber = 1
 
         fun enqueueAssistantReply(reply: String) {
@@ -268,6 +341,10 @@ class AgentChatServicePersistenceTest {
 
         fun emitToolInNextTurn(item: ProviderItem) {
             pendingTool = item
+        }
+
+        fun emitUserAttachmentsInNextTurn(attachments: List<ProviderMessageAttachment>) {
+            pendingUserAttachments = attachments
         }
 
         override fun stream(request: AgentRequest): kotlinx.coroutines.flow.Flow<com.auracode.assistant.session.kernel.SessionDomainEvent> = com.auracode.assistant.test.providerEventFlow {
@@ -298,8 +375,10 @@ class AgentChatServicePersistenceTest {
                 userText = request.prompt,
                 assistantText = reply,
                 toolItem = toolItem?.copy(id = "history:${toolItem.id}:$turnId"),
+                userAttachments = pendingUserAttachments,
             )
             pendingTool = null
+            pendingUserAttachments = emptyList()
             events.forEach { emit(it) }
         }
 
@@ -330,6 +409,7 @@ class AgentChatServicePersistenceTest {
             userText: String,
             assistantText: String,
             toolItem: ProviderItem? = null,
+            userAttachments: List<ProviderMessageAttachment> = emptyList(),
         ): List<ProviderEvent> {
             return buildList {
                 add(ProviderEvent.TurnStarted(turnId = turnId, threadId = threadId))
@@ -341,6 +421,7 @@ class AgentChatServicePersistenceTest {
                             status = ItemStatus.SUCCESS,
                             name = "user_message",
                             text = userText,
+                            attachments = userAttachments,
                         ),
                     ),
                 )

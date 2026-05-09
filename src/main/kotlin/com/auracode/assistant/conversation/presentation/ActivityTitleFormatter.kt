@@ -1,5 +1,6 @@
 package com.auracode.assistant.conversation.presentation
 
+import com.auracode.assistant.i18n.AuraCodeBundle
 import com.auracode.assistant.protocol.ItemStatus
 
 internal object ActivityTitleFormatter {
@@ -158,17 +159,23 @@ internal object ActivityTitleFormatter {
         }?.trim('\'', '"')
 
         return when (executable) {
-            "cat", "type", "sed", "head", "tail", "nl" ->
-                targetFile?.let { fileTitle("Read", it) } ?: TitlePresentation(title = "Read file")
+            "sed" -> summarizeSedPresentation(args)
+                ?: targetFile?.let { fileTitle(commandReadVerb(), it) }
+                ?: TitlePresentation(title = AuraCodeBundle.message("timeline.command.read.file"))
+            "cat", "type", "head", "tail", "nl" ->
+                targetFile?.let { fileTitle(commandReadVerb(), it) }
+                    ?: TitlePresentation(title = AuraCodeBundle.message("timeline.command.read.file"))
             "ls" -> TitlePresentation(title = "List files")
             "dir" -> TitlePresentation(title = "List files")
             "find" -> TitlePresentation(title = "Search files")
             "rg" -> TitlePresentation(title = rgSummary(args))
             "get-childitem" -> TitlePresentation(title = powershellSearchSummary(args))
             "set-content" ->
-                targetFile?.takeIf { it.isAbsoluteFilePath() }?.let { fileTitle("Edit", it) } ?: TitlePresentation(title = "Edit file")
+                targetFile?.takeIf { it.isAbsoluteFilePath() }?.let { fileTitle(commandEditVerb(), it) }
+                    ?: TitlePresentation(title = AuraCodeBundle.message("timeline.command.edit.file"))
             "add-content" ->
-                targetFile?.takeIf { it.isAbsoluteFilePath() }?.let { fileTitle("Edit", it) } ?: TitlePresentation(title = "Edit file")
+                targetFile?.takeIf { it.isAbsoluteFilePath() }?.let { fileTitle(commandEditVerb(), it) }
+                    ?: TitlePresentation(title = AuraCodeBundle.message("timeline.command.edit.file"))
             "git" -> TitlePresentation(title = args.getOrNull(1)?.let { "Run Git ${it.humanizeToken()}" } ?: "Run Git")
             "gradlew", "./gradlew" -> TitlePresentation(title = args.getOrNull(1)?.let { "Run Gradle ${it.humanizeToken()}" } ?: "Run Gradle")
             "python", "python3" -> TitlePresentation(title = "Run Python")
@@ -199,7 +206,7 @@ internal object ActivityTitleFormatter {
         val executable = tokens.first().commandLeaf()
         val args = tokens.drop(1)
         return when (executable) {
-            "sed" -> args.lastOrNull { token -> token.isLikelyReadablePathToken() }
+            "sed" -> if (sedWritePath(args) == null) args.lastOrNull { token -> token.isLikelyReadablePathToken() } else null
             "head", "tail", "nl" -> args.lastOrNull { token -> token.isLikelyReadablePathToken() }
             "cat", "type" -> args.singleOrNull()?.takeIf { it.isLikelyReadablePathToken() }
             else -> null
@@ -208,28 +215,115 @@ internal object ActivityTitleFormatter {
 
     private fun summarizeFileWrite(command: String): TitlePresentation? {
         val trimmed = command.trim()
+        val subCommands = trimmed
+            .split("|", "&&", "||", ";")
+            .map { it.trim() }
+            .filter { it.isNotBlank() }
+        subCommands
+            .asSequence()
+            .mapNotNull(::parseWritePresentationFromSegment)
+            .firstOrNull()
+            ?.let { return it }
         val unixMatch = Regex("""cat\s*(>>|>)\s*([^\s<]+)\s*<<""", RegexOption.IGNORE_CASE).find(trimmed)
         if (unixMatch != null) {
             val op = unixMatch.groupValues[1]
             val path = unixMatch.groupValues[2].trim('"', '\'')
             return if (path.isAbsoluteFilePath()) {
-                fileTitle("Edit", path)
+                fileTitle(commandEditVerb(), path)
             } else {
-                TitlePresentation(title = "Edit ${fileDisplayName(path)}")
+                TitlePresentation(title = "${commandEditVerb()} ${fileDisplayName(path)}")
             }
         }
 
         val psSet = Regex("""^(?:set-content|sc)\s+([^\s]+)""", RegexOption.IGNORE_CASE).find(trimmed)
         if (psSet != null) {
             val path = psSet.groupValues[1].trim('"', '\'')
-            return if (path.isAbsoluteFilePath()) fileTitle("Edit", path) else TitlePresentation(title = "Edit ${fileDisplayName(path)}")
+            return if (path.isAbsoluteFilePath()) {
+                fileTitle(commandEditVerb(), path)
+            } else {
+                TitlePresentation(title = "${commandEditVerb()} ${fileDisplayName(path)}")
+            }
         }
         val psAdd = Regex("""^(?:add-content|ac)\s+([^\s]+)""", RegexOption.IGNORE_CASE).find(trimmed)
         if (psAdd != null) {
             val path = psAdd.groupValues[1].trim('"', '\'')
-            return if (path.isAbsoluteFilePath()) fileTitle("Edit", path) else TitlePresentation(title = "Edit ${fileDisplayName(path)}")
+            return if (path.isAbsoluteFilePath()) {
+                fileTitle(commandEditVerb(), path)
+            } else {
+                TitlePresentation(title = "${commandEditVerb()} ${fileDisplayName(path)}")
+            }
         }
         return null
+    }
+
+    /** Formats `sed` commands as either read or edit actions based on in-place flags. */
+    private fun summarizeSedPresentation(args: List<String>): TitlePresentation? {
+        val sedArgs = args.drop(1)
+        val writePath = sedWritePath(sedArgs)
+        if (writePath != null) {
+            return fileTitle(commandEditVerb(), writePath)
+        }
+        val readPath = sedArgs.lastOrNull { token -> token.isLikelyReadablePathToken() }?.trim('"', '\'')
+        return readPath?.let { fileTitle(commandReadVerb(), it) }
+    }
+
+    /** Parses one command segment for file-edit operations handled by the timeline title formatter. */
+    private fun parseWritePresentationFromSegment(segment: String): TitlePresentation? {
+        val tokens = segment.tokenizeShellLike()
+        if (tokens.isEmpty()) return null
+        val executable = tokens.first().commandLeaf()
+        val args = tokens.drop(1)
+        return when (executable) {
+            "sed" -> sedWritePath(args)?.let { path ->
+                if (path.isAbsoluteFilePath()) fileTitle(commandEditVerb(), path) else TitlePresentation(title = "${commandEditVerb()} ${fileDisplayName(path)}")
+            }
+            else -> null
+        }
+    }
+
+    /** Extracts the edited file operand from `sed -i` style commands. */
+    private fun sedWritePath(args: List<String>): String? {
+        val hasInPlace = args.any { token ->
+            token == "-i" ||
+                token.startsWith("-i") ||
+                token == "--in-place" ||
+                token.startsWith("--in-place=")
+        }
+        if (!hasInPlace) return null
+
+        val candidates = mutableListOf<String>()
+        var index = 0
+        while (index < args.size) {
+            val token = args[index]
+            when {
+                token == "-e" || token == "--expression" || token == "-f" || token == "--file" -> {
+                    index += 2
+                }
+
+                token.startsWith("-e") ||
+                    token.startsWith("--expression=") ||
+                    token.startsWith("-f") ||
+                    token.startsWith("--file=") ||
+                    token == "-i" ||
+                    token.startsWith("-i") ||
+                    token == "--in-place" ||
+                    token.startsWith("--in-place=") ||
+                    token.startsWith("-") -> {
+                    index += 1
+                }
+
+                else -> {
+                    candidates += token
+                    index += 1
+                }
+            }
+        }
+
+        return when {
+            candidates.size >= 2 -> candidates.last()
+            candidates.size == 1 && !candidates.single().isLikelySedScriptToken() -> candidates.single()
+            else -> null
+        }?.trim('"', '\'')
     }
 
     private fun fileTitle(action: String, path: String): TitlePresentation {
@@ -357,9 +451,9 @@ internal object ActivityTitleFormatter {
 
         val distinctKinds = parsedChanges.map { it.kind.normalizedKind() }.distinct()
         return if (distinctKinds.size == 1) {
-            "${distinctKinds.first().pluralVerb()} ${parsedChanges.size} files"
+            AuraCodeBundle.message("timeline.fileChange.pluralPattern", distinctKinds.first().pluralVerb(), parsedChanges.size)
         } else {
-            "Changed ${parsedChanges.size} files"
+            AuraCodeBundle.message("timeline.fileChange.pluralPattern", fileChangeChangedVerb(), parsedChanges.size)
         }
     }
 
@@ -495,21 +589,40 @@ internal object ActivityTitleFormatter {
 
     private fun String.singleFileVerb(): String {
         return when (normalizedKind()) {
-            "create", "created", "add", "added" -> "Created"
-            "delete", "deleted", "remove", "removed" -> "Deleted"
-            "update", "updated", "modify", "modified" -> "Updated"
-            else -> "Changed"
+            "create", "created", "add", "added" -> AuraCodeBundle.message("timeline.fileChange.verb.created")
+            "delete", "deleted", "remove", "removed" -> AuraCodeBundle.message("timeline.fileChange.verb.deleted")
+            "update", "updated", "modify", "modified" -> AuraCodeBundle.message("timeline.fileChange.verb.edited")
+            else -> fileChangeChangedVerb()
         }
     }
 
     private fun String.pluralVerb(): String {
         return when (normalizedKind()) {
-            "create", "created", "add", "added" -> "Created"
-            "delete", "deleted", "remove", "removed" -> "Deleted"
-            "update", "updated", "modify", "modified" -> "Updated"
-            else -> "Changed"
+            "create", "created", "add", "added" -> AuraCodeBundle.message("timeline.fileChange.verb.created")
+            "delete", "deleted", "remove", "removed" -> AuraCodeBundle.message("timeline.fileChange.verb.deleted")
+            "update", "updated", "modify", "modified" -> AuraCodeBundle.message("timeline.fileChange.verb.edited")
+            else -> fileChangeChangedVerb()
         }
     }
+
+    /** Distinguishes sed scripts from file operands when parsing in-place edits. */
+    private fun String.isLikelySedScriptToken(): Boolean {
+        val normalized = trim().trim('"', '\'')
+        if (normalized.isBlank()) return false
+        if (normalized.matches(Regex("""^\d+(,\d+)?p$""", RegexOption.IGNORE_CASE))) return true
+        if (normalized.startsWith("s/") || normalized.startsWith("s#")) return true
+        if (normalized.startsWith("y/") || normalized.startsWith("y#")) return true
+        return normalized == "d" || normalized == "p" || normalized == "q"
+    }
+
+    /** Returns the localized read action used in command titles. */
+    private fun commandReadVerb(): String = AuraCodeBundle.message("timeline.command.read")
+
+    /** Returns the localized edit action used in command titles. */
+    private fun commandEditVerb(): String = AuraCodeBundle.message("timeline.command.edit")
+
+    /** Returns the localized fallback verb for mixed or unknown file changes. */
+    private fun fileChangeChangedVerb(): String = AuraCodeBundle.message("timeline.fileChange.verb.changed")
 
     private fun fileDisplayName(path: String): String {
         val normalized = path.trim().trim('"', '\'').replace('\\', '/')

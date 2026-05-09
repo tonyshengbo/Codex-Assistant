@@ -190,6 +190,7 @@ internal data class SubmissionAreaState(
     val capabilityHint: String? = null,
     val disabledCapabilityReason: String? = null,
     val selectedEngineId: String = "codex",
+    val selectedModelsByEngine: Map<String, String> = emptyMap(),
     val availableEngines: List<EngineDescriptor> = emptyList(),
     val engineMenuExpanded: Boolean = false,
     val engineSwitchConfirmation: EngineSwitchConfirmationState? = null,
@@ -371,8 +372,12 @@ internal class SubmissionAreaStore(
                         ).map { it.id }.toSet()
                         _state.value = _state.value.copy(
                             selectedEngineId = nextEngineId,
-                            selectedModel = _state.value.selectedModel.takeIf { it in nextAvailableModels }
-                                ?: defaultModelForEngine(nextEngineId),
+                            selectedModel = resolveSelectedModelForEngine(
+                                engineId = nextEngineId,
+                                availableModelIds = nextAvailableModels,
+                                selectedModelsByEngine = _state.value.selectedModelsByEngine,
+                                fallbackModel = _state.value.selectedModel,
+                            ),
                             engineMenuExpanded = false,
                             modelMenuExpanded = false,
                             engineSwitchConfirmation = null,
@@ -744,8 +749,12 @@ internal class SubmissionAreaStore(
                 _state.value = _state.value.copy(
                     currentSessionId = event.activeSessionId,
                     selectedEngineId = selectedEngineId,
-                    selectedModel = _state.value.selectedModel.takeIf { it in availableModelIds }
-                        ?: defaultModelForEngine(selectedEngineId),
+                    selectedModel = resolveSelectedModelForEngine(
+                        engineId = selectedEngineId,
+                        availableModelIds = availableModelIds,
+                        selectedModelsByEngine = _state.value.selectedModelsByEngine,
+                        fallbackModel = _state.value.selectedModel,
+                    ),
                     usageSnapshot = activeSession?.usageSnapshot,
                     activeSessionMessageCount = activeSession?.messageCount,
                     engineSwitchConfirmation = null,
@@ -789,8 +798,17 @@ internal class SubmissionAreaStore(
                     modelDisplayNames = event.availableEngines.firstOrNull { it.id == selectedEngineId }?.modelDisplayNames ?: emptyMap(),
                 ).map { it.id }.toSet()
                 val trimmedDraft = _state.value.customModelDraft.trim()
-                val selectedModel = event.selectedModel.takeIf { it in availableModelIds }
-                    ?: defaultModelForEngine(selectedEngineId)
+                val selectedModelsByEngine = normalizeSelectedModelsByEngine(
+                    selectedModelsByEngine = event.selectedModelsByEngine,
+                    fallbackEngineId = selectedEngineId,
+                    fallbackModel = event.selectedModel,
+                )
+                val selectedModel = resolveSelectedModelForEngine(
+                    engineId = selectedEngineId,
+                    availableModelIds = availableModelIds,
+                    selectedModelsByEngine = selectedModelsByEngine,
+                    fallbackModel = event.selectedModel,
+                )
                 val selectedReasoning = SubmissionReasoning.entries
                     .firstOrNull { it.effort == event.selectedReasoning }
                     ?: SubmissionReasoning.MEDIUM
@@ -803,6 +821,7 @@ internal class SubmissionAreaStore(
                     focusedContextEntry = if (event.autoContextEnabled) _state.value.focusedContextEntry else null,
                     agentEntries = restoredAgents,
                     selectedEngineId = selectedEngineId,
+                    selectedModelsByEngine = selectedModelsByEngine,
                     availableEngines = event.availableEngines,
                     engineMenuExpanded = false,
                     engineSwitchConfirmation = null,
@@ -829,6 +848,7 @@ internal class SubmissionAreaStore(
                 autoContextEnabled = _state.value.autoContextEnabled,
                 agentEntries = _state.value.agentEntries,
                 selectedEngineId = _state.value.selectedEngineId,
+                selectedModelsByEngine = _state.value.selectedModelsByEngine,
                 availableEngines = _state.value.availableEngines,
                 customModelIds = _state.value.customModelIds,
                 selectedModel = _state.value.selectedModel,
@@ -1130,6 +1150,7 @@ internal class SubmissionAreaStore(
             capabilityHint = base.capabilityHint,
             disabledCapabilityReason = base.disabledCapabilityReason,
             selectedEngineId = base.selectedEngineId,
+            selectedModelsByEngine = base.selectedModelsByEngine,
             availableEngines = base.availableEngines,
             engineMenuExpanded = false,
             engineSwitchConfirmation = null,
@@ -1437,6 +1458,44 @@ private fun defaultModelForEngine(engineId: String): String {
     }
 }
 
+/** Normalizes remembered engine-model mappings while preserving the active engine fallback. */
+private fun normalizeSelectedModelsByEngine(
+    selectedModelsByEngine: Map<String, String>,
+    fallbackEngineId: String,
+    fallbackModel: String,
+): Map<String, String> {
+    val normalized = selectedModelsByEngine
+        .mapKeys { (engineId, _) -> engineId.trim() }
+        .mapValues { (_, model) -> model.trim() }
+        .filterKeys { it.isNotBlank() }
+        .filterValues { it.isNotBlank() }
+        .toMutableMap()
+    val normalizedEngineId = fallbackEngineId.trim()
+    val normalizedModel = fallbackModel.trim()
+    if (normalizedEngineId.isNotBlank() && normalizedModel.isNotBlank()) {
+        normalized.putIfAbsent(normalizedEngineId, normalizedModel)
+    }
+    return normalized.toMap()
+}
+
+/** Resolves the model the composer should show for the requested engine. */
+private fun resolveSelectedModelForEngine(
+    engineId: String,
+    availableModelIds: Set<String>,
+    selectedModelsByEngine: Map<String, String>,
+    fallbackModel: String?,
+): String {
+    val rememberedModel = selectedModelsByEngine[engineId.trim()]?.trim()
+    if (!rememberedModel.isNullOrBlank() && rememberedModel in availableModelIds) {
+        return rememberedModel
+    }
+    val normalizedFallback = fallbackModel?.trim().orEmpty()
+    if (normalizedFallback.isNotBlank() && normalizedFallback in availableModelIds) {
+        return normalizedFallback
+    }
+    return defaultModelForEngine(engineId)
+}
+
 private fun SubmissionAreaState.clearSubmissionDraft(clearInteractionQueues: Boolean): SubmissionAreaState {
     return copy(
         document = TextFieldValue(""),
@@ -1479,6 +1538,8 @@ internal fun SubmissionAreaState.copySubmissionSessionConfiguration(): Submissio
         executionMode = executionMode,
         planEnabled = planEnabled,
         planModeAvailable = planModeAvailable,
+        selectedEngineId = selectedEngineId,
+        selectedModelsByEngine = selectedModelsByEngine,
         selectedModel = selectedModel,
         selectedReasoning = selectedReasoning,
         autoContextEnabled = autoContextEnabled,

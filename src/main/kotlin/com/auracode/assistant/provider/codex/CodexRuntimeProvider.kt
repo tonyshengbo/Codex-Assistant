@@ -26,6 +26,7 @@ import com.auracode.assistant.protocol.TurnUsage
 import com.auracode.assistant.protocol.ProviderEvent
 import com.auracode.assistant.protocol.ProviderFileChange
 import com.auracode.assistant.protocol.ProviderItem
+import com.auracode.assistant.protocol.ProviderMessageAttachment
 import com.auracode.assistant.protocol.ProviderPlanStep
 import com.auracode.assistant.protocol.ProviderRunningPlanPresentation
 import com.auracode.assistant.protocol.ProviderToolUserInputAnswerDraft
@@ -64,8 +65,13 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import java.io.File
 import java.net.URI
+import java.nio.file.Path
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
+import kotlin.io.path.extension
+import kotlin.io.path.fileSize
+import kotlin.io.path.isRegularFile
+import kotlin.io.path.name
 
 /** Streams Codex app-server events and exposes Codex-specific provider capabilities. */
 internal class CodexRuntimeProvider(
@@ -585,13 +591,21 @@ internal class CodexRuntimeProvider(
                 return emptyList()
             }
             val result = when {
-                normalizedType.contains("message") -> ProviderItem(
-                    id = sourceId,
-                    kind = ItemKind.NARRATIVE,
-                    status = status,
-                    name = if (normalizedType.contains("user")) "user_message" else "message",
-                    text = extractText(item),
-                )
+                normalizedType.contains("message") -> {
+                    val isUserMessage = normalizedType.contains("user")
+                    ProviderItem(
+                        id = sourceId,
+                        kind = ItemKind.NARRATIVE,
+                        status = status,
+                        name = if (isUserMessage) "user_message" else "message",
+                        text = extractText(item),
+                        attachments = if (isUserMessage) {
+                            extractHistoricalUserMessageAttachments(item = item, sourceId = sourceId)
+                        } else {
+                            emptyList()
+                        },
+                    )
+                }
 
                 normalizedType.contains("reasoning") -> ProviderItem(
                     id = sourceId,
@@ -909,6 +923,68 @@ internal class CodexRuntimeProvider(
                 ?: item.objectValue("content")?.string("text")
                 ?: item.arrayValue("content")?.firstTextBlock()
                 ?: ""
+        }
+
+        /**
+         * Restores image attachments embedded in historical user-message content blocks.
+         */
+        private fun extractHistoricalUserMessageAttachments(
+            item: JsonObject,
+            sourceId: String,
+        ): List<ProviderMessageAttachment> {
+            return item.arrayValue("content")
+                ?.mapNotNull { it as? JsonObject }
+                ?.mapIndexedNotNull { index, block ->
+                    when (block.string("type")?.trim()?.lowercase()) {
+                        "localimage", "local_image" -> buildHistoricalLocalImageAttachment(
+                            block = block,
+                            sourceId = sourceId,
+                            index = index,
+                        )
+                        else -> null
+                    }
+                }
+                .orEmpty()
+        }
+
+        /**
+         * Converts one historical local-image block into the shared attachment model.
+         */
+        private fun buildHistoricalLocalImageAttachment(
+            block: JsonObject,
+            sourceId: String,
+            index: Int,
+        ): ProviderMessageAttachment? {
+            val rawPath = block.string("path")
+                ?.trim()
+                ?.takeIf { it.isNotBlank() }
+                ?: return null
+            val resolvedPath = runCatching { Path.of(rawPath) }.getOrNull() ?: return null
+            val absolutePath = resolvedPath.toAbsolutePath().toString()
+            return ProviderMessageAttachment(
+                id = "$sourceId:image:$index",
+                kind = "image",
+                displayName = resolvedPath.name.ifBlank { "image.png" },
+                assetPath = absolutePath,
+                originalPath = absolutePath,
+                mimeType = historicalImageMimeType(resolvedPath),
+                sizeBytes = runCatching {
+                    if (resolvedPath.isRegularFile()) resolvedPath.fileSize() else 0L
+                }.getOrDefault(0L),
+                status = ItemStatus.SUCCESS,
+            )
+        }
+
+        /**
+         * Infers the mime type for restored historical local-image attachments.
+         */
+        private fun historicalImageMimeType(path: Path): String {
+            return when (path.extension.lowercase()) {
+                "jpg", "jpeg" -> "image/jpeg"
+                "webp" -> "image/webp"
+                "gif" -> "image/gif"
+                else -> "image/png"
+            }
         }
 
         /**

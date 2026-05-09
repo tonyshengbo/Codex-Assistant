@@ -1198,6 +1198,67 @@ class CodexRuntimeProviderTest {
     }
 
     @Test
+    fun `historical user message restores local image attachments from content blocks`() {
+        val localImage = Files.createTempFile("codex-history-user-image-", ".png")
+        Files.write(localImage, byteArrayOf(1, 2, 3, 4))
+        val parser = CodexRuntimeProvider.CodexRuntimeNotificationParser(
+            requestId = "req-1",
+            diagnosticLogger = {},
+        )
+
+        val events = parser.parseHistoricalTurn(
+            buildJsonObject {
+                put("id", "turn-history-2")
+                put("threadId", "thread-history-2")
+                put("status", "completed")
+                put(
+                    "items",
+                    buildJsonArray {
+                        add(
+                            buildJsonObject {
+                                put("type", "userMessage")
+                                put("id", "user_history_1")
+                                put("status", "completed")
+                                put(
+                                    "content",
+                                    buildJsonArray {
+                                        add(
+                                            buildJsonObject {
+                                                put("type", "text")
+                                                put("text", "please inspect this image")
+                                            },
+                                        )
+                                        add(
+                                            buildJsonObject {
+                                                put("type", "localImage")
+                                                put("path", localImage.toAbsolutePath().toString())
+                                            },
+                                        )
+                                    },
+                                )
+                            },
+                        )
+                    },
+                )
+            },
+        )
+
+        val restored = events.filterIsInstance<ProviderEvent.ItemUpdated>()
+            .single { it.item.id == "req-1:user_history_1" }
+            .item
+        assertEquals(ItemKind.NARRATIVE, restored.kind)
+        assertEquals("user_message", restored.name)
+        assertEquals("please inspect this image", restored.text)
+        assertEquals(1, restored.attachments.size)
+        val attachment = restored.attachments.single()
+        assertEquals("image", attachment.kind)
+        assertEquals(localImage.toAbsolutePath().toString(), attachment.assetPath)
+        assertEquals(localImage.toAbsolutePath().toString(), attachment.originalPath)
+        assertEquals("image/png", attachment.mimeType)
+        assertEquals(4L, attachment.sizeBytes)
+    }
+
+    @Test
     fun `image generation completion restores assistant message attachment from base64 result`() {
         val parser = CodexRuntimeProvider.CodexRuntimeNotificationParser(
             requestId = "req-1",

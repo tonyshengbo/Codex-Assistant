@@ -302,6 +302,13 @@ class AgentSettingsService : PersistentStateComponent<AgentSettingsService.State
 
     fun selectedSubmissionModel(): String = selectedSubmissionModel(defaultEngineId())
 
+    /** Returns the remembered selected model for each engine after normalization. */
+    fun selectedSubmissionModelsByEngine(): Map<String, String> {
+        return state.selectedSubmissionModelsByEngine.mapValues { (engineId, model) ->
+            normalizeSubmissionModel(engineId = engineId, model = model)
+        }
+    }
+
     fun selectedSubmissionModel(engineId: String): String {
         val normalizedEngineId = engineId.trim().ifBlank { defaultEngineId() }
         val fromMap = state.selectedSubmissionModelsByEngine[normalizedEngineId]?.trim().orEmpty()

@@ -49,6 +49,7 @@ internal class ConversationHistoryHandler(
         val providerId = context.chatService.sessionProviderId(currentSessionId)
         val action = openResolver.resolve(
             remoteConversationId = targetRemoteConversationId,
+            providerId = providerId,
             activeSessionId = currentSessionId,
             sessions = context.chatService.listSessions(),
             openSessionTabIds = context.openSessionTabIds(),

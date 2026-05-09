@@ -12,6 +12,7 @@ class HistoryConversationOpenResolverTest {
     fun `returns existing open session when target conversation already has an opened tab`() {
         val result = resolver.resolve(
             remoteConversationId = "thread-1",
+            providerId = "codex",
             activeSessionId = "active-session",
             sessions = listOf(
                 session(id = "active-session", remoteConversationId = "", messageCount = 0),
@@ -26,9 +27,10 @@ class HistoryConversationOpenResolverTest {
     }
 
     @Test
-    fun `reuses current empty session when target conversation is not already opened`() {
+    fun `reopens existing local session when target conversation already exists but tab is closed`() {
         val result = resolver.resolve(
             remoteConversationId = "thread-2",
+            providerId = "codex",
             activeSessionId = "active-session",
             sessions = listOf(
                 session(id = "active-session", remoteConversationId = "", messageCount = 0),
@@ -37,17 +39,35 @@ class HistoryConversationOpenResolverTest {
             openSessionTabIds = setOf("active-session"),
         )
 
+        assertIs<HistoryConversationOpenAction.SwitchToExistingSession>(result)
+        assertEquals("closed-session", result.sessionId)
+    }
+
+    @Test
+    fun `reuses current empty session when target conversation does not exist locally`() {
+        val result = resolver.resolve(
+            remoteConversationId = "thread-2",
+            providerId = "codex",
+            activeSessionId = "active-session",
+            sessions = listOf(
+                session(id = "active-session", remoteConversationId = "", messageCount = 0),
+                session(id = "closed-session", remoteConversationId = "thread-2", messageCount = 2, providerId = "claude"),
+            ),
+            openSessionTabIds = setOf("active-session"),
+        )
+
         assertIs<HistoryConversationOpenAction.ReuseActiveEmptySession>(result)
     }
 
     @Test
-    fun `opens a new tab when target conversation is not opened and active session is not empty`() {
+    fun `opens a new tab when target conversation is missing locally and active session is not empty`() {
         val result = resolver.resolve(
             remoteConversationId = "thread-2",
+            providerId = "codex",
             activeSessionId = "active-session",
             sessions = listOf(
                 session(id = "active-session", remoteConversationId = "thread-current", messageCount = 1),
-                session(id = "closed-session", remoteConversationId = "thread-2", messageCount = 2),
+                session(id = "other-provider-session", remoteConversationId = "thread-2", messageCount = 2, providerId = "claude"),
             ),
             openSessionTabIds = setOf("active-session"),
         )
@@ -60,6 +80,7 @@ class HistoryConversationOpenResolverTest {
         id: String,
         remoteConversationId: String,
         messageCount: Int,
+        providerId: String = "codex",
     ): AgentChatService.SessionSummary {
         return AgentChatService.SessionSummary(
             id = id,
@@ -69,7 +90,7 @@ class HistoryConversationOpenResolverTest {
             remoteConversationId = remoteConversationId,
             usageSnapshot = null,
             isRunning = false,
-            providerId = "codex",
+            providerId = providerId,
         )
     }
 }

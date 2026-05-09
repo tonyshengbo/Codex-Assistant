@@ -1142,9 +1142,13 @@ class AgentChatService private constructor(
                             event.role == SessionMessageRole.USER &&
                             !turnId.isNullOrBlank()
                         ) {
-                            val attachments = assetsByTurn[turnId].orEmpty()
-                            if (attachments.isNotEmpty()) {
-                                event.copy(attachments = attachments)
+                            val localAttachments = assetsByTurn[turnId].orEmpty()
+                            val mergedAttachments = mergeHistoryAttachments(
+                                existing = event.attachments,
+                                local = localAttachments,
+                            )
+                            if (mergedAttachments != event.attachments) {
+                                event.copy(attachments = mergedAttachments)
                             } else {
                                 event
                             }
@@ -1161,6 +1165,34 @@ class AgentChatService private constructor(
     private fun ConversationHistoryPage.attachLocalAssetsIfAvailable(sessionId: String?): ConversationHistoryPage {
         if (sessionId.isNullOrBlank()) return this
         return attachLocalAssets(sessionId)
+    }
+
+    /**
+     * Merges provider-restored attachments with locally persisted assets without overwriting
+     * already restored history attachments.
+     */
+    private fun mergeHistoryAttachments(
+        existing: List<SessionMessageAttachment>,
+        local: List<SessionMessageAttachment>,
+    ): List<SessionMessageAttachment> {
+        if (existing.isEmpty()) return local
+        if (local.isEmpty()) return existing
+        val merged = existing.toMutableList()
+        local.forEach { attachment ->
+            if (merged.none { current -> current.matchesAttachment(attachment) }) {
+                merged += attachment
+            }
+        }
+        return merged
+    }
+
+    /**
+     * Compares attachments using the most stable identifiers available across replay sources.
+     */
+    private fun SessionMessageAttachment.matchesAttachment(other: SessionMessageAttachment): Boolean {
+        return (id.isNotBlank() && id == other.id) ||
+            (assetPath.isNotBlank() && assetPath == other.assetPath) ||
+            (originalPath.isNotBlank() && originalPath == other.originalPath)
     }
 
     /** Maps persisted attachment status into the session-domain activity status enum. */
