@@ -325,6 +325,7 @@ internal class ClaudeStreamEventParser(
             inputTokens = int("input_tokens", "inputTokens"),
             cachedInputTokens = int("cache_read_input_tokens", "cacheReadInputTokens"),
             outputTokens = int("output_tokens", "outputTokens"),
+            cacheCreationInputTokens = int("cache_creation_input_tokens", "cacheCreationInputTokens"),
         )
     }
 
@@ -334,6 +335,7 @@ internal class ClaudeStreamEventParser(
             inputTokens = int("inputTokens", "input_tokens"),
             outputTokens = int("outputTokens", "output_tokens"),
             cachedInputTokens = int("cacheReadInputTokens", "cache_read_input_tokens"),
+            cacheCreationInputTokens = int("cacheCreationInputTokens", "cache_creation_input_tokens"),
             contextWindow = intOrNull("contextWindow", "context_window"),
             maxOutputTokens = intOrNull("maxOutputTokens", "max_output_tokens"),
         )

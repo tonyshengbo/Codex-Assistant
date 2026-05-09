@@ -107,6 +107,8 @@ internal sealed interface SessionDomainEvent {
         val inputTokens: Int,
         val cachedInputTokens: Int,
         val outputTokens: Int,
+        /** cache_creation_input_tokens（Claude）；Codex 该字段恒为 0。 */
+        val cacheCreationInputTokens: Int = 0,
     ) : SessionDomainEvent
 
     /** Replaces the visible session subagent snapshot list. */

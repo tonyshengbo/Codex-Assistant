@@ -67,11 +67,11 @@ internal class DefaultClaudeCliLauncher(
             add("--include-partial-messages")
             add("--permission-mode")
             add(resolvePermissionMode(request))
-            if (needsPermissionPromptTool(request)) {
+//            if (needsPermissionPromptTool(request)) {
                 // 启用 stdio 控制通道，CLI 会通过 stdout 发出 control_request，通过 stdin 接收 control_response。
                 add("--permission-prompt-tool")
                 add("stdio")
-            }
+//            }
             request.model?.trim()?.takeIf { it.isNotBlank() }?.let { model ->
                 add("--model")
                 add(model)

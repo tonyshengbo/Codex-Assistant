@@ -41,6 +41,7 @@ import com.auracode.assistant.toolwindow.settings.rememberSettingsTextInputState
 import com.auracode.assistant.toolwindow.shared.DesignPalette
 import com.auracode.assistant.toolwindow.shared.HoverTooltip
 import com.auracode.assistant.toolwindow.shared.assistantUiTokens
+import com.auracode.assistant.model.TurnUsageSnapshot
 
 /** Represents the trailing composer button state derived from engine activity. */
 internal data class SubmissionTrailingActionState(
@@ -247,6 +248,9 @@ internal fun SubmissionControlBar(
                 style = MaterialTheme.typography.caption,
                 maxLines = 1,
             )
+        }
+        state.usageSnapshot?.let { usage ->
+            ContextWindowIndicator(usage = usage, p = p)
         }
         Spacer(Modifier.weight(1f))
         HoverTooltip(
@@ -506,4 +510,20 @@ private fun ToggleChip(
             .clickable(enabled = interactive, onClick = onClick)
             .padding(horizontal = 6.dp, vertical = 3.dp),
     )
+}
+
+/** 在控制栏展示当前对话的上下文剩余百分比，无数据时不渲染。 */
+@Composable
+private fun ContextWindowIndicator(usage: TurnUsageSnapshot, p: DesignPalette) {
+    usage.leftPercent() ?: return
+    val t = assistantUiTokens()
+    Spacer(Modifier.width(t.spacing.sm))
+    HoverTooltip(text = usage.contextUsageTooltipText()) {
+        Text(
+            text = usage.headerLabel(),
+            color = p.textMuted,
+            style = MaterialTheme.typography.caption,
+            maxLines = 1,
+        )
+    }
 }

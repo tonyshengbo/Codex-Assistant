@@ -279,6 +279,7 @@ internal class ClaudeStreamAccumulator {
                 inputTokens = usage.inputTokens,
                 cachedInputTokens = usage.cachedInputTokens,
                 outputTokens = usage.outputTokens,
+                cacheCreationInputTokens = usage.cacheCreationInputTokens,
                 contextWindow = ClaudeModelCatalog.contextWindow(currentModel),
             ),
         )
@@ -502,12 +503,15 @@ internal class ClaudeStreamAccumulator {
         currentModel = resolvedModel ?: currentModel
         val resolvedContextWindow = modelUsageEntry?.value?.contextWindow ?: ClaudeModelCatalog.contextWindow(currentModel)
         event.usage?.let { usage ->
+            // result 事件的 usage 不含 cacheCreationInputTokens，优先从 modelUsage 取
+            val resolvedCacheCreation = modelUsageEntry?.value?.cacheCreationInputTokens ?: usage.cacheCreationInputTokens
             events.add(
                 ClaudeConversationEvent.UsageUpdated(
                     model = currentModel,
                     inputTokens = usage.inputTokens,
                     cachedInputTokens = usage.cachedInputTokens,
                     outputTokens = usage.outputTokens,
+                    cacheCreationInputTokens = resolvedCacheCreation,
                     contextWindow = resolvedContextWindow,
                 ),
             )

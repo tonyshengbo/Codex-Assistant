@@ -309,20 +309,16 @@ internal class ClaudeCliProvider(
             ApprovalAction.ALLOW, ApprovalAction.ALLOW_FOR_SESSION -> "allow"
             ApprovalAction.REJECT -> "deny"
         }
-        // Claude CLI 协议：response 字段直接包含 behavior 和 updatedPermissions，不需要额外嵌套。
+        // Claude CLI 协议三层封装：顶层 type=control_response，response 内含 subtype/request_id，
+        // 再嵌套真正的 can_use_tool 决策载荷（behavior）。与 buildToolUserInputResponse 保持一致。
         val response = buildJsonObject {
             put("type", "control_response")
-            put("request_id", approvalRequestId)
             put("response", buildJsonObject {
-                put("behavior", behavior)
-                if (behavior == "allow" && permissionSuggestions.isNotEmpty()) {
-                    val parsed = permissionSuggestions.mapNotNull { raw ->
-                        runCatching { Json.parseToJsonElement(raw) }.getOrNull()
-                    }
-                    if (parsed.isNotEmpty()) {
-                        put("updatedPermissions", JsonArray(parsed))
-                    }
-                }
+                put("subtype", "success")
+                put("request_id", approvalRequestId)
+                put("response", buildJsonObject {
+                    put("behavior", behavior)
+                })
             })
         }
         val json = response.toString()

@@ -47,7 +47,7 @@ class AgentChatServiceUsageSnapshotTest {
         assertEquals(116_986, snapshot.inputTokens)
         assertEquals(93_440, snapshot.cachedInputTokens)
         assertEquals(3_202, snapshot.outputTokens)
-        assertEquals("Est. 70% left", snapshot.headerLabel())
+        assertEquals("47%", snapshot.headerLabel())
 
         val persistedRepository = SQLiteChatSessionRepository(dbPath)
         val persistedSnapshot = assertNotNull(persistedRepository.loadActiveSession()?.usageSnapshot)
@@ -63,7 +63,7 @@ class AgentChatServiceUsageSnapshotTest {
 
         val reloaded = createService(dbPath, provider = UsageReportingProvider())
         val reloadedSnapshot = assertNotNull(reloaded.currentUsageSnapshot())
-        assertEquals("Est. 70% left", reloadedSnapshot.headerLabel())
+        assertEquals("47%", reloadedSnapshot.headerLabel())
 
         reloaded.dispose()
         service.dispose()

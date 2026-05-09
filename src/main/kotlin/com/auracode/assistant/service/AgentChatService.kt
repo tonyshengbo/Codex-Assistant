@@ -876,6 +876,7 @@ class AgentChatService private constructor(
                     inputTokens = event.inputTokens,
                     cachedInputTokens = event.cachedInputTokens,
                     outputTokens = event.outputTokens,
+                    cacheCreationInputTokens = event.cacheCreationInputTokens,
                 )
                 updateCurrentUsageSnapshot(
                     sessionId = sessionId,

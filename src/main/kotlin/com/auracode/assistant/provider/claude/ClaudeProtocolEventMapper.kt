@@ -184,6 +184,7 @@ internal class ClaudeProviderEventMapper(
                                 inputTokens = event.inputTokens,
                                 cachedInputTokens = event.cachedInputTokens,
                                 outputTokens = event.outputTokens,
+                                cacheCreationInputTokens = event.cacheCreationInputTokens,
                             ),
                         )
                     }

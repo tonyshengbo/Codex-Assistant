@@ -46,6 +46,8 @@ internal sealed interface ClaudeConversationEvent {
         val inputTokens: Int,
         val cachedInputTokens: Int,
         val outputTokens: Int,
+        /** cache_creation_input_tokens：本次写入缓存的 token 数，计入上下文占用。 */
+        val cacheCreationInputTokens: Int = 0,
         val contextWindow: Int? = null,
     ) : ClaudeConversationEvent
 

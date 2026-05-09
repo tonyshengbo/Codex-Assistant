@@ -7,6 +7,8 @@ internal data class ClaudeTokenUsage(
     val inputTokens: Int,
     val cachedInputTokens: Int,
     val outputTokens: Int,
+    /** cache_creation_input_tokens：本次写入缓存的 token 数，计入上下文占用。 */
+    val cacheCreationInputTokens: Int = 0,
 )
 
 /**
@@ -16,6 +18,8 @@ internal data class ClaudeModelUsage(
     val inputTokens: Int,
     val outputTokens: Int,
     val cachedInputTokens: Int,
+    /** cacheCreationInputTokens：本次写入缓存的 token 数，计入上下文占用。 */
+    val cacheCreationInputTokens: Int = 0,
     val contextWindow: Int? = null,
     val maxOutputTokens: Int? = null,
 )

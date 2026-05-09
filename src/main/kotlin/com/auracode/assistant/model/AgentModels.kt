@@ -95,15 +95,26 @@ data class TurnUsageSnapshot(
     val inputTokens: Int,
     val cachedInputTokens: Int,
     val outputTokens: Int,
+    /** cache_creation_input_tokens（Claude）；Codex 该字段恒为 0。 */
+    val cacheCreationInputTokens: Int = 0,
     val capturedAt: Long = Instant.now().toEpochMilli(),
 ) {
+    /**
+     * 当前上下文窗口内的 token 占用总量。
+     * Claude：input + cacheRead + cacheCreation + output（均为当前 turn 增量）。
+     * Codex：inputTokens 本身是整个对话累计值，直接代表上下文占用。
+     */
     val usedTokens: Int
-        get() = inputTokens + outputTokens
+        get() = inputTokens + cachedInputTokens + cacheCreationInputTokens + outputTokens
 
+    /**
+     * 有效上下文占用，上限为 contextWindow。
+     * 用 min 而非取模：累计超出窗口时说明已满，不应回绕到 0。
+     */
     val effectiveUsedTokens: Int
         get() = when {
             contextWindow <= 0 -> usedTokens
-            else -> usedTokens % contextWindow
+            else -> minOf(usedTokens, contextWindow)
         }
 
     fun usedPercent(): Int? {
@@ -123,7 +134,7 @@ data class TurnUsageSnapshot(
         return (remainingRatio * 100).roundToInt().coerceIn(0, 100)
     }
 
-    fun headerLabel(): String = leftPercent()?.let { "Est. $it% left" } ?: "Usage"
+    fun headerLabel(): String = leftPercent()?.let { "$it%" } ?: "Usage"
 
     fun contextUsageTooltipText(): String {
         return buildString {
@@ -141,6 +152,10 @@ data class TurnUsageSnapshot(
                 append("\nCached ").append(formatTokenCount(cachedInputTokens))
                 append(" (included in input)")
             }
+            if (cacheCreationInputTokens > 0) {
+                append("\nCache write ").append(formatTokenCount(cacheCreationInputTokens))
+                append(" (included in input)")
+            }
             if (model.isNotBlank()) {
                 append("\nModel ").append(model)
             }
@@ -153,6 +168,10 @@ data class TurnUsageSnapshot(
             append(" · Output ").append(formatTokenCount(outputTokens))
             if (cachedInputTokens > 0) {
                 append("\nCached ").append(formatTokenCount(cachedInputTokens))
+                append(" (included in input)")
+            }
+            if (cacheCreationInputTokens > 0) {
+                append("\nCache write ").append(formatTokenCount(cacheCreationInputTokens))
                 append(" (included in input)")
             }
             if (model.isNotBlank() || contextWindow > 0) {

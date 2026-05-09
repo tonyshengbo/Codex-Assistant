@@ -7,7 +7,7 @@ import kotlin.test.assertTrue
 
 class TurnUsageSnapshotTest {
     @Test
-    fun `used percent returns rounded bounded percentage of used context`() {
+    fun `used percent includes cached and cache creation tokens`() {
         val snapshot = TurnUsageSnapshot(
             model = "gpt-5.4",
             contextWindow = 100,
@@ -15,8 +15,8 @@ class TurnUsageSnapshotTest {
             cachedInputTokens = 10,
             outputTokens = 24,
         )
-
-        assertEquals(70, snapshot.usedPercent())
+        // usedTokens = 46 + 10 + 0 + 24 = 80
+        assertEquals(80, snapshot.usedPercent())
     }
 
     @Test
@@ -33,7 +33,7 @@ class TurnUsageSnapshotTest {
     }
 
     @Test
-    fun `used percent wraps by context window when usage exceeds context window`() {
+    fun `used percent caps at 100 when usage exceeds context window`() {
         val snapshot = TurnUsageSnapshot(
             model = "gpt-5.4",
             contextWindow = 100,
@@ -41,12 +41,12 @@ class TurnUsageSnapshotTest {
             cachedInputTokens = 0,
             outputTokens = 35,
         )
-
-        assertEquals(25, snapshot.usedPercent())
+        // usedTokens = 125, min(125, 100) = 100 → 100%
+        assertEquals(100, snapshot.usedPercent())
     }
 
     @Test
-    fun `used fraction returns wrapped ratio for progress rendering`() {
+    fun `used fraction includes cached tokens`() {
         val snapshot = TurnUsageSnapshot(
             model = "gpt-5.4",
             contextWindow = 200,
@@ -54,12 +54,12 @@ class TurnUsageSnapshotTest {
             cachedInputTokens = 10,
             outputTokens = 40,
         )
-
-        assertEquals(0.5f, snapshot.usedFraction())
+        // usedTokens = 60 + 10 + 0 + 40 = 110, 110/200 = 0.55
+        assertEquals(0.55f, snapshot.usedFraction())
     }
 
     @Test
-    fun `used fraction wraps when total usage exceeds context window`() {
+    fun `used fraction caps at 1 when total usage exceeds context window`() {
         val snapshot = TurnUsageSnapshot(
             model = "gpt-5.4",
             contextWindow = 100,
@@ -67,28 +67,45 @@ class TurnUsageSnapshotTest {
             cachedInputTokens = 0,
             outputTokens = 45,
         )
-
-        assertEquals(0.25f, snapshot.usedFraction())
+        // usedTokens = 225, min(225, 100) = 100 → 1.0
+        assertEquals(1.0f, snapshot.usedFraction())
     }
 
     @Test
-    fun `context usage tooltip shows wrapped usage against context window`() {
+    fun `context usage tooltip shows capped usage against context window`() {
         val snapshot = TurnUsageSnapshot(
             model = "gpt-5.4",
             contextWindow = 200_000,
-            inputTokens = 260_000,
-            cachedInputTokens = 12_000,
-            outputTokens = 10_000,
+            inputTokens = 100_000,
+            cachedInputTokens = 50_000,
+            outputTokens = 20_000,
         )
-
+        // usedTokens = 100000 + 50000 + 0 + 20000 = 170000, 170000/200000 = 85%
         val tooltip = snapshot.contextUsageTooltipText()
 
-        assertTrue(tooltip.contains("Used 35%"))
-        assertTrue(tooltip.contains("70,000 / 200,000 tokens"))
-        assertTrue(tooltip.contains("Input 260,000"))
-        assertTrue(tooltip.contains("Output 10,000"))
-        assertTrue(tooltip.contains("Cached 12,000"))
+        assertTrue(tooltip.contains("Used 85%"))
+        assertTrue(tooltip.contains("170,000 / 200,000 tokens"))
+        assertTrue(tooltip.contains("Input 100,000"))
+        assertTrue(tooltip.contains("Output 20,000"))
+        assertTrue(tooltip.contains("Cached 50,000"))
         assertTrue(tooltip.contains("Model gpt-5.4"))
-        assertTrue(!tooltip.contains("No completed turn yet"))
+    }
+
+    @Test
+    fun `context usage tooltip includes cache write tokens`() {
+        val snapshot = TurnUsageSnapshot(
+            model = "claude-sonnet-4-6",
+            contextWindow = 200_000,
+            inputTokens = 10_000,
+            cachedInputTokens = 40_000,
+            cacheCreationInputTokens = 20_000,
+            outputTokens = 5_000,
+        )
+        // usedTokens = 10000 + 40000 + 20000 + 5000 = 75000, 75000/200000 = 37.5% → 38%
+        val tooltip = snapshot.contextUsageTooltipText()
+
+        assertTrue(tooltip.contains("Used 38%"))
+        assertTrue(tooltip.contains("75,000 / 200,000 tokens"))
+        assertTrue(tooltip.contains("Cache write 20,000"))
     }
 }
