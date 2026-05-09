@@ -21,7 +21,7 @@ internal class SessionTabsAreaStore {
                 if (event.activeSessionId.isBlank()) return
                 val active = event.sessions.firstOrNull { it.id == event.activeSessionId }
                 val title = active?.title?.trim().orEmpty()
-                val canCreate = (active?.messageCount ?: 0) > 0
+                val canCreate = (active?.messageCount ?: 0) > 0 || active?.title?.isNotBlank() == true
                 _state.value = _state.value.copy(
                     title = title,
                     canCreateNewSession = canCreate,

@@ -9,27 +9,34 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.relocation.BringIntoViewRequester
 import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.DropdownMenu
 import androidx.compose.material.DropdownMenuItem
+import androidx.compose.material.ExperimentalMaterialApi
 import androidx.compose.material.Icon
-import androidx.compose.material.OutlinedTextField
 import androidx.compose.material.Text
 import androidx.compose.material.TextFieldDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.isCtrlPressed
@@ -38,9 +45,13 @@ import androidx.compose.ui.input.key.isShiftPressed
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
+import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.input.TransformedText
 import androidx.compose.ui.text.input.VisualTransformation
@@ -56,7 +67,9 @@ import com.auracode.assistant.toolwindow.shared.FileTypeIcon
 import com.auracode.assistant.toolwindow.shared.AssistantUiText
 import com.auracode.assistant.toolwindow.shared.assistantUiTokens
 
-@OptIn(ExperimentalFoundationApi::class)
+private val SubmissionOutlinedTextFieldTopPadding = 8.sp
+
+@OptIn(ExperimentalFoundationApi::class, ExperimentalMaterialApi::class)
 @Composable
 internal fun SubmissionInputSection(
     p: DesignPalette,
@@ -65,22 +78,49 @@ internal fun SubmissionInputSection(
     onIntent: (UiIntent) -> Unit,
 ) {
     val t = assistantUiTokens()
+    val density = LocalDensity.current
     val selectedMention = state.mentionSuggestions.getOrNull(state.activeMentionIndex)
     val selectedAgent = state.agentSuggestions.getOrNull(state.activeAgentIndex)
     val selectedSlash = state.slashSuggestions.getOrNull(state.activeSlashIndex)
     val composing = state.document.composition != null
+    val interactionSource = remember { MutableInteractionSource() }
+    var popupRootCoordinates by remember { mutableStateOf<LayoutCoordinates?>(null) }
+    var editorCoordinates by remember { mutableStateOf<LayoutCoordinates?>(null) }
+    var textLayoutResult by remember { mutableStateOf<TextLayoutResult?>(null) }
+    val cursorOffset = state.document.selection.start.coerceIn(0, state.document.text.length)
+    val popupAnchor = remember(popupRootCoordinates, editorCoordinates, textLayoutResult, cursorOffset) {
+        resolveSubmissionPopupAnchorLayout(
+            rootCoordinates = popupRootCoordinates,
+            editorCoordinates = editorCoordinates,
+        )?.let { layout ->
+            // textLayoutResult 比 cursorOffset 晚一帧更新，需要校验 offset 在旧布局范围内才能调用
+            val safeCursorRect = textLayoutResult?.let { tlr ->
+                val maxOffset = tlr.layoutInput.text.length
+                if (cursorOffset <= maxOffset) tlr.getCursorRect(cursorOffset) else null
+            }
+            calculateSubmissionPopupAnchor(
+                layout = layout,
+                cursorRect = safeCursorRect,
+            )
+        }
+    }
 
     Column(
         modifier = Modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(t.spacing.xs),
     ) {
-        Box(modifier = Modifier.fillMaxWidth()) {
+        BoxWithConstraints(
+            modifier = Modifier
+                .fillMaxWidth()
+                .onGloballyPositioned { popupRootCoordinates = it },
+        ) {
             val mentionVisualTransformation = remember(state.mentionEntries, p) {
                 MentionVisualTransformation(state.mentionEntries, p)
             }
-            OutlinedTextField(
+            BasicTextField(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .padding(top = with(density) { SubmissionOutlinedTextFieldTopPadding.toDp() })
                     .onPreviewKeyEvent {
                         if (it.type != KeyEventType.KeyDown) {
                             return@onPreviewKeyEvent false
@@ -223,54 +263,82 @@ internal fun SubmissionInputSection(
                 value = state.document,
                 onValueChange = { onIntent(UiIntent.UpdateDocument(it)) },
                 textStyle = assistantBodyTextStyle(t).copy(color = p.textPrimary),
-                label = {
-                    Text(
-                        text = AssistantUiText.COMPOSER_HINT,
-                        color = p.textMuted,
-                        style = androidx.compose.material.MaterialTheme.typography.body2,
-                    )
-                },
                 visualTransformation = mentionVisualTransformation,
                 singleLine = false,
                 maxLines = 6,
-                shape = RoundedCornerShape(t.spacing.sm),
-                colors = TextFieldDefaults.outlinedTextFieldColors(
-                    textColor = p.textPrimary,
-                    backgroundColor = p.timelineCardBg,
-                    cursorColor = p.textPrimary,
-                    focusedBorderColor = p.accent,
-                    unfocusedBorderColor = p.markdownDivider.copy(alpha = 0.55f),
-                    focusedLabelColor = p.textSecondary,
-                    unfocusedLabelColor = p.textMuted,
-                ),
+                cursorBrush = SolidColor(p.textPrimary),
+                interactionSource = interactionSource,
+                onTextLayout = { textLayoutResult = it },
+                decorationBox = { innerTextField ->
+                    TextFieldDefaults.OutlinedTextFieldDecorationBox(
+                        value = state.document.text,
+                        innerTextField = {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .onGloballyPositioned { editorCoordinates = it },
+                            ) {
+                                innerTextField()
+                            }
+                        },
+                        enabled = true,
+                        singleLine = false,
+                        visualTransformation = mentionVisualTransformation,
+                        interactionSource = interactionSource,
+                        isError = false,
+                        label = {
+                            Text(
+                                text = AssistantUiText.COMPOSER_HINT,
+                                color = p.textMuted,
+                                style = androidx.compose.material.MaterialTheme.typography.body2,
+                            )
+                        },
+                        shape = RoundedCornerShape(t.spacing.sm),
+                        colors = TextFieldDefaults.outlinedTextFieldColors(
+                            textColor = p.textPrimary,
+                            backgroundColor = p.timelineCardBg,
+                            cursorColor = p.textPrimary,
+                            focusedBorderColor = p.accent,
+                            unfocusedBorderColor = p.markdownDivider.copy(alpha = 0.55f),
+                            focusedLabelColor = p.textSecondary,
+                            unfocusedLabelColor = p.textMuted,
+                        ),
+                    )
+                },
             )
-            BoxWithConstraints {
-                val maxPopupHeight = maxHeight * 0.52f
-                val popupMode = when {
-                    state.slashPopupVisible -> SubmissionPopupMode.SLASH
-                    state.agentPopupVisible -> SubmissionPopupMode.AGENT
-                    state.mentionPopupVisible -> SubmissionPopupMode.MENTION
-                    else -> SubmissionPopupMode.NONE
-                }
-                val popupContent = buildSubmissionPopupContent(
-                    slashSuggestions = state.slashSuggestions,
-                    activeSlashIndex = state.activeSlashIndex,
-                    mentionSuggestions = state.mentionSuggestions,
-                    activeMentionIndex = state.activeMentionIndex,
-                    agentSuggestions = state.agentSuggestions,
-                    activeAgentIndex = state.activeAgentIndex,
-                    mode = popupMode,
-                )
-                val popupScrollState = rememberScrollState()
-                val popupRowRequesters = popupContent.rows.map { remember { BringIntoViewRequester() } }
+            val maxPopupHeight = maxHeight * 0.52f
+            val popupMode = when {
+                state.slashPopupVisible -> SubmissionPopupMode.SLASH
+                state.agentPopupVisible -> SubmissionPopupMode.AGENT
+                state.mentionPopupVisible -> SubmissionPopupMode.MENTION
+                else -> SubmissionPopupMode.NONE
+            }
+            val popupContent = buildSubmissionPopupContent(
+                slashSuggestions = state.slashSuggestions,
+                activeSlashIndex = state.activeSlashIndex,
+                mentionSuggestions = state.mentionSuggestions,
+                activeMentionIndex = state.activeMentionIndex,
+                agentSuggestions = state.agentSuggestions,
+                activeAgentIndex = state.activeAgentIndex,
+                mode = popupMode,
+            )
+            val popupScrollState = rememberScrollState()
+            val popupRowRequesters = popupContent.rows.map { remember { BringIntoViewRequester() } }
 
-                LaunchedEffect(popupMode, popupContent.selectedRowIndex) {
-                    if (popupMode != SubmissionPopupMode.NONE) {
-                        popupContent.selectedRowIndex?.let { selectedRowIndex ->
-                            popupRowRequesters.getOrNull(selectedRowIndex)?.bringIntoView()
-                        }
+            LaunchedEffect(popupMode, popupContent.selectedRowIndex) {
+                if (popupMode != SubmissionPopupMode.NONE) {
+                    popupContent.selectedRowIndex?.let { selectedRowIndex ->
+                        popupRowRequesters.getOrNull(selectedRowIndex)?.bringIntoView()
                     }
                 }
+            }
+
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .offset { (popupAnchor ?: SubmissionPopupAnchor(x = 0, y = 0)).toIntOffset() }
+                    .size(1.dp),
+            ) {
                 DropdownMenu(
                     expanded = state.slashPopupVisible || state.mentionPopupVisible || state.agentPopupVisible,
                     onDismissRequest = {

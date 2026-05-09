@@ -14,8 +14,9 @@ class SessionTabActionTest {
         val action = SessionTabAction(
             tab = SessionTab(
                 sessionId = "session-1",
-                fullTitle = "Session 1",
+                tooltipTitle = "Session 1",
                 displayTitle = "Session 1",
+                overflowTitle = "Session 1",
                 active = false,
                 closable = true,
                 running = false,
@@ -46,6 +47,32 @@ class SessionTabActionTest {
         }
 
         assertEquals("session-1", selectedSessionId)
+    }
+
+    @Test
+    fun `tooltip uses the clean title instead of the visible label`() {
+        val action = SessionTabAction(
+            tab = SessionTab(
+                sessionId = "session-1",
+                tooltipTitle = "修复 tab hover 标题",
+                displayTitle = "修复 tab hover...",
+                overflowTitle = "修复 tab hover 标题",
+                active = false,
+                closable = true,
+                running = false,
+            ),
+            onSelect = {},
+            onClose = {},
+        )
+
+        val component = runOnEdt {
+            action.createCustomComponent(action.templatePresentation, "test") as JPanel
+        }
+        val titleLabel = component.getClientProperty("label") as JLabel
+
+        assertEquals("修复 tab hover 标题", titleLabel.toolTipText)
+        assertEquals("修复 tab hover 标题", component.toolTipText)
+        assertEquals("修复 tab hover...", titleLabel.text)
     }
 }
 

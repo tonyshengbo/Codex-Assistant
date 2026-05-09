@@ -61,8 +61,9 @@ class SessionTabsActionCacheTest {
     private fun tab(sessionId: String, active: Boolean = false): SessionTab {
         return SessionTab(
             sessionId = sessionId,
-            fullTitle = sessionId.uppercase(),
+            tooltipTitle = sessionId.uppercase(),
             displayTitle = sessionId.uppercase(),
+            overflowTitle = sessionId.uppercase(),
             active = active,
             closable = true,
             running = false,

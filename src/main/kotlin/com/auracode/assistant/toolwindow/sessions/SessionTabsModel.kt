@@ -7,8 +7,9 @@ import com.auracode.assistant.service.AgentChatService
  */
 internal data class SessionTab(
     val sessionId: String,
-    val fullTitle: String,
+    val tooltipTitle: String,
     val displayTitle: String,
+    val overflowTitle: String,
     val active: Boolean,
     val closable: Boolean,
     val running: Boolean,
@@ -30,53 +31,57 @@ internal data class SessionTabsLayout(
  * Builds stable tab view models from session state and lightweight attention metadata.
  */
 internal object SessionTabsModel {
-    private const val MAX_VISIBLE_TABS: Int = 3
-    private const val MAX_VISIBLE_TITLE_LENGTH: Int = 18
+    private const val MIN_VISIBLE_TABS: Int = 1
+    private const val MIN_TAB_WIDTH_PX: Int = 92
+    private const val BASE_TAB_WIDTH_PX: Int = 48
+    private const val TAB_CHAR_WIDTH_PX: Int = 7
+    private const val OVERFLOW_BUTTON_WIDTH_PX: Int = 30
 
     fun buildTabs(
         openSessionIds: List<String>,
         activeSessionId: String,
         sessions: List<AgentChatService.SessionSummary>,
+        availableWidthPx: Int,
         unreadCompletionSessionIds: Set<String> = emptySet(),
     ): SessionTabsLayout {
         val sessionsById = sessions.associateBy { it.id }
         val closable = openSessionIds.size > 1
         val allTabs = openSessionIds.mapIndexedNotNull { index, sessionId ->
             val summary = sessionsById[sessionId] ?: return@mapIndexedNotNull null
-            val fullTitle = normalizeSessionTabTitle(
+            val cleanTitle = SessionTabTitleFormatter.normalizeTitle(
                 rawTitle = summary.title,
                 fallbackIndex = index,
             )
-            val decoratedTitle = decorateSessionTabTitle(
-                title = fullTitle,
-                hasUnreadCompletion = unreadCompletionSessionIds.contains(sessionId),
-            )
             SessionTab(
                 sessionId = sessionId,
-                fullTitle = decoratedTitle,
-                displayTitle = truncateSessionTabTitle(decoratedTitle),
+                tooltipTitle = cleanTitle,
+                displayTitle = SessionTabTitleFormatter.visibleTitle(cleanTitle),
+                overflowTitle = SessionTabTitleFormatter.overflowTitle(cleanTitle),
                 active = sessionId == activeSessionId,
                 closable = closable,
                 running = summary.isRunning,
                 hasUnreadCompletion = unreadCompletionSessionIds.contains(sessionId),
             )
         }
-        if (allTabs.size <= MAX_VISIBLE_TABS) {
+        if (allTabs.isEmpty()) {
+            return SessionTabsLayout(
+                visibleTabs = emptyList(),
+                overflowTabs = emptyList(),
+            )
+        }
+        val widthBudget = availableWidthPx.coerceAtLeast(MIN_TAB_WIDTH_PX)
+        if (estimatedLayoutWidthPx(allTabs) <= widthBudget) {
             return SessionTabsLayout(
                 visibleTabs = allTabs,
                 overflowTabs = emptyList(),
             )
         }
 
-        val activeIndex = allTabs.indexOfFirst { it.active }
-        val visibleIndexes = linkedSetOf<Int>()
-        allTabs.indices.take(MAX_VISIBLE_TABS).forEach { visibleIndexes += it }
-        if (activeIndex >= MAX_VISIBLE_TABS) {
-            // Keep the active tab discoverable even when it would normally fall into overflow.
-            visibleIndexes.remove(visibleIndexes.last())
-            visibleIndexes += activeIndex
-        }
-
+        val visibleIndexes = selectVisibleIndexes(
+            tabs = allTabs,
+            widthBudget = widthBudget,
+            reservedTrailingWidthPx = OVERFLOW_BUTTON_WIDTH_PX,
+        )
         val visibleTabs = visibleIndexes
             .sorted()
             .map(allTabs::get)
@@ -88,42 +93,51 @@ internal object SessionTabsModel {
     }
 
     /**
-     * Normalizes blank titles into deterministic fallback labels for stable tab rendering.
+     * Estimates one tab width so overflow decisions can track the current header budget.
      */
-    internal fun normalizeSessionTabTitle(
-        rawTitle: String,
-        fallbackIndex: Int,
-    ): String {
-        return rawTitle.trim().ifBlank { "T${fallbackIndex + 1}" }
+    private fun estimatedTabWidthPx(tab: SessionTab): Int {
+        val titleWidth = tab.displayTitle.length * TAB_CHAR_WIDTH_PX
+        val statusWidth = if (tab.running || tab.hasUnreadCompletion) 12 else 0
+        val closeWidth = if (tab.closable) 18 else 0
+        return (BASE_TAB_WIDTH_PX + titleWidth + statusWidth + closeWidth).coerceAtLeast(MIN_TAB_WIDTH_PX)
     }
 
     /**
-     * Applies lightweight status decoration that should remain visible in the tab title.
+     * Estimates the width required to show one full tab layout without overflow.
      */
-    internal fun decorateSessionTabTitle(
-        title: String,
-        hasUnreadCompletion: Boolean = false,
-    ): String {
-        return when {
-            hasUnreadCompletion -> "$title (Done)"
-            else -> title
-        }
-    }
+    private fun estimatedLayoutWidthPx(tabs: List<SessionTab>): Int = tabs.sumOf(::estimatedTabWidthPx)
 
     /**
-     * Truncates tab titles to the header budget while preserving the full title separately.
+     * Selects the visible tab indexes while keeping the active tab discoverable.
      */
-    internal fun truncateSessionTabTitle(
-        title: String,
-        maxLength: Int = MAX_VISIBLE_TITLE_LENGTH,
-    ): String {
-        if (title.length <= maxLength) {
-            return title
+    private fun selectVisibleIndexes(
+        tabs: List<SessionTab>,
+        widthBudget: Int,
+        reservedTrailingWidthPx: Int,
+    ): Set<Int> {
+        val activeIndex = tabs.indexOfFirst { it.active }
+        val visibleIndexes = linkedSetOf<Int>()
+        var consumedWidth = reservedTrailingWidthPx
+
+        if (activeIndex >= 0) {
+            visibleIndexes += activeIndex
+            consumedWidth += estimatedTabWidthPx(tabs[activeIndex])
         }
-        val safeLength = maxLength.coerceAtLeast(4)
-        // The header uses a fixed-width Swing action area, so we normalize truncation in the model
-        // instead of relying on platform-specific label ellipsis behavior.
-        return title.take(safeLength - 3).trimEnd() + "..."
+
+        for (index in tabs.indices) {
+            if (index == activeIndex) continue
+            val tabWidth = estimatedTabWidthPx(tabs[index])
+            val nextWidth = consumedWidth + tabWidth
+            if (visibleIndexes.size < MIN_VISIBLE_TABS || nextWidth <= widthBudget) {
+                visibleIndexes += index
+                consumedWidth = nextWidth
+            }
+        }
+
+        if (visibleIndexes.isEmpty()) {
+            visibleIndexes += activeIndex.takeIf { it >= 0 } ?: 0
+        }
+        return visibleIndexes
     }
 
 }

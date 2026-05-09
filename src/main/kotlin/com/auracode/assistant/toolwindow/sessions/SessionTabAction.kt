@@ -31,7 +31,7 @@ internal open class SessionTabAction(
     tab: SessionTab,
     private val onSelect: (String) -> Unit,
     private val onClose: (String) -> Unit,
-) : DumbAwareAction(tab.fullTitle), CustomComponentAction {
+) : DumbAwareAction(tab.tooltipTitle), CustomComponentAction {
     private var tab: SessionTab = tab
     private val customComponents = mutableListOf<WeakReference<JComponent>>()
 
@@ -59,17 +59,16 @@ internal open class SessionTabAction(
             addActionListener { onClose(tab.sessionId) }
         }
         titleLabel.font = titleLabel.font.deriveFont(Font.PLAIN, tokens.type.label.value)
-        titleLabel.toolTipText = tab.fullTitle
+        titleLabel.toolTipText = tab.tooltipTitle
         closeButton.preferredSize = Dimension(tokens.controls.iconMd.value.toInt(), tokens.controls.iconMd.value.toInt())
 
         val center = JPanel(BorderLayout(4, 0)).apply {
             isOpaque = false
-            // statusDot 仅在有状态时才加入布局，避免 NONE 状态下占位
+            // Only attach the status dot when the tab has a visible status.
             add(titleLabel, BorderLayout.CENTER)
         }
         panel.add(center, BorderLayout.CENTER)
-        // closeButton 用 wrapper 包裹，wrapper 宽度固定，避免 isVisible=false 时
-        // BorderLayout 仍保留 EAST 空间导致 tab 宽度不一致
+        // Keep the close-button width stable so hover-only visibility does not resize the tab.
         val closeWrapper = JPanel(BorderLayout()).apply {
             isOpaque = false
             preferredSize = Dimension(tokens.controls.iconMd.value.toInt(), tokens.controls.iconMd.value.toInt())
@@ -81,7 +80,7 @@ internal open class SessionTabAction(
         panel.putClientProperty("close", closeButton)
         panel.putClientProperty("dot", statusDot)
         applyStyle(panel, titleLabel, closeButton, statusDot)
-        panel.toolTipText = tab.fullTitle
+        panel.toolTipText = tab.tooltipTitle
         installHandlers(panel, center, titleLabel, closeButton)
         customComponents += WeakReference(panel)
         return panel
@@ -93,14 +92,14 @@ internal open class SessionTabAction(
         val closeButton = panel.getClientProperty("close") as? JButton ?: return
         val statusDot = panel.getClientProperty("dot") as? TabStatusDot ?: return
         titleLabel.text = tab.displayTitle
-        titleLabel.toolTipText = tab.fullTitle
-        panel.toolTipText = tab.fullTitle
+        titleLabel.toolTipText = tab.tooltipTitle
+        panel.toolTipText = tab.tooltipTitle
         applyStyle(panel, titleLabel, closeButton, statusDot)
     }
 
     fun updateTab(tab: SessionTab) {
         this.tab = tab
-        templatePresentation.text = tab.fullTitle
+        templatePresentation.text = tab.tooltipTitle
         refreshCustomComponents()
     }
 
@@ -110,37 +109,13 @@ internal open class SessionTabAction(
         val palette = AssistantUiTheme.palette(theme)
         val isHovered = panel.getClientProperty("hovered") == true
         val center = panel.getClientProperty("center") as? JPanel
-
-        panel.background = when {
-            tab.active -> palette.chromeRaised
-            // 固定叠加值替代 brighter()，在 dark 主题下有明显但不刺眼的反馈
-            isHovered -> Color(
-                (palette.chromeBg.red + 18).coerceAtMost(255),
-                (palette.chromeBg.green + 18).coerceAtMost(255),
-                (palette.chromeBg.blue + 22).coerceAtMost(255),
-            )
-            else -> palette.chromeBg
-        }
-
-        // 激活态：顶部 accent 线；非激活：透明占位保持高度一致
-        val topBorderColor = if (tab.active) palette.accent else Color(0, 0, 0, 0)
-        panel.border = BorderFactory.createCompoundBorder(
-            BorderFactory.createMatteBorder(2, 0, 0, 0, topBorderColor),
-            BorderFactory.createEmptyBorder(
-                tokens.spacing.xs.value.toInt(),
-                tokens.spacing.sm.value.toInt(),
-                tokens.spacing.xs.value.toInt(),
-                tokens.spacing.sm.value.toInt(),
-            ),
-        )
-
         titleLabel.foreground = if (tab.active) palette.textPrimary else palette.textSecondary
         closeButton.foreground = if (tab.active) palette.textPrimary else palette.textSecondary
 
-        // close 按钮仅在 active 或 hover 时显示；wrapper 宽度固定，不影响 tab 整体宽度
+        // Show the close button only for the active or hovered tab.
         closeButton.isVisible = tab.closable && (tab.active || isHovered)
 
-        // 状态圆点：running 优先于 done；NONE 时从布局移除避免占位
+        // Running status takes precedence over unread completion.
         val newDotState = when {
             tab.running -> TabStatusDot.State.RUNNING
             tab.hasUnreadCompletion -> TabStatusDot.State.DONE
@@ -200,7 +175,9 @@ internal open class SessionTabAction(
     }
 }
 
-/** 6×6 状态圆点，running 时由内部 Timer 驱动透明度脉冲动画。 */
+/**
+ * Draws the small status dot and pulses it while the session is still running.
+ */
 internal class TabStatusDot : JPanel() {
     enum class State { NONE, RUNNING, DONE }
 
@@ -235,7 +212,7 @@ internal class TabStatusDot : JPanel() {
         val g2 = g as Graphics2D
         g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
         val alpha = if (state == State.RUNNING) {
-            // 0→1→0 triangle wave for pulse
+            // Use a triangle wave to keep the running pulse smooth.
             val t = pulseAlpha % 2f
             if (t < 1f) t else 2f - t
         } else {

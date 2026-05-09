@@ -103,7 +103,7 @@ internal fun SessionTabsRegion(
     }
 
     Row(
-        modifier = Modifier.fillMaxWidth().background(p.topBarBg).padding(horizontal = t.spacing.md, vertical = t.spacing.xs + t.spacing.xs),
+        modifier = Modifier.fillMaxWidth().padding(horizontal = t.spacing.md, vertical = t.spacing.xs + t.spacing.xs),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Row(

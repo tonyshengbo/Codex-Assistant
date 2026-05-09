@@ -4,6 +4,11 @@ import com.auracode.assistant.service.AgentChatService
 import com.auracode.assistant.toolwindow.shared.UiText
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.wm.ex.ToolWindowEx
+import java.awt.Component
+import java.awt.Container
+import java.awt.Insets
+import java.awt.event.ComponentAdapter
+import java.awt.event.ComponentEvent
 
 internal class SessionTabCoordinator(
     private val chatService: AgentChatService,
@@ -19,6 +24,12 @@ internal class SessionTabCoordinator(
         onClose = { sessionId -> closeSessionTab(sessionId) },
     )
     private var activeSessionTabId: String = ""
+    private var headerResizeListenerInstalled = false
+    private val headerResizeListener = object : ComponentAdapter() {
+        override fun componentResized(e: ComponentEvent?) {
+            refresh()
+        }
+    }
 
     fun initialize() {
         activeSessionTabId = chatService.getCurrentSessionId()
@@ -149,10 +160,12 @@ internal class SessionTabCoordinator(
             return
         }
         val toolWindowEx = toolWindowProvider() ?: return
+        installHeaderResizeListener(toolWindowEx.component)
         val layout = SessionTabsModel.buildTabs(
             openSessionIds = openSessionTabs.toList(),
             activeSessionId = activeSessionTabId,
             sessions = sessions,
+            availableWidthPx = resolveAvailableTabWidth(toolWindowEx.component),
             unreadCompletionSessionIds = sessionAttentionStore.unreadCompletionSessionIds(),
         )
         val update = headerActionCache.update(layout)
@@ -161,7 +174,46 @@ internal class SessionTabCoordinator(
         }
     }
 
+    /**
+     * Hooks one resize listener into the tool window header host so tab overflow refreshes with width changes.
+     */
+    private fun installHeaderResizeListener(root: Component?) {
+        if (headerResizeListenerInstalled || root == null) return
+        findHeaderHost(root)?.addComponentListener(headerResizeListener)
+        headerResizeListenerInstalled = true
+    }
+
+    /**
+     * Resolves the current tab-action width budget from the real header host when available.
+     */
+    private fun resolveAvailableTabWidth(root: Component?): Int {
+        val headerHost = findHeaderHost(root)
+        val hostInsets = (headerHost as? Container)?.insets ?: Insets(0, 0, 0, 0)
+        val measuredWidth = headerHost?.width?.takeIf { it > 0 } ?: root?.width?.takeIf { it > 0 }
+        val fallbackWidth = DEFAULT_HEADER_WIDTH_PX
+        val widthBudget = (measuredWidth ?: fallbackWidth) - hostInsets.left - hostInsets.right - HEADER_LAYOUT_PADDING_PX
+        return widthBudget.coerceAtLeast(MINIMUM_TAB_BUDGET_PX)
+    }
+
+    /**
+     * Walks up the tool window component tree to find a stable header-sized container for width budgeting.
+     */
+    private fun findHeaderHost(component: Component?): Component? {
+        var current = component
+        while (current != null) {
+            if (current is Container && current.height in HEADER_HEIGHT_RANGE_PX) {
+                return current
+            }
+            current = current.parent
+        }
+        return component
+    }
+
     companion object {
         private const val MAX_OPEN_TABS = 10
+        private const val DEFAULT_HEADER_WIDTH_PX = 420
+        private const val HEADER_LAYOUT_PADDING_PX = 12
+        private const val MINIMUM_TAB_BUDGET_PX = 96
+        private val HEADER_HEIGHT_RANGE_PX = 28..48
     }
 }
