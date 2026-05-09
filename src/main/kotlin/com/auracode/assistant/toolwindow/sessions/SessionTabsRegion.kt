@@ -123,14 +123,14 @@ internal fun SessionTabsRegion(
         Spacer(modifier = Modifier.width(t.spacing.xs))
         SessionTabActionChip(
             p = p,
-            iconPath = "/icons/add.svg",
+            iconPath = "/icons/refresh.svg",
             description = AuraCodeBundle.message("header.action.newSession"),
             enabled = state.canCreateNewSession,
         ) {
             showConfirmDialog = true
         }
         Spacer(modifier = Modifier.width(t.spacing.xs))
-        SessionTabActionChip(p, "/icons/split.svg", AuraCodeBundle.message("header.action.newTab")) { showNewTabConfirmDialog = true }
+        SessionTabActionChip(p, "/icons/add.svg", AuraCodeBundle.message("header.action.newTab")) { showNewTabConfirmDialog = true }
         Spacer(modifier = Modifier.width(t.spacing.xs))
         SessionTabActionChip(p, "/icons/history.svg", AuraCodeBundle.message("header.action.history")) { onIntent(UiIntent.ToggleHistory) }
         Spacer(modifier = Modifier.width(t.spacing.xs))
