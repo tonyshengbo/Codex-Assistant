@@ -221,6 +221,7 @@ class ComposeToolWindowPanel(
         sessionTabCoordinator = SessionTabCoordinator(
             chatService = chatService,
             sessionAttentionStore = sessionAttentionStore,
+            isSessionConversationRunning = { sessionId -> coordinator.isSessionConversationRunning(sessionId) },
             toolWindowProvider = { toolWindow as? ToolWindowEx },
             onStatus = { message -> eventHub.publish(AppEvent.StatusTextUpdated(message)) },
             onBeforeSessionActivated = { sessionId -> coordinator.captureSessionState(sessionId) },

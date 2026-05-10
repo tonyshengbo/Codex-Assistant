@@ -11,10 +11,10 @@ import com.auracode.assistant.protocol.TurnOutcome
 import com.auracode.assistant.protocol.ProviderEvent
 import com.auracode.assistant.session.kernel.SessionDomainEvent
 import com.auracode.assistant.settings.AgentSettingsService
+import com.auracode.assistant.test.providerEventFlow
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import kotlin.io.path.createTempDirectory
@@ -124,6 +124,38 @@ class AgentChatServiceMultiSessionRunTest {
         }
 
         assertEquals(listOf(true, false), stateTransitions)
+        service.dispose()
+    }
+
+    @Test
+    fun `turn completed clears running state before provider flow exits`() = runBlocking {
+        val provider = DelayedFlowCompletionProvider()
+        val service = createService(provider)
+        val requestStarted = CompletableDeferred<Unit>()
+
+        service.runAgent(
+            engineId = "codex",
+            model = "gpt-5.3-codex",
+            prompt = "delayed-finish",
+            contextFiles = emptyList(),
+            onSessionDomainEvents = { events ->
+                if (events.any { it is SessionDomainEvent.ThreadStarted }) {
+                    requestStarted.complete(Unit)
+                }
+            },
+        )
+
+        withTimeout(5_000) { requestStarted.await() }
+        provider.completePrompt("delayed-finish")
+        withTimeout(5_000) { provider.awaitTurnCompleted("delayed-finish") }
+
+        assertFalse(
+            service.listSessions().associateBy { it.id }.getValue(service.getCurrentSessionId()).isRunning,
+        )
+
+        provider.allowFlowToExit("delayed-finish")
+        withTimeout(5_000) { provider.awaitFlowExited("delayed-finish") }
+
         service.dispose()
     }
 
@@ -246,6 +278,54 @@ class AgentChatServiceMultiSessionRunTest {
 
         suspend fun awaitCompletedRequest(prompt: String) {
             completionSignals.getOrPut(prompt) { CompletableDeferred() }.await()
+        }
+    }
+
+    private class DelayedFlowCompletionProvider : AgentProvider {
+        private val requestIdsByPrompt = mutableMapOf<String, String>()
+        private val releaseFlowByPrompt = mutableMapOf<String, CompletableDeferred<Unit>>()
+        private val turnCompletedByPrompt = mutableMapOf<String, CompletableDeferred<Unit>>()
+        private val flowExitedByPrompt = mutableMapOf<String, CompletableDeferred<Unit>>()
+        private val outcomesByPrompt = mutableMapOf<String, CompletableDeferred<TurnOutcome>>()
+
+        override fun stream(request: AgentRequest): Flow<SessionDomainEvent> = providerEventFlow {
+            requestIdsByPrompt[request.prompt] = request.requestId
+            emit(ProviderEvent.ThreadStarted(threadId = "thread-${request.prompt}"))
+            when (outcomesByPrompt.getOrPut(request.prompt) { CompletableDeferred() }.await()) {
+                TurnOutcome.SUCCESS -> {
+                    emit(ProviderEvent.TurnCompleted(turnId = "turn-${request.prompt}", outcome = TurnOutcome.SUCCESS))
+                    turnCompletedByPrompt.getOrPut(request.prompt) { CompletableDeferred() }.complete(Unit)
+                    releaseFlowByPrompt.getOrPut(request.prompt) { CompletableDeferred() }.await()
+                    flowExitedByPrompt.getOrPut(request.prompt) { CompletableDeferred() }.complete(Unit)
+                }
+
+                TurnOutcome.CANCELLED -> Unit
+
+                else -> Unit
+            }
+        }
+
+        override fun cancel(requestId: String) {
+            val prompt = requestIdsByPrompt.entries.firstOrNull { it.value == requestId }?.key ?: return
+            outcomesByPrompt.getOrPut(prompt) { CompletableDeferred() }.complete(TurnOutcome.CANCELLED)
+            releaseFlowByPrompt.getOrPut(prompt) { CompletableDeferred() }.complete(Unit)
+            flowExitedByPrompt.getOrPut(prompt) { CompletableDeferred() }.complete(Unit)
+        }
+
+        fun completePrompt(prompt: String) {
+            outcomesByPrompt.getOrPut(prompt) { CompletableDeferred() }.complete(TurnOutcome.SUCCESS)
+        }
+
+        fun allowFlowToExit(prompt: String) {
+            releaseFlowByPrompt.getOrPut(prompt) { CompletableDeferred() }.complete(Unit)
+        }
+
+        suspend fun awaitTurnCompleted(prompt: String) {
+            turnCompletedByPrompt.getOrPut(prompt) { CompletableDeferred() }.await()
+        }
+
+        suspend fun awaitFlowExited(prompt: String) {
+            flowExitedByPrompt.getOrPut(prompt) { CompletableDeferred() }.await()
         }
     }
 }

@@ -43,6 +43,7 @@ internal object SessionTabsModel {
         sessions: List<AgentChatService.SessionSummary>,
         availableWidthPx: Int,
         unreadCompletionSessionIds: Set<String> = emptySet(),
+        runningSessionIds: Set<String> = emptySet(),
     ): SessionTabsLayout {
         val sessionsById = sessions.associateBy { it.id }
         val closable = openSessionIds.size > 1
@@ -59,7 +60,7 @@ internal object SessionTabsModel {
                 overflowTitle = SessionTabTitleFormatter.overflowTitle(cleanTitle),
                 active = sessionId == activeSessionId,
                 closable = closable,
-                running = summary.isRunning,
+                running = runningSessionIds.contains(sessionId),
                 hasUnreadCompletion = unreadCompletionSessionIds.contains(sessionId),
             )
         }

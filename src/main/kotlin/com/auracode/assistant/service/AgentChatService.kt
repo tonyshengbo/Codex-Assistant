@@ -718,13 +718,18 @@ class AgentChatService private constructor(
                     onSessionDomainEvents(listOf(normalizeThrowableAsSessionError(engineId, error)))
                 }
             } finally {
-                synchronized(stateLock) {
-                    sessionRuns.clearRun(sessionId, request.requestId)
+                val shouldNotifyRunStateChanged = synchronized(stateLock) {
+                    val cleared = sessionRuns.clearRun(sessionId, request.requestId)
+                    var acceptedRequestRemoved = false
                     if (acceptedRunRequestIdsBySessionId[sessionId] == request.requestId) {
                         acceptedRunRequestIdsBySessionId.remove(sessionId)
+                        acceptedRequestRemoved = true
                     }
+                    cleared != null || acceptedRequestRemoved
                 }
-                onRunStateChanged()
+                if (shouldNotifyRunStateChanged) {
+                    onRunStateChanged()
+                }
             }
         }
         synchronized(stateLock) {

@@ -636,6 +636,14 @@ internal class ToolWindowCoordinator(
         engineId = chatService.sessionProviderId(sessionId),
     )
 
+    internal fun isSessionConversationRunning(sessionId: String): Boolean {
+        val projection = normalizeHistoryTransientUi(
+            sessionId = sessionId,
+            projection = sessionProjectionBuilder.project(kernelForSession(sessionId).currentState),
+        )
+        return projection.conversation.isRunning
+    }
+
     /** Projects only the edited-file submission slice for one session snapshot. */
     private fun projectEditedFiles(state: com.auracode.assistant.session.kernel.SessionState): List<EditedFileAggregate> {
         return sessionProjectionBuilder.project(state).submission.editedFiles

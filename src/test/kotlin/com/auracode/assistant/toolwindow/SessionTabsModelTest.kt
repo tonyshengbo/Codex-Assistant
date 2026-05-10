@@ -70,9 +70,10 @@ class SessionTabsModelTest {
             openSessionIds = listOf("s1"),
             activeSessionId = "s1",
             sessions = listOf(
-                AgentChatService.SessionSummary("s1", "First Session", 1L, 0, "", isRunning = true),
+                AgentChatService.SessionSummary("s1", "First Session", 1L, 0, "", isRunning = false),
             ),
             availableWidthPx = 180,
+            runningSessionIds = setOf("s1"),
         )
 
         assertEquals("First Session", layout.visibleTabs.single().tooltipTitle)

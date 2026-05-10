@@ -13,6 +13,9 @@ import java.awt.event.ComponentEvent
 internal class SessionTabCoordinator(
     private val chatService: AgentChatService,
     private val sessionAttentionStore: SessionAttentionStore = SessionAttentionStore(),
+    private val isSessionConversationRunning: (String) -> Boolean = { sessionId ->
+        chatService.listSessions().firstOrNull { it.id == sessionId }?.isRunning == true
+    },
     private val toolWindowProvider: () -> ToolWindowEx?,
     private val onStatus: (UiText) -> Unit,
     private val onBeforeSessionActivated: (String) -> Unit,
@@ -161,12 +164,16 @@ internal class SessionTabCoordinator(
         }
         val toolWindowEx = toolWindowProvider() ?: return
         installHeaderResizeListener(toolWindowEx.component)
+        val runningSessionIds = openSessionTabs.filterTo(linkedSetOf()) { sessionId ->
+            isSessionConversationRunning(sessionId)
+        }
         val layout = SessionTabsModel.buildTabs(
             openSessionIds = openSessionTabs.toList(),
             activeSessionId = activeSessionTabId,
             sessions = sessions,
             availableWidthPx = resolveAvailableTabWidth(toolWindowEx.component),
             unreadCompletionSessionIds = sessionAttentionStore.unreadCompletionSessionIds(),
+            runningSessionIds = runningSessionIds,
         )
         val update = headerActionCache.update(layout)
         if (update.structureChanged) {
