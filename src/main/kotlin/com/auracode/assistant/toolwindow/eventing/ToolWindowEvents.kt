@@ -121,6 +121,7 @@ internal sealed interface UiIntent {
     data object MoveSlashSelectionPrevious : UiIntent
     data object DismissSlashPopup : UiIntent
     data class SelectSlashCommand(val command: String) : UiIntent
+    data object RunInitSlashCommand : UiIntent
     data class SelectSlashSkill(val name: String) : UiIntent
     data object MoveApprovalActionNext : UiIntent
     data object MoveApprovalActionPrevious : UiIntent
@@ -395,6 +396,7 @@ internal sealed interface AppEvent {
     data class PromptAccepted(
         val prompt: String,
         val localTurnId: String? = null,
+        val clearSubmissionDraft: Boolean = true,
     ) : AppEvent
     data object ConversationReset : AppEvent
 }

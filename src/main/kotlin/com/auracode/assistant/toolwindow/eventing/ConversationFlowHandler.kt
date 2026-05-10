@@ -5,19 +5,28 @@ import androidx.compose.ui.text.input.TextFieldValue
 import com.auracode.assistant.integration.ide.IdeExternalRequest
 import com.auracode.assistant.model.AgentApprovalMode
 import com.auracode.assistant.model.AgentCollaborationMode
+import com.auracode.assistant.model.ContextFile
 import com.auracode.assistant.model.FileAttachment
 import com.auracode.assistant.model.ImageAttachment
 import com.auracode.assistant.persistence.chat.PersistedAttachmentKind
 import com.auracode.assistant.protocol.ItemStatus
 import com.auracode.assistant.session.kernel.SessionDomainEvent
 import com.auracode.assistant.session.kernel.SessionTurnOutcome
+import com.auracode.assistant.toolwindow.submission.SubmissionAreaState
 import com.auracode.assistant.toolwindow.submission.PendingSubmission
+import com.auracode.assistant.toolwindow.submission.supportsInitSlashCommand
 import com.auracode.assistant.toolwindow.shared.UiText
+import java.nio.file.Files
+import java.nio.file.Path
 
 internal class ConversationFlowHandler(
     private val context: ToolWindowCoordinatorContext,
     private val workspaceHandler: WorkspaceInteractionHandler,
 ) {
+    companion object {
+        private const val AGENTS_MD_FILE_NAME: String = "AGENTS.md"
+    }
+
     fun deleteSession(onRestoreHistory: () -> Unit, sessionId: String) {
         if (!context.chatService.deleteSession(sessionId)) return
         context.dropSessionViewState(sessionId)
@@ -48,11 +57,7 @@ internal class ConversationFlowHandler(
     fun submitPromptIfAllowed() {
         val submissionState = context.submissionStore.state.value
         val submission = buildPendingSubmission(submissionState) ?: return
-        if (submissionState.sessionIsRunning || context.conversationStore.state.value.isRunning) {
-            enqueuePendingSubmission(submission)
-        } else {
-            dispatchSubmission(submission)
-        }
+        dispatchSubmissionOrQueue(submissionState, submission)
     }
 
     /** Routes IDE-originated requests through the same submission pipeline as composer prompts. */
@@ -63,11 +68,38 @@ internal class ConversationFlowHandler(
             ),
         )
         val submission = buildExternalSubmission(request)
-        if (context.submissionStore.state.value.sessionIsRunning || context.conversationStore.state.value.isRunning) {
-            enqueuePendingSubmission(submission)
-        } else {
-            dispatchSubmission(submission)
+        dispatchSubmissionOrQueue(context.submissionStore.state.value, submission)
+    }
+
+    /** Submits the shared Aura `/init` prompt without consuming the current composer draft. */
+    fun submitInitSlashCommand() {
+        val submissionState = context.submissionStore.state.value
+        if (submissionState.sessionIsRunning || context.conversationStore.state.value.isRunning) {
+            context.eventHub.publish(
+                AppEvent.StatusTextUpdated(
+                    UiText.bundle("composer.slash.init.disabled"),
+                ),
+            )
+            return
         }
+        if (!supportsInitSlashCommand(submissionState.selectedEngineId)) {
+            context.eventHub.publish(
+                AppEvent.StatusTextUpdated(
+                    UiText.bundle("composer.slash.init.unsupported", submissionState.selectedEngineId),
+                ),
+            )
+            return
+        }
+        val targetPath = Path.of(context.chatService.currentWorkingDirectory(), AGENTS_MD_FILE_NAME)
+        if (Files.exists(targetPath)) {
+            context.eventHub.publish(
+                AppEvent.StatusTextUpdated(
+                    UiText.bundle("composer.slash.init.exists", AGENTS_MD_FILE_NAME),
+                ),
+            )
+            return
+        }
+        dispatchSubmission(buildInitSlashSubmission(submissionState))
     }
 
     fun cancelPromptRun(onResetPlanFlowState: () -> Unit) {
@@ -178,6 +210,39 @@ internal class ConversationFlowHandler(
         )
     }
 
+    /** Builds one provider-agnostic `/init` submission while preserving the current draft state. */
+    private fun buildInitSlashSubmission(
+        submissionState: SubmissionAreaState,
+    ): PendingSubmission {
+        return PendingSubmission(
+            id = ToolWindowCoordinatorIds.newPendingSubmissionId(submissionState),
+            engineId = submissionState.selectedEngineId,
+            prompt = SlashInitCommandPrompt.load(),
+            systemInstructions = submissionState.serializedSystemInstructions(),
+            contextFiles = emptyList<ContextFile>(),
+            imageAttachments = emptyList(),
+            fileAttachments = emptyList<FileAttachment>(),
+            stagedAttachments = emptyList(),
+            selectedModel = submissionState.selectedModel,
+            selectedReasoning = submissionState.selectedReasoning,
+            executionMode = submissionState.executionMode,
+            planEnabled = submissionState.planEnabled,
+            clearSubmissionDraftOnAccept = false,
+        )
+    }
+
+    /** Dispatches immediately when idle and otherwise keeps the existing queued-send behavior. */
+    private fun dispatchSubmissionOrQueue(
+        submissionState: SubmissionAreaState,
+        submission: PendingSubmission,
+    ) {
+        if (submissionState.sessionIsRunning || context.conversationStore.state.value.isRunning) {
+            enqueuePendingSubmission(submission)
+        } else {
+            dispatchSubmission(submission)
+        }
+    }
+
     private fun enqueuePendingSubmission(submission: PendingSubmission) {
         val sessionId = context.activeSessionId()
         context.pendingSubmissionQueue(sessionId).addLast(submission)
@@ -221,7 +286,11 @@ internal class ConversationFlowHandler(
         context.dispatchSessionEvent(sessionId, AppEvent.ClearToolUserInputs)
         context.dispatchSessionEvent(
             sessionId,
-            AppEvent.PromptAccepted(prompt = submission.prompt, localTurnId = localTurnId),
+            AppEvent.PromptAccepted(
+                prompt = submission.prompt,
+                localTurnId = localTurnId,
+                clearSubmissionDraft = submission.clearSubmissionDraftOnAccept,
+            ),
         )
         localMessage?.let { message ->
             context.publishLocalUserMessage(

@@ -169,6 +169,7 @@ internal data class PendingSubmission(
     val executionMode: SubmissionMode,
     val planEnabled: Boolean,
     val engineId: String = "codex",
+    val clearSubmissionDraftOnAccept: Boolean = true,
     val createdAt: Long = System.currentTimeMillis(),
 ) {
     val summary: String
@@ -652,11 +653,13 @@ internal class SubmissionAreaStore(
                     sessionIsRunning = event.isRunning,
                     editedFiles = event.editedFiles,
                     editedFilesExpanded = _state.value.editedFilesExpanded && event.editedFiles.isNotEmpty(),
-                )
+                ).refreshSlashSuggestions()
             }
 
             is AppEvent.PromptAccepted -> {
-                _state.value = _state.value.clearSubmissionDraft(clearInteractionQueues = true)
+                if (event.clearSubmissionDraft) {
+                    _state.value = _state.value.clearSubmissionDraft(clearInteractionQueues = true)
+                }
             }
 
             is AppEvent.ApprovalRequested -> {

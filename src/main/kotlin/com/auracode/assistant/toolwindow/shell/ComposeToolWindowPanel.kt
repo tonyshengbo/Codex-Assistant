@@ -347,6 +347,10 @@ class ComposeToolWindowPanel(
             is UiIntent.SelectSlashCommand -> {
                 when (resolveSlashCommandDispatch(intent.command)) {
                     SlashCommandDispatch.PUBLISH_ONLY -> eventHub.publishUiIntent(intent)
+                    SlashCommandDispatch.EXECUTE_INIT_COMMAND -> {
+                        eventHub.publishUiIntent(intent)
+                        eventHub.publishUiIntent(UiIntent.RunInitSlashCommand)
+                    }
                     SlashCommandDispatch.START_NEW_SESSION -> {
                         // Reuse the existing new-session entrypoint so slash and header behavior stay identical.
                         eventHub.publishUiIntent(intent)

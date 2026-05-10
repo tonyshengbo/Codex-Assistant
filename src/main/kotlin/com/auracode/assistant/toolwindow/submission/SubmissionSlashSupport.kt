@@ -3,6 +3,8 @@ package com.auracode.assistant.toolwindow.submission
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.TextFieldValue
 import com.auracode.assistant.i18n.AuraCodeBundle
+import com.auracode.assistant.provider.CodexProviderFactory
+import com.auracode.assistant.provider.claude.ClaudeProviderFactory
 import com.auracode.assistant.toolwindow.eventing.SubmissionMode
 
 internal data class SlashQueryMatch(
@@ -44,6 +46,7 @@ internal enum class SubmissionSlashCommand(
 ) {
     PLAN("/plan"),
     AUTO("/auto"),
+    INIT("/init"),
     NEW("/new"),
     TAB("/tab"),
 }
@@ -56,10 +59,32 @@ internal fun buildSlashCommandSuggestions(
 ): List<SlashSuggestionItem.Command> {
     val normalizedQuery = query.trim()
     return SubmissionSlashCommand.entries
+        .filter { command -> command.isVisibleForEngine(state.selectedEngineId) }
         .map { command -> command.toSuggestion(state) }
         .filter { suggestion ->
             normalizedQuery.isBlank() || suggestion.command.removePrefix("/").contains(normalizedQuery, ignoreCase = true)
         }
+}
+
+/**
+ * Restricts slash commands to the engines that can honor their local Aura behavior.
+ */
+private fun SubmissionSlashCommand.isVisibleForEngine(engineId: String): Boolean {
+    return when (this) {
+        SubmissionSlashCommand.INIT -> supportsInitSlashCommand(engineId)
+        else -> true
+    }
+}
+
+/** Returns whether Aura should surface the unified `/init` command for the given engine. */
+internal fun supportsInitSlashCommand(engineId: String): Boolean {
+    return when (engineId.trim()) {
+        CodexProviderFactory.ENGINE_ID,
+        ClaudeProviderFactory.ENGINE_ID,
+        -> true
+
+        else -> false
+    }
 }
 
 private fun SubmissionSlashCommand.toSuggestion(state: SubmissionAreaState): SlashSuggestionItem.Command {
@@ -82,6 +107,16 @@ private fun SubmissionSlashCommand.toSuggestion(state: SubmissionAreaState): Sla
             } else {
                 AuraCodeBundle.message("composer.slash.auto.enable")
             },
+        )
+        SubmissionSlashCommand.INIT -> SlashSuggestionItem.Command(
+            command = token,
+            title = token,
+            description = if (state.sessionIsRunning) {
+                AuraCodeBundle.message("composer.slash.init.disabled")
+            } else {
+                AuraCodeBundle.message("composer.slash.init.description")
+            },
+            enabled = !state.sessionIsRunning,
         )
         SubmissionSlashCommand.NEW -> SlashSuggestionItem.Command(
             command = token,

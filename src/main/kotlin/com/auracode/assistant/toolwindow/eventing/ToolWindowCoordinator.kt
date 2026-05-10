@@ -305,6 +305,7 @@ internal class ToolWindowCoordinator(
                 }
             }
             UiIntent.SendPrompt -> conversationHandler.submitPromptIfAllowed()
+            UiIntent.RunInitSlashCommand -> conversationHandler.submitInitSlashCommand()
             is UiIntent.SubmitBuildErrorRequest -> conversationHandler.submitExternalRequest(intent.request.toIdeExternalRequest())
             is UiIntent.SubmitExternalRequest -> conversationHandler.submitExternalRequest(intent.request)
             UiIntent.CancelRun -> conversationHandler.cancelPromptRun(

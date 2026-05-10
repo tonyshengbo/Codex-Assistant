@@ -1542,7 +1542,7 @@ class AreaStoresTest {
         assertTrue(store.state.value.slashPopupVisible)
         assertEquals("", store.state.value.slashQuery)
         assertEquals(
-            listOf("/plan", "/auto", "/new"),
+            listOf("/plan", "/auto", "/init", "/new", "/tab"),
             store.state.value.slashSuggestions.mapNotNull {
                 (it as? com.auracode.assistant.toolwindow.submission.SlashSuggestionItem.Command)?.command
             },
@@ -1584,6 +1584,26 @@ class AreaStoresTest {
         assertEquals("au", store.state.value.slashQuery)
         assertEquals(
             listOf("/auto"),
+            store.state.value.slashSuggestions.mapNotNull {
+                (it as? com.auracode.assistant.toolwindow.submission.SlashSuggestionItem.Command)?.command
+            },
+        )
+    }
+
+    @Test
+    fun `slash popup filters init command by query`() {
+        val store = SubmissionAreaStore()
+
+        store.onEvent(
+            AppEvent.UiIntentPublished(
+                UiIntent.UpdateDocument(TextFieldValue("hello /in", TextRange(9))),
+            ),
+        )
+
+        assertTrue(store.state.value.slashPopupVisible)
+        assertEquals("in", store.state.value.slashQuery)
+        assertEquals(
+            listOf("/init"),
             store.state.value.slashSuggestions.mapNotNull {
                 (it as? com.auracode.assistant.toolwindow.submission.SlashSuggestionItem.Command)?.command
             },
@@ -1696,6 +1716,7 @@ class AreaStoresTest {
             .toMap()
         assertEquals("Switch the composer into plan mode.", initialDescriptions["/plan"])
         assertEquals("Switch execution mode to approval with a workspace-write sandbox.", initialDescriptions["/auto"])
+        assertEquals("Generate a repository AGENTS.md contributor guide.", initialDescriptions["/init"])
         assertEquals("Start a new session.", initialDescriptions["/new"])
 
         store.onEvent(AppEvent.UiIntentPublished(UiIntent.TogglePlanMode))
@@ -1714,6 +1735,48 @@ class AreaStoresTest {
             .toMap()
         assertEquals("Turn plan mode off.", toggledDescriptions["/plan"])
         assertEquals("Switch execution mode to auto.", toggledDescriptions["/auto"])
+    }
+
+    @Test
+    fun `slash init becomes disabled while session is running`() {
+        val store = SubmissionAreaStore()
+
+        store.onEvent(
+            AppEvent.SubmissionUiProjectionUpdated(
+                isRunning = true,
+                editedFiles = emptyList(),
+            ),
+        )
+        store.onEvent(
+            AppEvent.UiIntentPublished(
+                UiIntent.UpdateDocument(TextFieldValue("/", TextRange(1))),
+            ),
+        )
+
+        val initSuggestion = store.state.value.slashSuggestions
+            .mapNotNull { it as? com.auracode.assistant.toolwindow.submission.SlashSuggestionItem.Command }
+            .firstOrNull { it.command == "/init" }
+        assertEquals(false, initSuggestion?.enabled)
+        assertEquals("Unavailable while a run is active.", initSuggestion?.description)
+    }
+
+    @Test
+    fun `selecting slash init clears current token without changing local mode state`() {
+        val store = SubmissionAreaStore()
+        store.onEvent(AppEvent.UiIntentPublished(UiIntent.TogglePlanMode))
+        store.onEvent(AppEvent.UiIntentPublished(UiIntent.ToggleExecutionMode))
+        store.onEvent(
+            AppEvent.UiIntentPublished(
+                UiIntent.UpdateDocument(TextFieldValue("before /init after", TextRange(12))),
+            ),
+        )
+
+        store.onEvent(AppEvent.UiIntentPublished(UiIntent.SelectSlashCommand("init")))
+
+        assertTrue(store.state.value.planEnabled)
+        assertEquals(SubmissionMode.APPROVAL, store.state.value.executionMode)
+        assertEquals("before  after", store.state.value.document.text)
+        assertFalse(store.state.value.slashPopupVisible)
     }
 
     @Test

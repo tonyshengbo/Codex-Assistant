@@ -431,6 +431,31 @@ class SubmissionDocumentModelTest {
     }
 
     @Test
+    fun `prompt accepted can preserve draft state for slash-driven submissions`() {
+        val store = SubmissionAreaStore()
+        store.onEvent(
+            AppEvent.UiIntentPublished(
+                UiIntent.UpdateDocument(TextFieldValue("keep this draft", TextRange(15))),
+            ),
+        )
+        store.onEvent(
+            AppEvent.UiIntentPublished(
+                UiIntent.AddAttachments(listOf("/tmp/demo.txt")),
+            ),
+        )
+
+        store.onEvent(
+            AppEvent.PromptAccepted(
+                prompt = "init prompt",
+                clearSubmissionDraft = false,
+            ),
+        )
+
+        assertEquals("keep this draft", store.state.value.document.text)
+        assertEquals(1, store.state.value.attachments.size)
+    }
+
+    @Test
     fun `select slash skill inserts visible skill token`() {
         val store = SubmissionAreaStore(
             availableSkillsProvider = { _ ->

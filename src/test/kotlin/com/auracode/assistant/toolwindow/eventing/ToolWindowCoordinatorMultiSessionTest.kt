@@ -28,6 +28,7 @@ import com.auracode.assistant.toolwindow.sessions.SessionTabsAreaStore
 import com.auracode.assistant.toolwindow.execution.ExecutionStatusAreaStore
 import com.auracode.assistant.toolwindow.conversation.ConversationAreaStore
 import com.auracode.assistant.toolwindow.conversation.ConversationActivityItem
+import com.auracode.assistant.toolwindow.shared.UiText
 import com.auracode.assistant.persistence.chat.SQLiteChatSessionRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -62,6 +63,72 @@ class ToolWindowCoordinatorMultiSessionTest {
         assertEquals("claude", harness.claudeProvider.requests.single().engineId)
         assertEquals(ClaudeModelCatalog.defaultModel, harness.claudeProvider.requests.single().model)
         assertTrue(harness.codexProvider.requests.isEmpty())
+
+        harness.dispose()
+    }
+
+    @Test
+    fun `init slash submits the shared prompt through codex and preserves the draft`() {
+        val harness = MultiEngineCoordinatorHarness()
+        harness.settleStartup()
+        val attachment = harness.workingDir.resolve("draft.txt")
+        Files.writeString(attachment, "draft attachment")
+
+        harness.eventHub.publishUiIntent(UiIntent.UpdateDocument(TextFieldValue("keep /init draft", TextRange(10))))
+        harness.eventHub.publishUiIntent(UiIntent.AddAttachments(listOf(attachment.toString())))
+        harness.eventHub.publishUiIntent(UiIntent.SelectSlashCommand("/init"))
+        harness.eventHub.publishUiIntent(UiIntent.RunInitSlashCommand)
+        harness.waitUntil { harness.codexProvider.requests.size == 1 }
+
+        val request = harness.codexProvider.requests.single()
+        assertEquals(SlashInitCommandPrompt.load(), request.prompt)
+        assertTrue(request.contextFiles.isEmpty())
+        assertTrue(request.fileAttachments.isEmpty())
+        assertTrue(request.imageAttachments.isEmpty())
+        assertEquals("keep  draft", harness.submissionStore.state.value.document.text)
+        assertEquals(1, harness.submissionStore.state.value.attachments.size)
+
+        harness.dispose()
+    }
+
+    @Test
+    fun `init slash submits the shared prompt through claude`() {
+        val harness = MultiEngineCoordinatorHarness()
+        harness.settleStartup()
+
+        harness.eventHub.publishUiIntent(UiIntent.SelectEngine("claude"))
+        harness.waitUntil { harness.submissionStore.state.value.selectedEngineId == "claude" }
+        harness.eventHub.publishUiIntent(UiIntent.UpdateDocument(TextFieldValue("/init", TextRange(5))))
+        harness.eventHub.publishUiIntent(UiIntent.SelectSlashCommand("/init"))
+        harness.eventHub.publishUiIntent(UiIntent.RunInitSlashCommand)
+        harness.waitUntil { harness.claudeProvider.requests.size == 1 }
+
+        val request = harness.claudeProvider.requests.single()
+        assertEquals(SlashInitCommandPrompt.load(), request.prompt)
+        assertEquals("claude", request.engineId)
+        assertTrue(request.contextFiles.isEmpty())
+        assertTrue(request.fileAttachments.isEmpty())
+        assertTrue(request.imageAttachments.isEmpty())
+
+        harness.dispose()
+    }
+
+    @Test
+    fun `init slash skips execution when AGENTS md already exists`() {
+        val harness = MultiEngineCoordinatorHarness()
+        harness.settleStartup()
+        Files.writeString(harness.workingDir.resolve("AGENTS.md"), "existing guide")
+
+        harness.eventHub.publishUiIntent(UiIntent.UpdateDocument(TextFieldValue("/init", TextRange(5))))
+        harness.eventHub.publishUiIntent(UiIntent.SelectSlashCommand("/init"))
+        harness.eventHub.publishUiIntent(UiIntent.RunInitSlashCommand)
+        harness.waitUntil { harness.executionStatusStore.state.value.toast != null }
+
+        assertTrue(harness.codexProvider.requests.isEmpty())
+        assertEquals(
+            UiText.Bundle("composer.slash.init.exists", listOf("AGENTS.md")),
+            harness.executionStatusStore.state.value.toast?.text,
+        )
 
         harness.dispose()
     }
@@ -816,6 +883,7 @@ class ToolWindowCoordinatorMultiSessionTest {
         val claudeProvider = RecordingMultiSessionProvider()
         val openedSessionIds = CopyOnWriteArrayList<String>()
         val conversationStore = ConversationAreaStore()
+        val executionStatusStore = ExecutionStatusAreaStore()
         val settings = AgentSettingsService().apply { loadState(AgentSettingsService.State()) }
         val service = AgentChatService(
             repository = SQLiteChatSessionRepository(workingDir.resolve("chat.db")),
@@ -867,7 +935,7 @@ class ToolWindowCoordinatorMultiSessionTest {
             settingsService = settings,
             eventHub = eventHub,
             sessionTabsStore = SessionTabsAreaStore(),
-            executionStatusStore = ExecutionStatusAreaStore(),
+            executionStatusStore = executionStatusStore,
             conversationStore = conversationStore,
             submissionStore = submissionStore,
             sidePanelStore = SidePanelAreaStore(),
