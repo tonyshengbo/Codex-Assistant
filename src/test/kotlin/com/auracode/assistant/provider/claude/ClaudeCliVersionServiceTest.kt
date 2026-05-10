@@ -1,6 +1,7 @@
 package com.auracode.assistant.provider.claude
 
 import com.auracode.assistant.provider.codex.CodexExecutableResolver
+import com.auracode.assistant.provider.runtime.DefaultRuntimeLaunchResolver
 import com.auracode.assistant.settings.AgentSettingsService
 import java.nio.file.Files
 import kotlin.io.path.createTempDirectory
@@ -36,6 +37,11 @@ class ClaudeCliVersionServiceTest {
             sourceDetector = npmSourceDetector(),
             executableResolver = CodexExecutableResolver(commonSearchPaths = emptyList()),
             shellEnvironmentLoader = { emptyMap() },
+            runtimeLaunchResolver = DefaultRuntimeLaunchResolver(
+                executableResolver = CodexExecutableResolver(commonSearchPaths = emptyList()),
+                shellEnvironmentLoader = { emptyMap() },
+                shellEnvironmentCandidatesLoader = { emptyList() },
+            ),
             commandRunner = { command, _ ->
                 when {
                     command.lastOrNull() == "--version" -> ClaudeCliCommandResult(0, installedVersion, "")
@@ -78,6 +84,15 @@ class ClaudeCliVersionServiceTest {
                 pathExt = ".COM;.EXE;.BAT;.CMD",
             ),
             shellEnvironmentLoader = { mapOf("PATH" to "C:\\Windows\\System32") },
+            runtimeLaunchResolver = DefaultRuntimeLaunchResolver(
+                executableResolver = CodexExecutableResolver(
+                    commonSearchPaths = listOf(runtimeDirectory.toAbsolutePath().toString()),
+                    operatingSystemName = "Windows 11",
+                    pathExt = ".COM;.EXE;.BAT;.CMD",
+                ),
+                shellEnvironmentLoader = { mapOf("PATH" to "C:\\Windows\\System32") },
+                shellEnvironmentCandidatesLoader = { emptyList() },
+            ),
             commandRunner = { command, _ ->
                 if (command.firstOrNull() == claudePath && command.lastOrNull() == "--version") {
                     ClaudeCliCommandResult(0, "2.1.119 (Claude Code)", "")

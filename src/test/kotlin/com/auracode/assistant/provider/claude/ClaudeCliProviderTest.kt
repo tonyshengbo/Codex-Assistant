@@ -257,9 +257,9 @@ class ClaudeCliProviderTest {
                 event.command?.contains("/tmp/demo.txt") == true
         })
         assertTrue(events.any { event ->
-            event is SessionDomainEvent.CommandUpdated &&
-                event.status == SessionActivityStatus.FAILED &&
-                event.outputText?.contains("File does not exist") == true
+            event is SessionDomainEvent.ErrorAppended &&
+                !event.terminal &&
+                event.message.contains("Read: File does not exist")
         })
         assertTrue(events.any { event ->
             event is SessionDomainEvent.ReasoningUpdated &&

@@ -152,8 +152,9 @@ class ClaudeLocalHistoryReaderTest {
         val result = reader.readHistory(sessionId)
 
         assertEquals(4, result.events.size)
-        val toolItem = assertIs<SessionDomainEvent.ToolUpdated>(result.events[2])
-        assertEquals("Bash", toolItem.toolName)
+        val toolItem = assertIs<SessionDomainEvent.CommandUpdated>(result.events[2])
+        assertEquals(SessionCommandKind.SHELL, toolItem.commandKind)
+        assertEquals("ls", toolItem.command)
         val assistantItem = assertIs<SessionDomainEvent.MessageAppended>(result.events[3])
         assertEquals("Done.", assistantItem.text)
     }

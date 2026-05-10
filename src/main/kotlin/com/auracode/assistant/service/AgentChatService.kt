@@ -703,6 +703,14 @@ class AgentChatService private constructor(
                             persistSessionSnapshot(sessionId)
                         }
                         onSessionDomainEvents(listOf(normalizedEvent))
+                        if (normalizedEvent is SessionDomainEvent.TurnCompleted) {
+                            val shouldNotifyRunStateChanged = synchronized(stateLock) {
+                                sessionRuns.clearRun(sessionId, request.requestId) != null
+                            }
+                            if (shouldNotifyRunStateChanged) {
+                                onRunStateChanged()
+                            }
+                        }
                     }
                     onTurnPersisted()
                 }.onFailure { error ->
@@ -720,12 +728,10 @@ class AgentChatService private constructor(
             } finally {
                 val shouldNotifyRunStateChanged = synchronized(stateLock) {
                     val cleared = sessionRuns.clearRun(sessionId, request.requestId)
-                    var acceptedRequestRemoved = false
                     if (acceptedRunRequestIdsBySessionId[sessionId] == request.requestId) {
                         acceptedRunRequestIdsBySessionId.remove(sessionId)
-                        acceptedRequestRemoved = true
                     }
-                    cleared != null || acceptedRequestRemoved
+                    cleared != null
                 }
                 if (shouldNotifyRunStateChanged) {
                     onRunStateChanged()

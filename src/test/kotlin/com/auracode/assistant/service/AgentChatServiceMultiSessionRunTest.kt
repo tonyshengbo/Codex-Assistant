@@ -252,8 +252,8 @@ class AgentChatServiceMultiSessionRunTest {
             emit(ProviderEvent.ThreadStarted(threadId = "thread-${request.prompt}"))
             when (outcomesByPrompt.getOrPut(request.prompt) { CompletableDeferred() }.await()) {
                 TurnOutcome.SUCCESS -> {
-                    emit(ProviderEvent.TurnCompleted(turnId = "turn-${request.prompt}", outcome = TurnOutcome.SUCCESS))
                     completionSignals.getOrPut(request.prompt) { CompletableDeferred() }.complete(Unit)
+                    emit(ProviderEvent.TurnCompleted(turnId = "turn-${request.prompt}", outcome = TurnOutcome.SUCCESS))
                 }
 
                 TurnOutcome.CANCELLED -> Unit

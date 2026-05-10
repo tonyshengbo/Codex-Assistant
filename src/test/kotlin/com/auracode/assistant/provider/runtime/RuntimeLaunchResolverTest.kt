@@ -29,17 +29,18 @@ class RuntimeLaunchResolverTest {
                     "HOME" to "C:\\Users\\demo",
                 )
             },
+            shellEnvironmentCandidatesLoader = { emptyList() },
         )
 
         val result = resolver.resolve(
             commandName = "claude",
             configuredCliPath = "claude",
-            configuredNodePath = nodePath,
+            configuredNodePath = nodePath.absolutePath,
         )
 
         assertEquals(claudePath.absolutePath, result.cliPath)
         assertEquals(CodexEnvironmentStatus.DETECTED, result.cliStatus)
-        assertEquals(nodePath, result.nodePath)
+        assertEquals(nodePath.absolutePath, result.nodePath)
         assertEquals(CodexEnvironmentStatus.CONFIGURED, result.nodeStatus)
         assertTrue(result.environmentOverrides["PATH"].orEmpty().startsWith(nodeDir.absolutePathString()))
         assertEquals("C:\\Users\\demo", result.environmentOverrides["HOME"])
@@ -54,6 +55,7 @@ class RuntimeLaunchResolverTest {
                 pathExt = "",
             ),
             shellEnvironmentLoader = { emptyMap() },
+            shellEnvironmentCandidatesLoader = { emptyList() },
         )
 
         val result = resolver.resolve(

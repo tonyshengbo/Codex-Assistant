@@ -2,6 +2,23 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.0.0-beta.4] - 2026-05-10
+
+### Added
+
+- Claude runtime support for plan-mode tool input, local history replay, diagnostics, MCP management, and richer slash-command coverage.
+- Token usage ledger views and runtime management improvements across Codex and Claude settings flows.
+- Manual JetBrains Marketplace upload readiness alongside the GitHub prerelease ZIP workflow.
+
+### Changed
+
+- Refined multi-session tab behavior, running-state synchronization, tool timeline normalization, and conversation history presentation.
+- Updated product positioning and beta packaging metadata to present Aura Code as a dual-engine Codex and Claude workspace.
+
+### Fixed
+
+- Repaired release-gate regressions in runtime launch tests, Claude replay coverage, and session run-state callbacks during delayed provider shutdown.
+
 ## [1.0.0-beta.3] - 2026-04-12
 
 ### Added

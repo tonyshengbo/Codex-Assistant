@@ -36,10 +36,9 @@ class ClaudeDiagnosticReplayTest {
         )
 
         assertTrue(events.any { event ->
-            event is ProviderEvent.ItemUpdated &&
-                event.item.kind == ItemKind.COMMAND_EXEC &&
-                event.item.status == ItemStatus.FAILED &&
-                event.item.text?.contains("File does not exist") == true
+            event is ProviderEvent.Error &&
+                !event.terminal &&
+                event.message.contains("Read: File does not exist")
         })
         assertTrue(events.any { event ->
             event is ProviderEvent.ItemUpdated &&

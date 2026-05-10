@@ -18,11 +18,11 @@ Aura Code는 IntelliJ IDEA를 위한 듀얼 엔진 AI 어시스턴트입니다.
 
 ## 베타 배포
 
-`1.0.0-beta.3` 는 현재 GitHub prerelease ZIP으로 배포됩니다.
+`1.0.0-beta.4` 는 현재 GitHub prerelease ZIP과 수동 업로드된 Marketplace 빌드로 배포됩니다.
 
 - GitHub Release의 ZIP을 다운로드하거나 `./gradlew buildPlugin` 으로 로컬 빌드
 - `Settings -> Plugins -> Install Plugin from Disk...` 에서 설치
-- 현재 베타 배포 흐름에는 Marketplace 게시가 포함되지 않습니다
+- 현재 저장소는 Marketplace 게시를 자동화하지 않으므로 필요할 때 생성된 ZIP을 수동 업로드해야 합니다
 
 ## 핵심 기능
 
@@ -150,7 +150,7 @@ src/test/kotlin/com/auracode/assistant/
 
 - 현재 저장소는 IntelliJ IDEA 지원에 집중하고 있습니다
 - GitHub prerelease ZIP 배포와 로컬 ZIP 설치를 지원합니다
-- Marketplace 서명과 배포 흐름은 아직 이 저장소에 연결되어 있지 않습니다
+- Marketplace 배포는 현재도 생성된 ZIP의 수동 업로드를 전제로 하며 저장소 내 자동 게시 흐름과는 연결되어 있지 않습니다
 
 ## 라이선스
 
