@@ -5,6 +5,7 @@ import java.nio.file.Files
 import kotlin.io.path.createTempDirectory
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class CodexCliVersionServiceTest {
@@ -81,8 +82,102 @@ class CodexCliVersionServiceTest {
         )
     }
 
+    @Test
+    fun `refresh treats default codex alias resolved from common search path as installed`() {
+        val runtimeDirectory = createTempDirectory(prefix = "codex-version-default-alias")
+        val codexPath = createExecutablePath(runtimeDirectory, "codex.cmd")
+        val settings = AgentSettingsService().apply {
+            loadState(
+                AgentSettingsService.State(
+                    codexCliPath = "codex",
+                    engineExecutablePaths = mutableMapOf("codex" to "codex"),
+                    codexCliAutoUpdateCheckEnabled = true,
+                ),
+            )
+        }
+        val service = CodexCliVersionService(
+            settingsService = settings,
+            environmentDetector = CodexEnvironmentDetector(
+                shellEnvironmentLoader = { mapOf("PATH" to "C:\\Windows\\System32") },
+                shellEnvironmentCandidatesLoader = { emptyList() },
+                commonSearchPaths = listOf(runtimeDirectory.toAbsolutePath().toString()),
+                executableResolver = CodexExecutableResolver(
+                    commonSearchPaths = listOf(runtimeDirectory.toAbsolutePath().toString()),
+                    operatingSystemName = "Windows 11",
+                    pathExt = ".COM;.EXE;.BAT;.CMD",
+                ),
+            ),
+            sourceDetector = npmSourceDetector(),
+            commandRunner = { command, _ ->
+                if (command.firstOrNull() == codexPath && command.lastOrNull() == "--version") {
+                    CodexCliCommandResult(0, "codex-cli 0.130.0", "")
+                } else {
+                    CodexCliCommandResult(1, "", "unexpected command")
+                }
+            },
+            latestVersionFetcher = { "0.130.0" },
+        )
+
+        val snapshot = service.refresh(force = true)
+
+        assertEquals(CodexCliVersionCheckStatus.UP_TO_DATE, snapshot.checkStatus)
+        assertEquals("0.130.0", snapshot.currentVersion)
+        assertFalse(snapshot.message.contains("not installed", ignoreCase = true))
+    }
+
+    @Test
+    fun `refresh prefers runtime draft override over persisted settings`() {
+        val runtimeDirectory = createTempDirectory(prefix = "codex-version-draft-override")
+        val codexPath = createExecutablePath(runtimeDirectory, "codex.cmd")
+        val settings = AgentSettingsService().apply {
+            loadState(
+                AgentSettingsService.State(
+                    codexCliPath = "",
+                    engineExecutablePaths = mutableMapOf("codex" to ""),
+                    nodeExecutablePath = "",
+                    codexCliAutoUpdateCheckEnabled = true,
+                ),
+            )
+        }
+        val service = CodexCliVersionService(
+            settingsService = settings,
+            environmentDetector = CodexEnvironmentDetector(
+                shellEnvironmentLoader = { mapOf("PATH" to "C:\\Windows\\System32") },
+                shellEnvironmentCandidatesLoader = { emptyList() },
+                commonSearchPaths = listOf(runtimeDirectory.toAbsolutePath().toString()),
+                executableResolver = CodexExecutableResolver(
+                    commonSearchPaths = listOf(runtimeDirectory.toAbsolutePath().toString()),
+                    operatingSystemName = "Windows 11",
+                    pathExt = ".COM;.EXE;.BAT;.CMD",
+                ),
+            ),
+            sourceDetector = npmSourceDetector(),
+            commandRunner = { command, _ ->
+                if (command.firstOrNull() == codexPath && command.lastOrNull() == "--version") {
+                    CodexCliCommandResult(0, "codex-cli 0.130.0", "")
+                } else {
+                    CodexCliCommandResult(1, "", "unexpected command")
+                }
+            },
+            latestVersionFetcher = { "0.130.0" },
+        )
+
+        val snapshot = service.refresh(
+            force = true,
+            configuredCodexPathOverride = codexPath,
+            configuredNodePathOverride = "",
+        )
+
+        assertEquals(CodexCliVersionCheckStatus.UP_TO_DATE, snapshot.checkStatus)
+        assertEquals("0.130.0", snapshot.currentVersion)
+    }
+
     private fun createExecutablePath(name: String): String {
         val directory = createTempDirectory(prefix = "codex-version-test")
+        return createExecutablePath(directory, name)
+    }
+
+    private fun createExecutablePath(directory: java.nio.file.Path, name: String): String {
         val executable = directory.resolve(name)
         Files.writeString(executable, "#!/bin/sh\nexit 0\n")
         executable.toFile().setExecutable(true)

@@ -2,7 +2,8 @@ package com.auracode.assistant.provider.claude
 
 import com.auracode.assistant.provider.codex.CodexEnvironmentStatus
 import com.auracode.assistant.provider.codex.CodexExecutableResolver
-import com.auracode.assistant.provider.codex.buildLaunchEnvironmentOverrides
+import com.auracode.assistant.provider.runtime.DefaultRuntimeLaunchResolver
+import com.auracode.assistant.provider.runtime.RuntimeLaunchResolver
 import com.auracode.assistant.provider.runtime.RuntimePackageManager
 import com.auracode.assistant.provider.runtime.RuntimeUpgradeCommandResolver
 import com.auracode.assistant.provider.runtime.resolvePreferredShellEnvironment
@@ -27,6 +28,10 @@ internal class ClaudeCliVersionService(
     private val executableResolver: CodexExecutableResolver = CodexExecutableResolver(),
     private val upgradeCommandResolver: RuntimeUpgradeCommandResolver = RuntimeUpgradeCommandResolver(),
     private val shellEnvironmentLoader: () -> Map<String, String> = ::resolvePreferredShellEnvironment,
+    private val runtimeLaunchResolver: RuntimeLaunchResolver = DefaultRuntimeLaunchResolver(
+        executableResolver = executableResolver,
+        shellEnvironmentLoader = shellEnvironmentLoader,
+    ),
     private val commandRunner: (List<String>, Map<String, String>) -> ClaudeCliCommandResult = ::runClaudeCliCommand,
     private val latestVersionFetcher: () -> String = ::fetchLatestClaudeCliVersionFromNpm,
     private val clock: () -> Long = System::currentTimeMillis,
@@ -245,29 +250,17 @@ internal class ClaudeCliVersionService(
 
     /** Resolves the runnable Claude executable and environment overrides from current settings. */
     private fun resolveForLaunch(): ClaudeLaunchResolution {
-        val shellEnvironment = shellEnvironmentLoader()
         val configuredClaudePath = settingsService.state.executablePathFor("claude")
         val configuredNodePath = settingsService.nodeExecutablePath()
-        val claude = executableResolver.resolve(
-            configuredPath = configuredClaudePath,
+        val resolution = runtimeLaunchResolver.resolve(
             commandName = "claude",
-            shellEnvironment = shellEnvironment,
+            configuredCliPath = configuredClaudePath,
+            configuredNodePath = configuredNodePath,
         )
-        val node = executableResolver.resolve(
-            configuredPath = configuredNodePath,
-            commandName = "node",
-            shellEnvironment = shellEnvironment,
-        )
-        val claudePath = claude.path?.takeIf { it.isNotBlank() }
-            ?: configuredClaudePath.trim().takeIf { it.isNotBlank() }
-            ?: "claude"
         return ClaudeLaunchResolution(
-            claudePath = claudePath,
-            cliStatus = claude.status,
-            environmentOverrides = buildLaunchEnvironmentOverrides(
-                shellEnvironment = shellEnvironment,
-                nodePath = node.path,
-            ),
+            claudePath = resolution.cliPath,
+            cliStatus = resolution.cliStatus,
+            environmentOverrides = resolution.environmentOverrides,
         )
     }
 

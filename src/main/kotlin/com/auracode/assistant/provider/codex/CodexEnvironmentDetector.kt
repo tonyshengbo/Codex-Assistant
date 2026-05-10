@@ -2,8 +2,8 @@ package com.auracode.assistant.provider.codex
 
 import com.auracode.assistant.provider.runtime.resolvePreferredShellEnvironment
 import com.auracode.assistant.provider.runtime.resolveShellEnvironmentCandidates
-import java.io.File
-import java.util.concurrent.TimeUnit
+import com.auracode.assistant.provider.runtime.RuntimeLaunchResolution
+import com.auracode.assistant.provider.runtime.resolveBestShellEnvironment
 
 /** Represents how a required Codex runtime dependency was discovered. */
 internal enum class CodexEnvironmentStatus {
@@ -73,31 +73,19 @@ internal class CodexEnvironmentDetector(
         configuredCodexPath: String,
         configuredNodePath: String,
     ): CodexEnvironmentResolution {
-        val shellEnvironment = shellEnvironment(
-            configuredCodexPath = configuredCodexPath,
+        val resolution = resolveLaunch(
+            commandName = "codex",
+            configuredCliPath = configuredCodexPath,
             configuredNodePath = configuredNodePath,
             refresh = false,
         )
-        val codex = executableResolver.resolve(
-            configuredPath = configuredCodexPath,
-            commandName = "codex",
-            shellEnvironment = shellEnvironment,
-        )
-        val node = executableResolver.resolve(
-            configuredPath = configuredNodePath,
-            commandName = "node",
-            shellEnvironment = shellEnvironment,
-        )
-        val codexPath = codex.path?.takeIf { it.isNotBlank() }
-            ?: configuredCodexPath.trim().takeIf { it.isNotBlank() }
-            ?: "codex"
         return CodexEnvironmentResolution(
-            codexPath = codexPath,
-            nodePath = node.path?.takeIf { it.isNotBlank() },
-            shellEnvironment = shellEnvironment,
-            environmentOverrides = launchEnvironmentBuilder.build(shellEnvironment = shellEnvironment, nodePath = node.path),
-            codexStatus = codex.status,
-            nodeStatus = node.status,
+            codexPath = resolution.cliPath,
+            nodePath = resolution.nodePath.takeIf { it.isNotBlank() },
+            shellEnvironment = resolution.shellEnvironment,
+            environmentOverrides = resolution.environmentOverrides,
+            codexStatus = resolution.cliStatus,
+            nodeStatus = resolution.nodeStatus,
         )
     }
 
@@ -107,14 +95,65 @@ internal class CodexEnvironmentDetector(
         refreshShellEnvironment: Boolean,
         testAppServer: Boolean,
     ): CodexEnvironmentCheckResult {
-        val shellEnvironment = shellEnvironment(
-            configuredCodexPath = configuredCodexPath,
+        val resolution = resolveLaunch(
+            commandName = "codex",
+            configuredCliPath = configuredCodexPath,
             configuredNodePath = configuredNodePath,
             refresh = refreshShellEnvironment,
         )
-        val codex = executableResolver.resolve(
-            configuredPath = configuredCodexPath,
-            commandName = "codex",
+        val appServerProbeResult: Pair<CodexEnvironmentStatus, String> = when {
+            resolution.cliStatus == CodexEnvironmentStatus.MISSING -> CodexEnvironmentStatus.MISSING to buildSummary(
+                resolution.cliStatus,
+                resolution.nodeStatus,
+                CodexEnvironmentStatus.MISSING,
+            )
+            configuredNodePath.trim().isNotBlank() && resolution.nodeStatus == CodexEnvironmentStatus.FAILED -> CodexEnvironmentStatus.FAILED to buildSummary(
+                resolution.cliStatus,
+                resolution.nodeStatus,
+                CodexEnvironmentStatus.FAILED,
+            )
+            !testAppServer -> if (resolution.cliStatus == CodexEnvironmentStatus.CONFIGURED || resolution.nodeStatus == CodexEnvironmentStatus.CONFIGURED) {
+                CodexEnvironmentStatus.CONFIGURED to buildSummary(
+                    resolution.cliStatus,
+                    resolution.nodeStatus,
+                    CodexEnvironmentStatus.CONFIGURED,
+                )
+            } else {
+                CodexEnvironmentStatus.DETECTED to buildSummary(
+                    resolution.cliStatus,
+                    resolution.nodeStatus,
+                    CodexEnvironmentStatus.DETECTED,
+                )
+            }
+            else -> appServerProbe.probe(
+                codexPath = resolution.cliPath,
+                environmentOverrides = resolution.environmentOverrides,
+            ).let { it.status to it.message }
+        }
+        return CodexEnvironmentCheckResult(
+            codexPath = if (resolution.cliStatus == CodexEnvironmentStatus.MISSING) "" else resolution.cliPath,
+            nodePath = resolution.nodePath,
+            codexStatus = resolution.cliStatus,
+            nodeStatus = resolution.nodeStatus,
+            appServerStatus = appServerProbeResult.first,
+            message = appServerProbeResult.second,
+        )
+    }
+
+    private fun resolveLaunch(
+        commandName: String,
+        configuredCliPath: String,
+        configuredNodePath: String,
+        refresh: Boolean,
+    ): RuntimeLaunchResolution {
+        val shellEnvironment = shellEnvironment(
+            configuredCodexPath = configuredCliPath,
+            configuredNodePath = configuredNodePath,
+            refresh = refresh,
+        )
+        val cli = executableResolver.resolve(
+            configuredPath = configuredCliPath,
+            commandName = commandName,
             shellEnvironment = shellEnvironment,
         )
         val node = executableResolver.resolve(
@@ -122,46 +161,18 @@ internal class CodexEnvironmentDetector(
             commandName = "node",
             shellEnvironment = shellEnvironment,
         )
-        val environmentOverrides = launchEnvironmentBuilder.build(
-            shellEnvironment = shellEnvironment,
-            nodePath = node.path,
-        )
-        val appServerProbeResult: Pair<CodexEnvironmentStatus, String> = when {
-            codex.path.isNullOrBlank() -> CodexEnvironmentStatus.MISSING to buildSummary(
-                codex.status,
-                node.status,
-                CodexEnvironmentStatus.MISSING,
-            )
-            configuredNodePath.trim().isNotBlank() && node.path.isNullOrBlank() -> CodexEnvironmentStatus.FAILED to buildSummary(
-                codex.status,
-                node.status,
-                CodexEnvironmentStatus.FAILED,
-            )
-            !testAppServer -> if (codex.status == CodexEnvironmentStatus.CONFIGURED || node.status == CodexEnvironmentStatus.CONFIGURED) {
-                CodexEnvironmentStatus.CONFIGURED to buildSummary(
-                    codex.status,
-                    node.status,
-                    CodexEnvironmentStatus.CONFIGURED,
-                )
-            } else {
-                CodexEnvironmentStatus.DETECTED to buildSummary(
-                    codex.status,
-                    node.status,
-                    CodexEnvironmentStatus.DETECTED,
-                )
-            }
-            else -> appServerProbe.probe(
-                codexPath = codex.path,
-                environmentOverrides = environmentOverrides,
-            ).let { it.status to it.message }
-        }
-        return CodexEnvironmentCheckResult(
-            codexPath = codex.path.orEmpty(),
+        return RuntimeLaunchResolution(
+            cliPath = cli.path?.takeIf { it.isNotBlank() }
+                ?: configuredCliPath.trim().takeIf { it.isNotBlank() }
+                ?: commandName,
+            cliStatus = cli.status,
             nodePath = node.path.orEmpty(),
-            codexStatus = codex.status,
             nodeStatus = node.status,
-            appServerStatus = appServerProbeResult.first,
-            message = appServerProbeResult.second,
+            shellEnvironment = shellEnvironment,
+            environmentOverrides = launchEnvironmentBuilder.build(
+                shellEnvironment = shellEnvironment,
+                nodePath = node.path,
+            ),
         )
     }
 
@@ -185,65 +196,13 @@ internal class CodexEnvironmentDetector(
         configuredCodexPath: String,
         configuredNodePath: String,
     ): Map<String, String> {
-        val fallback = runCatching(shellEnvironmentLoader).getOrNull().orEmpty()
-        val candidates = buildList {
-            add(fallback)
-            shellEnvironmentCandidatesLoader?.let { loader ->
-                addAll(runCatching(loader).getOrNull().orEmpty())
-            }
-        }.distinctBy { environmentSignature(it) }
-            .filter { it.isNotEmpty() }
-        if (candidates.isEmpty()) {
-            return fallback
-        }
-        return candidates.mapIndexed { index, environment ->
-            candidateScore(
-                environment = environment,
-                configuredCodexPath = configuredCodexPath,
-                configuredNodePath = configuredNodePath,
-                index = index,
-            )
-        }.maxWithOrNull(
-            compareBy<CandidateEnvironmentScore> { it.codexResolved }
-                .thenBy { it.nodeResolved }
-                .thenBy { it.pathEntryCount }
-                .thenByDescending { it.index },
-        )?.environment ?: fallback
-    }
-
-    private fun environmentSignature(environment: Map<String, String>): String {
-        val path = environment["PATH"].orEmpty()
-        val home = environment["HOME"].orEmpty()
-        val shell = environment["SHELL"].orEmpty()
-        return "$path\n$home\n$shell"
-    }
-
-    private fun candidateScore(
-        environment: Map<String, String>,
-        configuredCodexPath: String,
-        configuredNodePath: String,
-        index: Int,
-    ): CandidateEnvironmentScore {
-        val codexResolved = executableResolver.resolve(
-            configuredPath = configuredCodexPath,
+        return resolveBestShellEnvironment(
+            executableResolver = executableResolver,
+            shellEnvironmentLoader = shellEnvironmentLoader,
+            shellEnvironmentCandidatesLoader = shellEnvironmentCandidatesLoader,
+            configuredCliPath = configuredCodexPath,
+            configuredNodePath = configuredNodePath,
             commandName = "codex",
-            shellEnvironment = environment,
-        ).path != null
-        val nodeResolved = executableResolver.resolve(
-            configuredPath = configuredNodePath,
-            commandName = "node",
-            shellEnvironment = environment,
-        ).path != null
-        val pathEntryCount = environment["PATH"]
-            ?.split(File.pathSeparator)
-            ?.count { it.isNotBlank() }
-            ?: 0
-        return CandidateEnvironmentScore(
-            environment = environment,
-            codexResolved = codexResolved,
-            nodeResolved = nodeResolved,
-            pathEntryCount = pathEntryCount,
-            index = index,
         )
     }
 
@@ -264,14 +223,6 @@ internal class CodexEnvironmentDetector(
         CodexEnvironmentStatus.MISSING -> "missing"
         CodexEnvironmentStatus.FAILED -> "failed"
     }
-
-    private data class CandidateEnvironmentScore(
-        val environment: Map<String, String>,
-        val codexResolved: Boolean,
-        val nodeResolved: Boolean,
-        val pathEntryCount: Int,
-        val index: Int,
-    )
 }
 
 internal fun buildLaunchEnvironmentOverrides(

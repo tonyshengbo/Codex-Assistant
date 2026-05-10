@@ -300,6 +300,7 @@ internal sealed interface AppEvent {
     ) : AppEvent
     data class ClaudeRuntimeExecutableCheckUpdated(
         val result: RuntimeExecutableCheckResult,
+        val updateDraftPaths: Boolean = false,
     ) : AppEvent
     data class ConversationCapabilitiesUpdated(
         val capabilities: ConversationCapabilities,

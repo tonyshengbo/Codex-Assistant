@@ -27,7 +27,7 @@ class CodexEnvironmentDetectorTest {
         )
 
         assertEquals(codex.absolutePath, resolved.path)
-        assertEquals(CodexEnvironmentStatus.CONFIGURED, resolved.status)
+        assertEquals(CodexEnvironmentStatus.DETECTED, resolved.status)
     }
 
     @Test
@@ -47,6 +47,47 @@ class CodexEnvironmentDetectorTest {
         )
 
         assertEquals(codex.absolutePath, resolved.path)
+        assertEquals(CodexEnvironmentStatus.DETECTED, resolved.status)
+    }
+
+    @Test
+    fun `resolver treats default Windows command alias as auto detect and falls back to common search paths`() {
+        val tempDir = createTempDirectory("codex-env-win-common")
+        val codex = createExecutable(tempDir.toFile(), "codex.cmd")
+        val resolver = CodexExecutableResolver(
+            commonSearchPaths = listOf(tempDir.absolutePathString()),
+            operatingSystemName = "Windows 11",
+            pathExt = ".COM;.EXE;.BAT;.CMD",
+        )
+
+        val resolved = resolver.resolve(
+            configuredPath = "codex",
+            commandName = "codex",
+            shellEnvironment = mapOf("PATH" to "C:\\Windows\\System32"),
+        )
+
+        assertEquals(codex.absolutePath, resolved.path)
+        assertEquals(CodexEnvironmentStatus.DETECTED, resolved.status)
+    }
+
+    @Test
+    fun `resolver prefers Windows cmd shim over extensionless npm stub`() {
+        val tempDir = createTempDirectory("codex-env-win-priority")
+        createExecutable(tempDir.toFile(), "codex")
+        val codexCmd = createExecutable(tempDir.toFile(), "codex.cmd")
+        val resolver = CodexExecutableResolver(
+            commonSearchPaths = emptyList(),
+            operatingSystemName = "Windows 11",
+            pathExt = ".COM;.EXE;.BAT;.CMD",
+        )
+
+        val resolved = resolver.resolve(
+            configuredPath = "",
+            commandName = "codex",
+            shellEnvironment = mapOf("PATH" to tempDir.absolutePathString()),
+        )
+
+        assertEquals(codexCmd.absolutePath, resolved.path)
         assertEquals(CodexEnvironmentStatus.DETECTED, resolved.status)
     }
 

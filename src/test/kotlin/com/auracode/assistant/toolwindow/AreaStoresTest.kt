@@ -31,6 +31,7 @@ import com.auracode.assistant.toolwindow.submission.SubmissionAreaStore
 import com.auracode.assistant.toolwindow.submission.ContextEntry
 import com.auracode.assistant.toolwindow.submission.FocusedContextSnapshot
 import com.auracode.assistant.toolwindow.submission.MentionSuggestion
+import com.auracode.assistant.provider.runtime.RuntimeExecutableCheckResult
 import com.auracode.assistant.toolwindow.shell.SidePanelAreaStore
 import com.auracode.assistant.toolwindow.shell.AgentSettingsPage
 import com.auracode.assistant.toolwindow.shell.McpSettingsPage
@@ -397,6 +398,37 @@ class AreaStoresTest {
 
         assertEquals(SettingsSection.RUNTIME, store.state.value.settingsSection)
         assertEquals(RuntimeSettingsTab.CLAUDE, store.state.value.runtimeSettingsTab)
+    }
+
+    @Test
+    fun `claude runtime check updates visible draft paths when auto detection succeeds`() {
+        val store = SidePanelAreaStore()
+        store.onEvent(
+            AppEvent.SettingsSnapshotUpdated(
+                codexCliPath = "codex",
+                claudeCliPath = "claude",
+                nodePath = "",
+                languageMode = com.auracode.assistant.settings.UiLanguageMode.FOLLOW_IDE,
+                themeMode = com.auracode.assistant.settings.UiThemeMode.FOLLOW_IDE,
+                autoContextEnabled = true,
+                savedAgents = emptyList(),
+            ),
+        )
+
+        store.onEvent(
+            AppEvent.ClaudeRuntimeExecutableCheckUpdated(
+                result = RuntimeExecutableCheckResult(
+                    cliPath = "C:\\Users\\Administrator\\AppData\\Roaming\\npm\\claude.cmd",
+                    nodePath = "C:\\Program Files\\nodejs\\node.exe",
+                    cliStatus = CodexEnvironmentStatus.DETECTED,
+                    nodeStatus = CodexEnvironmentStatus.DETECTED,
+                ),
+                updateDraftPaths = true,
+            ),
+        )
+
+        assertEquals("C:\\Users\\Administrator\\AppData\\Roaming\\npm\\claude.cmd", store.state.value.claudeCliPath)
+        assertEquals("C:\\Program Files\\nodejs\\node.exe", store.state.value.nodePath)
     }
 
     @Test

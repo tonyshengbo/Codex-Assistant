@@ -49,15 +49,24 @@ internal class CodexCliVersionService(
     }
 
     /** Refreshes local and remote version metadata and updates the cached snapshot. */
-    fun refresh(force: Boolean = false): CodexCliVersionSnapshot {
+    fun refresh(
+        force: Boolean = false,
+        configuredCodexPathOverride: String? = null,
+        configuredNodePathOverride: String? = null,
+    ): CodexCliVersionSnapshot {
         if (!shouldRefresh(force = force)) {
-            val restored = restoreSnapshotFromCache(action = cachedUpgradeAction)
+            val restored = restoreSnapshotFromCache(
+                action = detectUpgradeAction(
+                    configuredCodexPathOverride = configuredCodexPathOverride,
+                    configuredNodePathOverride = configuredNodePathOverride,
+                ),
+            )
             cachedSnapshot = restored
             return restored
         }
-        val resolution = environmentDetector.resolveForLaunch(
-            configuredCodexPath = settingsService.state.executablePathFor("codex"),
-            configuredNodePath = settingsService.nodeExecutablePath(),
+        val resolution = resolveForLaunch(
+            configuredCodexPathOverride = configuredCodexPathOverride,
+            configuredNodePathOverride = configuredNodePathOverride,
         )
         val source = sourceDetector.detect(resolution.codexPath)
         val action = codexCliUpgradeActionFor(source)
@@ -158,10 +167,13 @@ internal class CodexCliVersionService(
     }
 
     /** Executes the inferred upgrade command and refreshes the snapshot afterwards. */
-    fun upgrade(): CodexCliVersionSnapshot {
-        val resolution = environmentDetector.resolveForLaunch(
-            configuredCodexPath = settingsService.state.executablePathFor("codex"),
-            configuredNodePath = settingsService.nodeExecutablePath(),
+    fun upgrade(
+        configuredCodexPathOverride: String? = null,
+        configuredNodePathOverride: String? = null,
+    ): CodexCliVersionSnapshot {
+        val resolution = resolveForLaunch(
+            configuredCodexPathOverride = configuredCodexPathOverride,
+            configuredNodePathOverride = configuredNodePathOverride,
         )
         val action = codexCliUpgradeActionFor(sourceDetector.detect(resolution.codexPath))
         val previousVersion = parseCodexCliSemVer(cachedSnapshot.currentVersion)
@@ -190,7 +202,11 @@ internal class CodexCliVersionService(
             cachedSnapshot = failed
             return failed
         }
-        val refreshed = refresh(force = true)
+        val refreshed = refresh(
+            force = true,
+            configuredCodexPathOverride = configuredCodexPathOverride,
+            configuredNodePathOverride = configuredNodePathOverride,
+        )
         val refreshedCurrent = parseCodexCliSemVer(refreshed.currentVersion)
         val refreshedLatest = parseCodexCliSemVer(refreshed.latestVersion)
         val currentAdvanced = refreshedCurrent != null && previousVersion != null && refreshedCurrent > previousVersion
@@ -213,10 +229,14 @@ internal class CodexCliVersionService(
     }
 
     /** Executes the selected install command and refreshes the snapshot afterwards. */
-    fun install(packageManager: RuntimePackageManager): CodexCliVersionSnapshot {
-        val resolution = environmentDetector.resolveForLaunch(
-            configuredCodexPath = settingsService.state.executablePathFor("codex"),
-            configuredNodePath = settingsService.nodeExecutablePath(),
+    fun install(
+        packageManager: RuntimePackageManager,
+        configuredCodexPathOverride: String? = null,
+        configuredNodePathOverride: String? = null,
+    ): CodexCliVersionSnapshot {
+        val resolution = resolveForLaunch(
+            configuredCodexPathOverride = configuredCodexPathOverride,
+            configuredNodePathOverride = configuredNodePathOverride,
         )
         val action = codexCliInstallActionFor(packageManager)
         cachedSnapshot = cachedSnapshot.copy(
@@ -238,7 +258,11 @@ internal class CodexCliVersionService(
             cachedSnapshot = failed
             return failed
         }
-        return refresh(force = true)
+        return refresh(
+            force = true,
+            configuredCodexPathOverride = configuredCodexPathOverride,
+            configuredNodePathOverride = configuredNodePathOverride,
+        )
     }
 
     private fun readInstalledVersion(resolution: CodexEnvironmentResolution): CodexCliSemVer? {
@@ -266,12 +290,25 @@ internal class CodexCliVersionService(
         )
     }
 
-    private fun detectUpgradeAction(): CodexCliUpgradeAction {
-        val resolution = environmentDetector.resolveForLaunch(
-            configuredCodexPath = settingsService.state.executablePathFor("codex"),
-            configuredNodePath = settingsService.nodeExecutablePath(),
+    private fun detectUpgradeAction(
+        configuredCodexPathOverride: String? = null,
+        configuredNodePathOverride: String? = null,
+    ): CodexCliUpgradeAction {
+        val resolution = resolveForLaunch(
+            configuredCodexPathOverride = configuredCodexPathOverride,
+            configuredNodePathOverride = configuredNodePathOverride,
         )
         return codexCliUpgradeActionFor(sourceDetector.detect(resolution.codexPath))
+    }
+
+    private fun resolveForLaunch(
+        configuredCodexPathOverride: String?,
+        configuredNodePathOverride: String?,
+    ): CodexEnvironmentResolution {
+        return environmentDetector.resolveForLaunch(
+            configuredCodexPath = configuredCodexPathOverride ?: settingsService.state.executablePathFor("codex"),
+            configuredNodePath = configuredNodePathOverride ?: settingsService.nodeExecutablePath(),
+        )
     }
 
     companion object {

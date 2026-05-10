@@ -210,6 +210,7 @@ internal class SettingsAndEnvironmentHandler(
 
     /** Refreshes the Codex CLI version snapshot and publishes the latest UI state. */
     fun refreshCodexCliVersion(force: Boolean = false, announceResult: Boolean = true) {
+        val sidePanelState = context.sidePanelStore.state.value
         val checking = context.codexCliVersionService.snapshot().copy(
             checkStatus = CodexCliVersionCheckStatus.CHECKING,
             message = "Checking Codex CLI version...",
@@ -217,7 +218,11 @@ internal class SettingsAndEnvironmentHandler(
         context.eventHub.publish(AppEvent.CodexCliVersionSnapshotUpdated(checking))
         context.coroutineLauncher.launch("refreshCodexCliVersion(force=$force)") {
             runCatching {
-                context.codexCliVersionService.refresh(force = force)
+                context.codexCliVersionService.refresh(
+                    force = force,
+                    configuredCodexPathOverride = sidePanelState.codexCliPath,
+                    configuredNodePathOverride = sidePanelState.nodePath,
+                )
             }.onSuccess { snapshot ->
                 context.eventHub.publish(AppEvent.CodexCliVersionSnapshotUpdated(snapshot))
                 context.publishSettingsSnapshot()
@@ -245,6 +250,7 @@ internal class SettingsAndEnvironmentHandler(
 
     /** Executes the best-effort Codex CLI upgrade flow and republishes the version snapshot. */
     fun upgradeCodexCli() {
+        val sidePanelState = context.sidePanelStore.state.value
         context.eventHub.publish(AppEvent.RuntimeCliInstallFeedbackChanged(null))
         context.eventHub.publish(
             AppEvent.CodexCliVersionSnapshotUpdated(
@@ -256,7 +262,10 @@ internal class SettingsAndEnvironmentHandler(
         )
         context.coroutineLauncher.launch("upgradeCodexCli") {
             runCatching {
-                context.codexCliVersionService.upgrade()
+                context.codexCliVersionService.upgrade(
+                    configuredCodexPathOverride = sidePanelState.codexCliPath,
+                    configuredNodePathOverride = sidePanelState.nodePath,
+                )
             }.onSuccess { snapshot ->
                 context.eventHub.publish(AppEvent.CodexCliVersionSnapshotUpdated(snapshot))
                 context.publishSettingsSnapshot()
@@ -346,6 +355,7 @@ internal class SettingsAndEnvironmentHandler(
 
     /** Installs Codex CLI through the selected package manager and refreshes runtime diagnostics afterwards. */
     fun installCodexCli(packageManagerId: String) {
+        val sidePanelState = context.sidePanelStore.state.value
         val packageManager = RuntimePackageManager.fromId(packageManagerId) ?: return
         context.eventHub.publish(AppEvent.RuntimeCliInstallDialogStateChanged(null))
         context.eventHub.publish(AppEvent.RuntimeCliInstallFeedbackChanged(null))
@@ -359,7 +369,11 @@ internal class SettingsAndEnvironmentHandler(
         )
         context.coroutineLauncher.launch("installCodexCli(${packageManager.id})") {
             runCatching {
-                context.codexCliVersionService.install(packageManager)
+                context.codexCliVersionService.install(
+                    packageManager = packageManager,
+                    configuredCodexPathOverride = sidePanelState.codexCliPath,
+                    configuredNodePathOverride = sidePanelState.nodePath,
+                )
             }.onSuccess { snapshot ->
                 context.eventHub.publish(AppEvent.CodexCliVersionSnapshotUpdated(snapshot))
                 context.publishSettingsSnapshot()
@@ -1380,7 +1394,7 @@ internal class SettingsAndEnvironmentHandler(
                 configuredCliPath = sidePanelState.claudeCliPath,
                 configuredNodePath = sidePanelState.nodePath,
             )
-            context.eventHub.publish(AppEvent.ClaudeRuntimeExecutableCheckUpdated(result))
+            context.eventHub.publish(AppEvent.ClaudeRuntimeExecutableCheckUpdated(result, updateDraftPaths = true))
         }
     }
 

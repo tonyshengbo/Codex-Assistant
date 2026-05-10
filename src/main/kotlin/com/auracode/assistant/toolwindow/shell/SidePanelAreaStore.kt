@@ -511,7 +511,19 @@ internal class SidePanelAreaStore {
             }
 
             is AppEvent.ClaudeRuntimeExecutableCheckUpdated -> {
-                _state.value = _state.value.copy(claudeRuntimeCheckResult = event.result)
+                val current = _state.value
+                val shouldUpdateClaudeDraft = event.updateDraftPaths &&
+                    current.claudeCliPath.trim() == current.savedClaudeCliPath.trim() &&
+                    event.result.cliPath.isNotBlank()
+                _state.value = current.copy(
+                    claudeCliPath = if (shouldUpdateClaudeDraft) event.result.cliPath else current.claudeCliPath,
+                    environmentDraft = current.environmentDraft.withDetectedPaths(
+                        codexCliPath = current.codexCliPath,
+                        nodePath = event.result.nodePath,
+                        updateDraftPaths = event.updateDraftPaths,
+                    ),
+                    claudeRuntimeCheckResult = event.result,
+                )
             }
 
             is AppEvent.McpServersLoaded -> {

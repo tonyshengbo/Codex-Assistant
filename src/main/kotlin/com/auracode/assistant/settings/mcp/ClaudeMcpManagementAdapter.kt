@@ -2,7 +2,8 @@ package com.auracode.assistant.settings.mcp
 
 import com.auracode.assistant.provider.claude.ClaudeProviderFactory
 import com.auracode.assistant.provider.codex.CodexExecutableResolver
-import com.auracode.assistant.provider.codex.buildLaunchEnvironmentOverrides
+import com.auracode.assistant.provider.runtime.DefaultRuntimeLaunchResolver
+import com.auracode.assistant.provider.runtime.RuntimeLaunchResolver
 import com.auracode.assistant.settings.AgentSettingsService
 import com.intellij.execution.configurations.GeneralCommandLine
 import com.intellij.execution.process.CapturingProcessHandler
@@ -45,6 +46,10 @@ internal class ClaudeMcpManagementAdapter(
     private val settings: AgentSettingsService,
     private val executableResolver: CodexExecutableResolver = CodexExecutableResolver(),
     private val shellEnvironmentLoader: () -> Map<String, String> = { System.getenv() },
+    private val runtimeLaunchResolver: RuntimeLaunchResolver = DefaultRuntimeLaunchResolver(
+        executableResolver = executableResolver,
+        shellEnvironmentLoader = shellEnvironmentLoader,
+    ),
     private val commandRunner: (CommandExecutionRequest) -> CommandExecutionResult = ::runCommand,
 ) : McpManagementAdapter {
 
@@ -280,21 +285,16 @@ internal class ClaudeMcpManagementAdapter(
 
     /** 执行 Claude CLI 命令。 */
     private fun runCli(vararg args: String): CommandExecutionResult {
-        val shellEnv = shellEnvironmentLoader()
         val configuredPath = settings.state.executablePathFor(ClaudeProviderFactory.ENGINE_ID)
-        val resolved = executableResolver.resolve(
-            configuredPath = configuredPath,
+        val resolution = runtimeLaunchResolver.resolve(
             commandName = ClaudeProviderFactory.ENGINE_ID,
-            shellEnvironment = shellEnv,
+            configuredCliPath = configuredPath,
+            configuredNodePath = settings.nodeExecutablePath(),
         )
-        val claudePath = resolved.path?.takeIf { it.isNotBlank() }
-            ?: configuredPath.trim().takeIf { it.isNotBlank() }
-            ?: ClaudeProviderFactory.ENGINE_ID
-        val envOverrides = buildLaunchEnvironmentOverrides(shellEnvironment = shellEnv, nodePath = null)
         return commandRunner(
             CommandExecutionRequest(
-                command = listOf(claudePath) + args.toList(),
-                environmentOverrides = envOverrides,
+                command = listOf(resolution.cliPath) + args.toList(),
+                environmentOverrides = resolution.environmentOverrides,
             ),
         )
     }

@@ -13,8 +13,7 @@ internal data class RuntimeExecutableCheckResult(
 
 /** Resolves CLI and Node executables without rendering a heavyweight diagnostics flow. */
 internal class RuntimeExecutableCheckService(
-    private val executableResolver: CodexExecutableResolver = CodexExecutableResolver(),
-    private val shellEnvironmentLoader: () -> Map<String, String> = ::resolvePreferredShellEnvironment,
+    private val runtimeLaunchResolver: RuntimeLaunchResolver = DefaultRuntimeLaunchResolver(),
 ) {
     /** Validates the active engine CLI path together with the shared optional Node path. */
     fun check(
@@ -22,22 +21,16 @@ internal class RuntimeExecutableCheckService(
         configuredCliPath: String,
         configuredNodePath: String,
     ): RuntimeExecutableCheckResult {
-        val shellEnvironment = shellEnvironmentLoader()
-        val cli = executableResolver.resolve(
-            configuredPath = configuredCliPath,
+        val resolution = runtimeLaunchResolver.resolve(
             commandName = commandName,
-            shellEnvironment = shellEnvironment,
-        )
-        val node = executableResolver.resolve(
-            configuredPath = configuredNodePath,
-            commandName = "node",
-            shellEnvironment = shellEnvironment,
+            configuredCliPath = configuredCliPath,
+            configuredNodePath = configuredNodePath,
         )
         return RuntimeExecutableCheckResult(
-            cliPath = cli.path.orEmpty(),
-            nodePath = node.path.orEmpty(),
-            cliStatus = cli.status,
-            nodeStatus = node.status,
+            cliPath = if (resolution.cliStatus == CodexEnvironmentStatus.MISSING) "" else resolution.cliPath,
+            nodePath = resolution.nodePath,
+            cliStatus = resolution.cliStatus,
+            nodeStatus = resolution.nodeStatus,
         )
     }
 }

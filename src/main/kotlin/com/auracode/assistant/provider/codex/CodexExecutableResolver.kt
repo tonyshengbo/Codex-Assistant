@@ -22,7 +22,7 @@ internal class CodexExecutableResolver(
         shellEnvironment: Map<String, String>,
     ): CodexResolvedExecutable {
         val normalized = configuredPath.trim()
-        if (normalized.isNotBlank()) {
+        if (normalized.isNotBlank() && !isDefaultCommandAlias(normalized, commandName)) {
             resolveExactPath(normalized)?.let {
                 return CodexResolvedExecutable(it, CodexEnvironmentStatus.CONFIGURED)
             }
@@ -41,6 +41,13 @@ internal class CodexExecutableResolver(
             return CodexResolvedExecutable(it, CodexEnvironmentStatus.DETECTED)
         }
         return CodexResolvedExecutable(null, CodexEnvironmentStatus.MISSING)
+    }
+
+    private fun isDefaultCommandAlias(
+        configuredPath: String,
+        commandName: String,
+    ): Boolean {
+        return configuredPath.equals(commandName, ignoreCase = true)
     }
 
     private fun resolveExactPath(path: String): String? {
@@ -75,11 +82,11 @@ internal class CodexExecutableResolver(
             return listOf(executable)
         }
         return buildList {
-            add(executable)
             pathExtValues.forEach { extension ->
                 add(executable + extension.lowercase())
                 add(executable + extension.uppercase())
             }
+            add(executable)
         }.distinct()
     }
 
