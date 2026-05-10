@@ -1,8 +1,11 @@
 package com.auracode.assistant.provider.claude
 
+import com.auracode.assistant.provider.codex.CodexEnvironmentStatus
 import com.auracode.assistant.provider.codex.CodexExecutableResolver
 import com.auracode.assistant.provider.codex.buildLaunchEnvironmentOverrides
+import com.auracode.assistant.provider.runtime.RuntimePackageManager
 import com.auracode.assistant.provider.runtime.RuntimeUpgradeCommandResolver
+import com.auracode.assistant.provider.runtime.resolvePreferredShellEnvironment
 import com.auracode.assistant.settings.AgentSettingsService
 import java.io.BufferedReader
 import java.net.HttpURLConnection
@@ -23,13 +26,14 @@ internal class ClaudeCliVersionService(
     private val sourceDetector: ClaudeCliUpgradeSourceDetector = ClaudeCliUpgradeSourceDetector(),
     private val executableResolver: CodexExecutableResolver = CodexExecutableResolver(),
     private val upgradeCommandResolver: RuntimeUpgradeCommandResolver = RuntimeUpgradeCommandResolver(),
-    private val shellEnvironmentLoader: () -> Map<String, String> = { System.getenv() },
+    private val shellEnvironmentLoader: () -> Map<String, String> = ::resolvePreferredShellEnvironment,
     private val commandRunner: (List<String>, Map<String, String>) -> ClaudeCliCommandResult = ::runClaudeCliCommand,
     private val latestVersionFetcher: () -> String = ::fetchLatestClaudeCliVersionFromNpm,
     private val clock: () -> Long = System::currentTimeMillis,
 ) {
     private data class ClaudeLaunchResolution(
         val claudePath: String,
+        val cliStatus: CodexEnvironmentStatus,
         val environmentOverrides: Map<String, String>,
     )
 
@@ -72,14 +76,24 @@ internal class ClaudeCliVersionService(
 
         val nextSnapshot = when {
             currentVersion == null -> ClaudeCliVersionSnapshot(
-                checkStatus = ClaudeCliVersionCheckStatus.LOCAL_VERSION_UNAVAILABLE,
+                checkStatus = if (resolution.cliStatus == CodexEnvironmentStatus.MISSING) {
+                    ClaudeCliVersionCheckStatus.NOT_INSTALLED
+                } else {
+                    ClaudeCliVersionCheckStatus.LOCAL_VERSION_UNAVAILABLE
+                },
                 latestVersion = latestVersion.orEmpty(),
                 ignoredVersion = ignoredVersion,
                 upgradeSource = source,
                 displayCommand = action.displayCommand,
                 isUpgradeSupported = action.isUpgradeSupported,
                 lastCheckedAt = now,
-                message = defaultClaudeCliVersionMessage(ClaudeCliVersionCheckStatus.LOCAL_VERSION_UNAVAILABLE),
+                message = defaultClaudeCliVersionMessage(
+                    if (resolution.cliStatus == CodexEnvironmentStatus.MISSING) {
+                        ClaudeCliVersionCheckStatus.NOT_INSTALLED
+                    } else {
+                        ClaudeCliVersionCheckStatus.LOCAL_VERSION_UNAVAILABLE
+                    },
+                ),
             )
             latestVersion.isNullOrBlank() -> ClaudeCliVersionSnapshot(
                 checkStatus = ClaudeCliVersionCheckStatus.REMOTE_CHECK_FAILED,
@@ -181,6 +195,32 @@ internal class ClaudeCliVersionService(
         }
     }
 
+    /** Executes the selected install command and refreshes the snapshot afterwards. */
+    fun install(packageManager: RuntimePackageManager): ClaudeCliVersionSnapshot {
+        val resolution = resolveForLaunch()
+        val action = claudeCliInstallActionFor(packageManager)
+        cachedSnapshot = cachedSnapshot.copy(
+            checkStatus = ClaudeCliVersionCheckStatus.INSTALL_IN_PROGRESS,
+            message = defaultClaudeCliVersionMessage(ClaudeCliVersionCheckStatus.INSTALL_IN_PROGRESS),
+        )
+        val resolvedCommand = upgradeCommandResolver.resolve(
+            command = action.command,
+            shellEnvironment = resolution.environmentOverrides,
+        )
+        val result = commandRunner(resolvedCommand, resolution.environmentOverrides)
+        if (result.exitCode != 0) {
+            val failed = cachedSnapshot.copy(
+                checkStatus = ClaudeCliVersionCheckStatus.INSTALL_FAILED,
+                message = result.stderr.ifBlank { result.stdout }.ifBlank {
+                    defaultClaudeCliVersionMessage(ClaudeCliVersionCheckStatus.INSTALL_FAILED)
+                },
+            )
+            cachedSnapshot = failed
+            return failed
+        }
+        return refresh(force = true)
+    }
+
     /** Updates the ignored version marker and keeps the cached snapshot in sync. */
     fun ignoreVersion(version: String): ClaudeCliVersionSnapshot {
         settingsService.setClaudeCliIgnoredVersion(version)
@@ -223,6 +263,7 @@ internal class ClaudeCliVersionService(
             ?: "claude"
         return ClaudeLaunchResolution(
             claudePath = claudePath,
+            cliStatus = claude.status,
             environmentOverrides = buildLaunchEnvironmentOverrides(
                 shellEnvironment = shellEnvironment,
                 nodePath = node.path,

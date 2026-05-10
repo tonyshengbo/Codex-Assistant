@@ -40,6 +40,7 @@ import com.auracode.assistant.toolwindow.settings.McpSettingsTab
 import com.auracode.assistant.toolwindow.settings.TokenUsageRange
 import com.auracode.assistant.toolwindow.settings.TokenUsageSettingsTab
 import com.auracode.assistant.toolwindow.settings.TokenUsageStatsSnapshot
+import com.auracode.assistant.toolwindow.shell.RuntimeCliInstallDialogState
 import com.auracode.assistant.toolwindow.shared.UiText
 import com.auracode.assistant.toolwindow.execution.ExecutionTurnStatusUiState
 import com.auracode.assistant.toolwindow.conversation.ConversationFileChange
@@ -162,9 +163,15 @@ internal sealed interface UiIntent {
     data object TestCodexEnvironment : UiIntent
     data object CheckCodexCliVersion : UiIntent
     data object UpgradeCodexCli : UiIntent
+    data object OpenCodexCliInstallDialog : UiIntent
+    data class InstallCodexCli(val packageManagerId: String) : UiIntent
     data class IgnoreCodexCliVersion(val version: String) : UiIntent
     data object CheckClaudeCliVersion : UiIntent
     data object UpgradeClaudeCli : UiIntent
+    data object OpenClaudeCliInstallDialog : UiIntent
+    data class InstallClaudeCli(val packageManagerId: String) : UiIntent
+    data class SelectRuntimeCliInstallPackageManager(val packageManagerId: String) : UiIntent
+    data object DismissRuntimeCliInstallDialog : UiIntent
     data object CreateNewAgentDraft : UiIntent
     data object ShowAgentSettingsList : UiIntent
     data class SelectSavedAgentForEdit(val id: String) : UiIntent
@@ -283,6 +290,12 @@ internal sealed interface AppEvent {
     ) : AppEvent
     data class ClaudeCliVersionSnapshotUpdated(
         val snapshot: ClaudeCliVersionSnapshot,
+    ) : AppEvent
+    data class RuntimeCliInstallDialogStateChanged(
+        val state: RuntimeCliInstallDialogState?,
+    ) : AppEvent
+    data class RuntimeCliInstallFeedbackChanged(
+        val message: String?,
     ) : AppEvent
     data class ClaudeRuntimeExecutableCheckUpdated(
         val result: RuntimeExecutableCheckResult,

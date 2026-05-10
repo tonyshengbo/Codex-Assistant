@@ -4,7 +4,7 @@ import com.auracode.assistant.provider.codex.CodexExecutableResolver
 
 /** Resolves runtime upgrade commands to concrete executables before launching external processes. */
 internal class RuntimeUpgradeCommandResolver(
-    private val executableResolver: CodexExecutableResolver = CodexExecutableResolver(commonSearchPaths = emptyList()),
+    private val executableResolver: CodexExecutableResolver = CodexExecutableResolver(),
 ) {
     /** Rewrites the command head to an absolute executable path when the current PATH can resolve it. */
     fun resolve(

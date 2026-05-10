@@ -5,9 +5,13 @@ import com.auracode.assistant.notification.AuraNotificationGroup
 import com.auracode.assistant.service.TokenUsageStatsService
 import com.auracode.assistant.provider.claude.ClaudeCliVersionCheckStatus
 import com.auracode.assistant.provider.claude.ClaudeCliVersionSnapshot
+import com.auracode.assistant.provider.claude.claudeCliInstallActionFor
 import com.auracode.assistant.provider.codex.CodexCliVersionCheckStatus
 import com.auracode.assistant.provider.codex.CodexCliVersionSnapshot
 import com.auracode.assistant.provider.codex.CodexModelCatalogRefreshResult
+import com.auracode.assistant.provider.codex.codexCliInstallActionFor
+import com.auracode.assistant.provider.runtime.RuntimePackageManager
+import com.auracode.assistant.provider.runtime.RuntimePackageManagerDetector
 import com.auracode.assistant.settings.SavedAgentDefinition
 import com.auracode.assistant.settings.mcp.McpAuthActionResult
 import com.auracode.assistant.settings.mcp.McpBusyState
@@ -27,6 +31,8 @@ import com.auracode.assistant.toolwindow.settings.TokenUsageSettingsTab
 import com.auracode.assistant.toolwindow.settings.tokenUsageScopeKey
 import com.auracode.assistant.toolwindow.settings.tokenUsageSettingsTabForEngine
 import com.auracode.assistant.toolwindow.shell.SidePanelKind
+import com.auracode.assistant.toolwindow.shell.RuntimeCliInstallDialogState
+import com.auracode.assistant.toolwindow.shell.RuntimeCliInstallOption
 import com.auracode.assistant.toolwindow.shell.SkillImportDialogPhase
 import com.auracode.assistant.toolwindow.shell.SkillImportDialogState
 import com.auracode.assistant.toolwindow.shared.UiText
@@ -41,6 +47,7 @@ internal class SettingsAndEnvironmentHandler(
     private val tokenUsageStatsService = TokenUsageStatsService(
         loadLedgerRecords = { engineId -> context.chatService.listUsageLedgerRecords(engineId) },
     )
+    private val runtimePackageManagerDetector = RuntimePackageManagerDetector()
     private var lastTokenUsageRefreshSignature: String? = null
 
     fun applyLanguagePreview(mode: com.auracode.assistant.settings.UiLanguageMode) {
@@ -167,6 +174,40 @@ internal class SettingsAndEnvironmentHandler(
         }
     }
 
+    /** Opens the runtime install dialog for the requested engine using current package-manager availability. */
+    fun openRuntimeCliInstallDialog(engineId: String) {
+        val options = buildRuntimeCliInstallOptions(engineId)
+        val selectedPackageManagerId = options.firstOrNull { it.available }?.packageManagerId
+            ?: options.firstOrNull()?.packageManagerId
+            ?: return
+        context.eventHub.publish(AppEvent.RuntimeCliInstallFeedbackChanged(null))
+        context.eventHub.publish(
+            AppEvent.RuntimeCliInstallDialogStateChanged(
+                RuntimeCliInstallDialogState(
+                    engineId = engineId,
+                    options = options,
+                    selectedPackageManagerId = selectedPackageManagerId,
+                ),
+            ),
+        )
+    }
+
+    /** Updates the selected package manager inside the open runtime install dialog. */
+    fun selectRuntimeCliInstallPackageManager(packageManagerId: String) {
+        val current = context.sidePanelStore.state.value.runtimeCliInstallDialogState ?: return
+        if (current.options.none { it.packageManagerId == packageManagerId }) return
+        context.eventHub.publish(
+            AppEvent.RuntimeCliInstallDialogStateChanged(
+                current.copy(selectedPackageManagerId = packageManagerId),
+            ),
+        )
+    }
+
+    /** Closes the runtime install dialog without mutating any runtime state. */
+    fun dismissRuntimeCliInstallDialog() {
+        context.eventHub.publish(AppEvent.RuntimeCliInstallDialogStateChanged(null))
+    }
+
     /** Refreshes the Codex CLI version snapshot and publishes the latest UI state. */
     fun refreshCodexCliVersion(force: Boolean = false, announceResult: Boolean = true) {
         val checking = context.codexCliVersionService.snapshot().copy(
@@ -204,6 +245,7 @@ internal class SettingsAndEnvironmentHandler(
 
     /** Executes the best-effort Codex CLI upgrade flow and republishes the version snapshot. */
     fun upgradeCodexCli() {
+        context.eventHub.publish(AppEvent.RuntimeCliInstallFeedbackChanged(null))
         context.eventHub.publish(
             AppEvent.CodexCliVersionSnapshotUpdated(
                 context.codexCliVersionService.snapshot().copy(
@@ -275,6 +317,7 @@ internal class SettingsAndEnvironmentHandler(
 
     /** Executes the best-effort Claude CLI upgrade flow and republishes the version snapshot. */
     fun upgradeClaudeCli() {
+        context.eventHub.publish(AppEvent.RuntimeCliInstallFeedbackChanged(null))
         context.eventHub.publish(
             AppEvent.ClaudeCliVersionSnapshotUpdated(
                 context.claudeCliVersionService.snapshot().copy(
@@ -294,6 +337,88 @@ internal class SettingsAndEnvironmentHandler(
                 val failed = context.claudeCliVersionService.snapshot().copy(
                     checkStatus = ClaudeCliVersionCheckStatus.UPGRADE_FAILED,
                     message = error.message ?: "Failed to upgrade Claude CLI.",
+                )
+                context.eventHub.publish(AppEvent.ClaudeCliVersionSnapshotUpdated(failed))
+                context.eventHub.publish(AppEvent.StatusTextUpdated(UiText.raw(failed.message)))
+            }
+        }
+    }
+
+    /** Installs Codex CLI through the selected package manager and refreshes runtime diagnostics afterwards. */
+    fun installCodexCli(packageManagerId: String) {
+        val packageManager = RuntimePackageManager.fromId(packageManagerId) ?: return
+        context.eventHub.publish(AppEvent.RuntimeCliInstallDialogStateChanged(null))
+        context.eventHub.publish(AppEvent.RuntimeCliInstallFeedbackChanged(null))
+        context.eventHub.publish(
+            AppEvent.CodexCliVersionSnapshotUpdated(
+                context.codexCliVersionService.snapshot().copy(
+                    checkStatus = CodexCliVersionCheckStatus.INSTALL_IN_PROGRESS,
+                    message = AuraCodeBundle.message("settings.runtime.version.status.installing"),
+                ),
+            ),
+        )
+        context.coroutineLauncher.launch("installCodexCli(${packageManager.id})") {
+            runCatching {
+                context.codexCliVersionService.install(packageManager)
+            }.onSuccess { snapshot ->
+                context.eventHub.publish(AppEvent.CodexCliVersionSnapshotUpdated(snapshot))
+                context.publishSettingsSnapshot()
+                detectCodexEnvironment()
+                if (snapshot.checkStatus == CodexCliVersionCheckStatus.INSTALL_FAILED) {
+                    context.eventHub.publish(AppEvent.StatusTextUpdated(UiText.raw(snapshot.message)))
+                } else {
+                    val successMessage = AuraCodeBundle.message(
+                        "settings.runtime.install.success",
+                        AuraCodeBundle.message("settings.runtime.tab.codex"),
+                    )
+                    context.eventHub.publish(AppEvent.RuntimeCliInstallFeedbackChanged(successMessage))
+                    context.eventHub.publish(AppEvent.StatusTextUpdated(UiText.raw(successMessage)))
+                }
+            }.onFailure { error ->
+                val failed = context.codexCliVersionService.snapshot().copy(
+                    checkStatus = CodexCliVersionCheckStatus.INSTALL_FAILED,
+                    message = error.message ?: AuraCodeBundle.message("settings.runtime.install.failed"),
+                )
+                context.eventHub.publish(AppEvent.CodexCliVersionSnapshotUpdated(failed))
+                context.eventHub.publish(AppEvent.StatusTextUpdated(UiText.raw(failed.message)))
+            }
+        }
+    }
+
+    /** Installs Claude CLI through the selected package manager and refreshes runtime diagnostics afterwards. */
+    fun installClaudeCli(packageManagerId: String) {
+        val packageManager = RuntimePackageManager.fromId(packageManagerId) ?: return
+        context.eventHub.publish(AppEvent.RuntimeCliInstallDialogStateChanged(null))
+        context.eventHub.publish(AppEvent.RuntimeCliInstallFeedbackChanged(null))
+        context.eventHub.publish(
+            AppEvent.ClaudeCliVersionSnapshotUpdated(
+                context.claudeCliVersionService.snapshot().copy(
+                    checkStatus = ClaudeCliVersionCheckStatus.INSTALL_IN_PROGRESS,
+                    message = AuraCodeBundle.message("settings.runtime.version.status.installing"),
+                ),
+            ),
+        )
+        context.coroutineLauncher.launch("installClaudeCli(${packageManager.id})") {
+            runCatching {
+                context.claudeCliVersionService.install(packageManager)
+            }.onSuccess { snapshot ->
+                context.eventHub.publish(AppEvent.ClaudeCliVersionSnapshotUpdated(snapshot))
+                context.publishSettingsSnapshot()
+                refreshClaudeRuntimeCheck()
+                if (snapshot.checkStatus == ClaudeCliVersionCheckStatus.INSTALL_FAILED) {
+                    context.eventHub.publish(AppEvent.StatusTextUpdated(UiText.raw(snapshot.message)))
+                } else {
+                    val successMessage = AuraCodeBundle.message(
+                        "settings.runtime.install.success",
+                        AuraCodeBundle.message("settings.runtime.tab.claude"),
+                    )
+                    context.eventHub.publish(AppEvent.RuntimeCliInstallFeedbackChanged(successMessage))
+                    context.eventHub.publish(AppEvent.StatusTextUpdated(UiText.raw(successMessage)))
+                }
+            }.onFailure { error ->
+                val failed = context.claudeCliVersionService.snapshot().copy(
+                    checkStatus = ClaudeCliVersionCheckStatus.INSTALL_FAILED,
+                    message = error.message ?: AuraCodeBundle.message("settings.runtime.install.failed"),
                 )
                 context.eventHub.publish(AppEvent.ClaudeCliVersionSnapshotUpdated(failed))
                 context.eventHub.publish(AppEvent.StatusTextUpdated(UiText.raw(failed.message)))
@@ -1301,6 +1426,21 @@ internal class SettingsAndEnvironmentHandler(
             }
             updateMcpBusy { copy(testingName = null) }
             logMcpDiagnostic("MCP coroutine finish: label=runMcpServerTest($name) | ${mcpContextSnapshot(requestedName = name)}")
+        }
+    }
+
+    /** Builds the install dialog options for one runtime engine using current package-manager availability. */
+    private fun buildRuntimeCliInstallOptions(engineId: String): List<RuntimeCliInstallOption> {
+        return runtimePackageManagerDetector.detectAvailability().map { availability ->
+            val commandPreview = when (engineId.trim().lowercase()) {
+                RuntimeSettingsTab.CLAUDE.engineId -> claudeCliInstallActionFor(availability.packageManager).displayCommand
+                else -> codexCliInstallActionFor(availability.packageManager).displayCommand
+            }
+            RuntimeCliInstallOption(
+                packageManagerId = availability.packageManager.id,
+                commandPreview = commandPreview,
+                available = availability.available,
+            )
         }
     }
 

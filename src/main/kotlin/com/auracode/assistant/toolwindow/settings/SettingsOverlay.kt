@@ -212,6 +212,14 @@ internal fun SettingsOverlay(
             onIntent = onIntent,
         )
     }
+
+    state.runtimeCliInstallDialogState?.let { dialogState ->
+        RuntimeCliInstallDialog(
+            p = p,
+            state = dialogState,
+            onIntent = onIntent,
+        )
+    }
 }
 
 @Composable

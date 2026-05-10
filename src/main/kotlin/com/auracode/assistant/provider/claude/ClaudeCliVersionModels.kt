@@ -1,16 +1,21 @@
 package com.auracode.assistant.provider.claude
 
 import com.auracode.assistant.provider.codex.CodexCliExecutablePathInspector
+import com.auracode.assistant.provider.runtime.RuntimePackageManager
 import java.util.Locale
 
 /** Represents the lifecycle state of Claude CLI version checks and upgrades. */
 internal enum class ClaudeCliVersionCheckStatus {
     IDLE,
+    NOT_INSTALLED,
     CHECKING,
     UP_TO_DATE,
     UPDATE_AVAILABLE,
     LOCAL_VERSION_UNAVAILABLE,
     REMOTE_CHECK_FAILED,
+    INSTALL_IN_PROGRESS,
+    INSTALL_SUCCEEDED,
+    INSTALL_FAILED,
     UPGRADE_IN_PROGRESS,
     UPGRADE_SUCCEEDED,
     UPGRADE_FAILED,
@@ -31,6 +36,13 @@ internal data class ClaudeCliUpgradeAction(
     val displayCommand: String,
     val command: List<String>,
     val isUpgradeSupported: Boolean,
+)
+
+/** Holds the command users can inspect, copy, or execute when installing Claude CLI. */
+internal data class ClaudeCliInstallAction(
+    val packageManager: RuntimePackageManager,
+    val displayCommand: String,
+    val command: List<String>,
 )
 
 /** Stores the latest known Claude CLI version state consumed by the runtime settings UI. */
@@ -148,7 +160,11 @@ internal fun deriveClaudeCliVersionStatus(
     }
     if (normalizedCurrent.isBlank()) {
         return if (lastCheckedAt > 0L) {
-            ClaudeCliVersionCheckStatus.LOCAL_VERSION_UNAVAILABLE
+            if (normalizedLatest.isNotBlank()) {
+                ClaudeCliVersionCheckStatus.NOT_INSTALLED
+            } else {
+                ClaudeCliVersionCheckStatus.LOCAL_VERSION_UNAVAILABLE
+            }
         } else {
             ClaudeCliVersionCheckStatus.IDLE
         }
@@ -173,14 +189,44 @@ internal fun deriveClaudeCliVersionStatus(
 /** Returns the default status copy shown in the runtime settings UI. */
 internal fun defaultClaudeCliVersionMessage(status: ClaudeCliVersionCheckStatus): String = when (status) {
     ClaudeCliVersionCheckStatus.IDLE -> ""
+    ClaudeCliVersionCheckStatus.NOT_INSTALLED -> "Claude CLI is not installed."
     ClaudeCliVersionCheckStatus.CHECKING -> "Checking Claude CLI version..."
     ClaudeCliVersionCheckStatus.UP_TO_DATE -> "Claude CLI is up to date."
     ClaudeCliVersionCheckStatus.UPDATE_AVAILABLE -> "A newer Claude CLI version is available."
     ClaudeCliVersionCheckStatus.LOCAL_VERSION_UNAVAILABLE -> "Unable to read the installed Claude CLI version."
     ClaudeCliVersionCheckStatus.REMOTE_CHECK_FAILED -> "Unable to fetch the latest Claude CLI version."
+    ClaudeCliVersionCheckStatus.INSTALL_IN_PROGRESS -> "Installing Claude CLI..."
+    ClaudeCliVersionCheckStatus.INSTALL_SUCCEEDED -> "Claude CLI was installed successfully."
+    ClaudeCliVersionCheckStatus.INSTALL_FAILED -> "Claude CLI installation failed."
     ClaudeCliVersionCheckStatus.UPGRADE_IN_PROGRESS -> "Upgrading Claude CLI..."
     ClaudeCliVersionCheckStatus.UPGRADE_SUCCEEDED -> "Claude CLI was upgraded successfully."
     ClaudeCliVersionCheckStatus.UPGRADE_FAILED -> "Claude CLI upgrade failed."
+}
+
+/** Returns the user-facing install action for the provided package manager. */
+internal fun claudeCliInstallActionFor(packageManager: RuntimePackageManager): ClaudeCliInstallAction {
+    return when (packageManager) {
+        RuntimePackageManager.NPM -> ClaudeCliInstallAction(
+            packageManager = packageManager,
+            displayCommand = "npm install -g @anthropic-ai/claude-code@latest",
+            command = listOf("npm", "install", "-g", "@anthropic-ai/claude-code@latest"),
+        )
+        RuntimePackageManager.PNPM -> ClaudeCliInstallAction(
+            packageManager = packageManager,
+            displayCommand = "pnpm add -g @anthropic-ai/claude-code@latest",
+            command = listOf("pnpm", "add", "-g", "@anthropic-ai/claude-code@latest"),
+        )
+        RuntimePackageManager.BUN -> ClaudeCliInstallAction(
+            packageManager = packageManager,
+            displayCommand = "bun add -g @anthropic-ai/claude-code@latest",
+            command = listOf("bun", "add", "-g", "@anthropic-ai/claude-code@latest"),
+        )
+        RuntimePackageManager.BREW -> ClaudeCliInstallAction(
+            packageManager = packageManager,
+            displayCommand = "brew install claude-code",
+            command = listOf("brew", "install", "claude-code"),
+        )
+    }
 }
 
 /** Returns the user-facing upgrade action for the provided installation source. */

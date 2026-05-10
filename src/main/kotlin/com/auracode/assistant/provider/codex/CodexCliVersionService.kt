@@ -1,5 +1,6 @@
 package com.auracode.assistant.provider.codex
 
+import com.auracode.assistant.provider.runtime.RuntimePackageManager
 import com.auracode.assistant.settings.AgentSettingsService
 import com.auracode.assistant.provider.runtime.RuntimeUpgradeCommandResolver
 import java.io.BufferedReader
@@ -67,14 +68,24 @@ internal class CodexCliVersionService(
         val latestVersion = runCatching(latestVersionFetcher).getOrNull()
         val nextSnapshot = when {
             currentVersion == null -> CodexCliVersionSnapshot(
-                checkStatus = CodexCliVersionCheckStatus.LOCAL_VERSION_UNAVAILABLE,
+                checkStatus = if (resolution.codexStatus == CodexEnvironmentStatus.MISSING) {
+                    CodexCliVersionCheckStatus.NOT_INSTALLED
+                } else {
+                    CodexCliVersionCheckStatus.LOCAL_VERSION_UNAVAILABLE
+                },
                 latestVersion = latestVersion.orEmpty(),
                 ignoredVersion = ignoredVersion,
                 upgradeSource = source,
                 displayCommand = action.displayCommand,
                 isUpgradeSupported = action.isUpgradeSupported,
                 lastCheckedAt = now,
-                message = defaultCodexCliVersionMessage(CodexCliVersionCheckStatus.LOCAL_VERSION_UNAVAILABLE),
+                message = defaultCodexCliVersionMessage(
+                    if (resolution.codexStatus == CodexEnvironmentStatus.MISSING) {
+                        CodexCliVersionCheckStatus.NOT_INSTALLED
+                    } else {
+                        CodexCliVersionCheckStatus.LOCAL_VERSION_UNAVAILABLE
+                    },
+                ),
             )
             latestVersion.isNullOrBlank() -> CodexCliVersionSnapshot(
                 checkStatus = CodexCliVersionCheckStatus.REMOTE_CHECK_FAILED,
@@ -199,6 +210,35 @@ internal class CodexCliVersionService(
                 message = "Codex CLI upgrade finished, but the installed version could not be confirmed.",
             ).also { cachedSnapshot = it }
         }
+    }
+
+    /** Executes the selected install command and refreshes the snapshot afterwards. */
+    fun install(packageManager: RuntimePackageManager): CodexCliVersionSnapshot {
+        val resolution = environmentDetector.resolveForLaunch(
+            configuredCodexPath = settingsService.state.executablePathFor("codex"),
+            configuredNodePath = settingsService.nodeExecutablePath(),
+        )
+        val action = codexCliInstallActionFor(packageManager)
+        cachedSnapshot = cachedSnapshot.copy(
+            checkStatus = CodexCliVersionCheckStatus.INSTALL_IN_PROGRESS,
+            message = defaultCodexCliVersionMessage(CodexCliVersionCheckStatus.INSTALL_IN_PROGRESS),
+        )
+        val resolvedCommand = upgradeCommandResolver.resolve(
+            command = action.command,
+            shellEnvironment = resolution.environmentOverrides,
+        )
+        val result = commandRunner(resolvedCommand, resolution.environmentOverrides)
+        if (result.exitCode != 0) {
+            val failed = cachedSnapshot.copy(
+                checkStatus = CodexCliVersionCheckStatus.INSTALL_FAILED,
+                message = result.stderr.ifBlank { result.stdout }.ifBlank {
+                    defaultCodexCliVersionMessage(CodexCliVersionCheckStatus.INSTALL_FAILED)
+                },
+            )
+            cachedSnapshot = failed
+            return failed
+        }
+        return refresh(force = true)
     }
 
     private fun readInstalledVersion(resolution: CodexEnvironmentResolution): CodexCliSemVer? {

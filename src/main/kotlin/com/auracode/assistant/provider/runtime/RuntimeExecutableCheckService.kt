@@ -14,7 +14,7 @@ internal data class RuntimeExecutableCheckResult(
 /** Resolves CLI and Node executables without rendering a heavyweight diagnostics flow. */
 internal class RuntimeExecutableCheckService(
     private val executableResolver: CodexExecutableResolver = CodexExecutableResolver(),
-    private val shellEnvironmentLoader: () -> Map<String, String> = { System.getenv() },
+    private val shellEnvironmentLoader: () -> Map<String, String> = ::resolvePreferredShellEnvironment,
 ) {
     /** Validates the active engine CLI path together with the shared optional Node path. */
     fun check(

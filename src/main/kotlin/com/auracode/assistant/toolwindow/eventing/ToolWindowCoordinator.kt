@@ -32,6 +32,7 @@ import com.auracode.assistant.toolwindow.submission.SubmissionAreaStore
 import com.auracode.assistant.toolwindow.submission.EditedFileAggregate
 import com.auracode.assistant.toolwindow.shell.SidePanelAreaStore
 import com.auracode.assistant.toolwindow.shell.SidePanelKind
+import com.auracode.assistant.toolwindow.settings.RuntimeSettingsTab
 import com.auracode.assistant.toolwindow.shared.UiText
 import com.auracode.assistant.toolwindow.sessions.SessionAttentionStore
 import com.auracode.assistant.toolwindow.sessions.SessionSubmissionViewStateRegistry
@@ -436,8 +437,14 @@ internal class ToolWindowCoordinator(
             UiIntent.TestCodexEnvironment -> settingsHandler.testCodexEnvironment()
             UiIntent.CheckCodexCliVersion -> settingsHandler.refreshCodexCliVersion(force = true)
             UiIntent.UpgradeCodexCli -> settingsHandler.upgradeCodexCli()
+            UiIntent.OpenCodexCliInstallDialog -> settingsHandler.openRuntimeCliInstallDialog(engineId = RuntimeSettingsTab.CODEX.engineId)
+            is UiIntent.InstallCodexCli -> settingsHandler.installCodexCli(intent.packageManagerId)
             UiIntent.CheckClaudeCliVersion -> settingsHandler.refreshClaudeCliVersion(force = true)
             UiIntent.UpgradeClaudeCli -> settingsHandler.upgradeClaudeCli()
+            UiIntent.OpenClaudeCliInstallDialog -> settingsHandler.openRuntimeCliInstallDialog(engineId = RuntimeSettingsTab.CLAUDE.engineId)
+            is UiIntent.InstallClaudeCli -> settingsHandler.installClaudeCli(intent.packageManagerId)
+            is UiIntent.SelectRuntimeCliInstallPackageManager -> settingsHandler.selectRuntimeCliInstallPackageManager(intent.packageManagerId)
+            UiIntent.DismissRuntimeCliInstallDialog -> settingsHandler.dismissRuntimeCliInstallDialog()
             is UiIntent.IgnoreCodexCliVersion -> settingsHandler.ignoreCodexCliVersion(intent.version)
             UiIntent.SaveSettings -> settingsHandler.saveSettings()
             else -> Unit

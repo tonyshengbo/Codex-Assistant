@@ -107,17 +107,31 @@ internal fun buildCodexRuntimeCliVersionPanelModel(
     snapshot: CodexCliVersionSnapshot,
 ): RuntimeCliVersionPanelModel {
     val currentVersionText = snapshot.currentVersion.ifBlank {
-        AuraCodeBundle.message("settings.runtime.version.unknown")
+        if (
+            snapshot.checkStatus == CodexCliVersionCheckStatus.NOT_INSTALLED ||
+            snapshot.checkStatus == CodexCliVersionCheckStatus.INSTALL_IN_PROGRESS ||
+            snapshot.checkStatus == CodexCliVersionCheckStatus.INSTALL_FAILED
+        ) {
+            AuraCodeBundle.message("settings.runtime.version.notInstalled")
+        } else {
+            AuraCodeBundle.message("settings.runtime.version.unknown")
+        }
     }
     val latestVersionText = snapshot.latestVersion.trim().ifBlank { null }
     val isBusy = snapshot.checkStatus == CodexCliVersionCheckStatus.CHECKING ||
+        snapshot.checkStatus == CodexCliVersionCheckStatus.INSTALL_IN_PROGRESS ||
         snapshot.checkStatus == CodexCliVersionCheckStatus.UPGRADE_IN_PROGRESS
+    val showInstallAction = snapshot.checkStatus == CodexCliVersionCheckStatus.NOT_INSTALLED ||
+        snapshot.checkStatus == CodexCliVersionCheckStatus.INSTALL_FAILED
     val showUpgradeAction = snapshot.checkStatus == CodexCliVersionCheckStatus.UPDATE_AVAILABLE &&
         snapshot.isUpgradeSupported
     val showManualUpgradeHint = snapshot.checkStatus == CodexCliVersionCheckStatus.UPDATE_AVAILABLE &&
         !snapshot.isUpgradeSupported
     val showVersionCommand = showManualUpgradeHint && snapshot.displayCommand.isNotBlank()
     val primaryActionLabel = when {
+        snapshot.checkStatus == CodexCliVersionCheckStatus.INSTALL_IN_PROGRESS ->
+            AuraCodeBundle.message("settings.runtime.version.action.installing")
+        showInstallAction -> AuraCodeBundle.message("settings.runtime.version.action.install")
         snapshot.checkStatus == CodexCliVersionCheckStatus.CHECKING -> AuraCodeBundle.message("settings.runtime.version.action.checking")
         snapshot.checkStatus == CodexCliVersionCheckStatus.UPGRADE_IN_PROGRESS -> AuraCodeBundle.message("settings.runtime.version.action.upgrading")
         showUpgradeAction -> AuraCodeBundle.message("settings.runtime.version.action.upgrade")
@@ -126,6 +140,8 @@ internal fun buildCodexRuntimeCliVersionPanelModel(
         else -> AuraCodeBundle.message("settings.runtime.version.action.check")
     }
     val primaryActionIntent = when {
+        snapshot.checkStatus == CodexCliVersionCheckStatus.INSTALL_IN_PROGRESS -> null
+        showInstallAction -> UiIntent.OpenCodexCliInstallDialog
         snapshot.checkStatus == CodexCliVersionCheckStatus.CHECKING -> null
         snapshot.checkStatus == CodexCliVersionCheckStatus.UPGRADE_IN_PROGRESS -> null
         showUpgradeAction -> UiIntent.UpgradeCodexCli
@@ -141,7 +157,7 @@ internal fun buildCodexRuntimeCliVersionPanelModel(
         showPrimaryAction = true,
         primaryActionLabel = primaryActionLabel,
         primaryActionIntent = primaryActionIntent,
-        isPrimaryActionEmphasized = showUpgradeAction,
+        isPrimaryActionEmphasized = showInstallAction || showUpgradeAction,
         showManualUpgradeHint = showManualUpgradeHint,
         showVersionCommand = showVersionCommand,
         isBusy = isBusy,
@@ -153,17 +169,31 @@ internal fun buildClaudeRuntimeCliVersionPanelModel(
     snapshot: ClaudeCliVersionSnapshot,
 ): RuntimeCliVersionPanelModel {
     val currentVersionText = snapshot.currentVersion.ifBlank {
-        AuraCodeBundle.message("settings.runtime.version.unknown")
+        if (
+            snapshot.checkStatus == ClaudeCliVersionCheckStatus.NOT_INSTALLED ||
+            snapshot.checkStatus == ClaudeCliVersionCheckStatus.INSTALL_IN_PROGRESS ||
+            snapshot.checkStatus == ClaudeCliVersionCheckStatus.INSTALL_FAILED
+        ) {
+            AuraCodeBundle.message("settings.runtime.version.notInstalled")
+        } else {
+            AuraCodeBundle.message("settings.runtime.version.unknown")
+        }
     }
     val latestVersionText = snapshot.latestVersion.trim().ifBlank { null }
     val isBusy = snapshot.checkStatus == ClaudeCliVersionCheckStatus.CHECKING ||
+        snapshot.checkStatus == ClaudeCliVersionCheckStatus.INSTALL_IN_PROGRESS ||
         snapshot.checkStatus == ClaudeCliVersionCheckStatus.UPGRADE_IN_PROGRESS
+    val showInstallAction = snapshot.checkStatus == ClaudeCliVersionCheckStatus.NOT_INSTALLED ||
+        snapshot.checkStatus == ClaudeCliVersionCheckStatus.INSTALL_FAILED
     val showUpgradeAction = snapshot.checkStatus == ClaudeCliVersionCheckStatus.UPDATE_AVAILABLE &&
         snapshot.isUpgradeSupported
     val showManualUpgradeHint = snapshot.checkStatus == ClaudeCliVersionCheckStatus.UPDATE_AVAILABLE &&
         !snapshot.isUpgradeSupported
     val showVersionCommand = showManualUpgradeHint && snapshot.displayCommand.isNotBlank()
     val primaryActionLabel = when {
+        snapshot.checkStatus == ClaudeCliVersionCheckStatus.INSTALL_IN_PROGRESS ->
+            AuraCodeBundle.message("settings.runtime.version.action.installing")
+        showInstallAction -> AuraCodeBundle.message("settings.runtime.version.action.install")
         snapshot.checkStatus == ClaudeCliVersionCheckStatus.CHECKING -> AuraCodeBundle.message("settings.runtime.version.action.checking")
         snapshot.checkStatus == ClaudeCliVersionCheckStatus.UPGRADE_IN_PROGRESS -> AuraCodeBundle.message("settings.runtime.version.action.upgrading")
         showUpgradeAction -> AuraCodeBundle.message("settings.runtime.version.action.upgrade")
@@ -172,6 +202,8 @@ internal fun buildClaudeRuntimeCliVersionPanelModel(
         else -> AuraCodeBundle.message("settings.runtime.version.action.check")
     }
     val primaryActionIntent = when {
+        snapshot.checkStatus == ClaudeCliVersionCheckStatus.INSTALL_IN_PROGRESS -> null
+        showInstallAction -> UiIntent.OpenClaudeCliInstallDialog
         snapshot.checkStatus == ClaudeCliVersionCheckStatus.CHECKING -> null
         snapshot.checkStatus == ClaudeCliVersionCheckStatus.UPGRADE_IN_PROGRESS -> null
         showUpgradeAction -> UiIntent.UpgradeClaudeCli
@@ -187,7 +219,7 @@ internal fun buildClaudeRuntimeCliVersionPanelModel(
         showPrimaryAction = true,
         primaryActionLabel = primaryActionLabel,
         primaryActionIntent = primaryActionIntent,
-        isPrimaryActionEmphasized = showUpgradeAction,
+        isPrimaryActionEmphasized = showInstallAction || showUpgradeAction,
         showManualUpgradeHint = showManualUpgradeHint,
         showVersionCommand = showVersionCommand,
         isBusy = isBusy,
@@ -198,6 +230,7 @@ internal fun buildClaudeRuntimeCliVersionPanelModel(
 private fun codexCliVersionStatusText(snapshot: CodexCliVersionSnapshot): String? {
     return when (snapshot.checkStatus) {
         CodexCliVersionCheckStatus.IDLE -> snapshot.message.ifBlank { null }
+        CodexCliVersionCheckStatus.NOT_INSTALLED -> AuraCodeBundle.message("settings.runtime.version.status.notInstalled")
         CodexCliVersionCheckStatus.CHECKING -> AuraCodeBundle.message("settings.runtime.version.status.checking")
         CodexCliVersionCheckStatus.UP_TO_DATE -> AuraCodeBundle.message("settings.runtime.version.status.upToDate")
         CodexCliVersionCheckStatus.UPDATE_AVAILABLE -> when {
@@ -207,6 +240,11 @@ private fun codexCliVersionStatusText(snapshot: CodexCliVersionSnapshot): String
         }
         CodexCliVersionCheckStatus.LOCAL_VERSION_UNAVAILABLE -> AuraCodeBundle.message("settings.runtime.version.status.localUnavailable")
         CodexCliVersionCheckStatus.REMOTE_CHECK_FAILED -> AuraCodeBundle.message("settings.runtime.version.status.remoteFailed")
+        CodexCliVersionCheckStatus.INSTALL_IN_PROGRESS -> AuraCodeBundle.message("settings.runtime.version.status.installing")
+        CodexCliVersionCheckStatus.INSTALL_SUCCEEDED -> AuraCodeBundle.message("settings.runtime.version.status.installSucceeded")
+        CodexCliVersionCheckStatus.INSTALL_FAILED -> snapshot.message.ifBlank {
+            AuraCodeBundle.message("settings.runtime.version.status.installFailed")
+        }
         CodexCliVersionCheckStatus.UPGRADE_IN_PROGRESS -> AuraCodeBundle.message("settings.runtime.version.status.upgrading")
         CodexCliVersionCheckStatus.UPGRADE_SUCCEEDED -> AuraCodeBundle.message("settings.runtime.version.status.upgradeSucceeded")
         CodexCliVersionCheckStatus.UPGRADE_FAILED -> snapshot.message.ifBlank {
@@ -219,6 +257,7 @@ private fun codexCliVersionStatusText(snapshot: CodexCliVersionSnapshot): String
 private fun claudeCliVersionStatusText(snapshot: ClaudeCliVersionSnapshot): String? {
     return when (snapshot.checkStatus) {
         ClaudeCliVersionCheckStatus.IDLE -> snapshot.message.ifBlank { null }
+        ClaudeCliVersionCheckStatus.NOT_INSTALLED -> AuraCodeBundle.message("settings.runtime.version.status.notInstalled")
         ClaudeCliVersionCheckStatus.CHECKING -> AuraCodeBundle.message("settings.runtime.version.status.checking")
         ClaudeCliVersionCheckStatus.UP_TO_DATE -> AuraCodeBundle.message("settings.runtime.version.status.upToDate")
         ClaudeCliVersionCheckStatus.UPDATE_AVAILABLE -> when {
@@ -228,6 +267,11 @@ private fun claudeCliVersionStatusText(snapshot: ClaudeCliVersionSnapshot): Stri
         }
         ClaudeCliVersionCheckStatus.LOCAL_VERSION_UNAVAILABLE -> AuraCodeBundle.message("settings.runtime.version.status.localUnavailable")
         ClaudeCliVersionCheckStatus.REMOTE_CHECK_FAILED -> AuraCodeBundle.message("settings.runtime.version.status.remoteFailed")
+        ClaudeCliVersionCheckStatus.INSTALL_IN_PROGRESS -> AuraCodeBundle.message("settings.runtime.version.status.installing")
+        ClaudeCliVersionCheckStatus.INSTALL_SUCCEEDED -> AuraCodeBundle.message("settings.runtime.version.status.installSucceeded")
+        ClaudeCliVersionCheckStatus.INSTALL_FAILED -> snapshot.message.ifBlank {
+            AuraCodeBundle.message("settings.runtime.version.status.installFailed")
+        }
         ClaudeCliVersionCheckStatus.UPGRADE_IN_PROGRESS -> AuraCodeBundle.message("settings.runtime.version.status.upgrading")
         ClaudeCliVersionCheckStatus.UPGRADE_SUCCEEDED -> AuraCodeBundle.message("settings.runtime.version.status.upgradeSucceeded")
         ClaudeCliVersionCheckStatus.UPGRADE_FAILED -> snapshot.message.ifBlank {

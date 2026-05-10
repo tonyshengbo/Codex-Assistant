@@ -1,5 +1,7 @@
 package com.auracode.assistant.provider.codex
 
+import com.auracode.assistant.provider.runtime.resolvePreferredShellEnvironment
+import com.auracode.assistant.provider.runtime.resolveShellEnvironmentCandidates
 import java.io.File
 import java.util.concurrent.TimeUnit
 
@@ -33,8 +35,8 @@ internal data class CodexEnvironmentResolution(
 
 /** Detects Codex and Node executables and prepares environment overrides for launches. */
 internal class CodexEnvironmentDetector(
-    private val shellEnvironmentLoader: () -> Map<String, String> = ::loadShellEnvironment,
-    private val shellEnvironmentCandidatesLoader: (() -> List<Map<String, String>>)? = ::loadShellEnvironmentCandidates,
+    private val shellEnvironmentLoader: () -> Map<String, String> = ::resolvePreferredShellEnvironment,
+    private val shellEnvironmentCandidatesLoader: (() -> List<Map<String, String>>)? = ::resolveShellEnvironmentCandidates,
     private val commonSearchPaths: List<String> = defaultCodexCommonSearchPaths(System.getProperty("os.name").orEmpty()),
     private val executableResolver: CodexExecutableResolver = CodexExecutableResolver(commonSearchPaths = commonSearchPaths),
     private val launchEnvironmentBuilder: CodexLaunchEnvironmentBuilder = CodexLaunchEnvironmentBuilder(),
@@ -280,57 +282,4 @@ internal fun buildLaunchEnvironmentOverrides(
         shellEnvironment = shellEnvironment,
         nodePath = nodePath,
     )
-}
-
-private fun loadShellEnvironment(): Map<String, String> {
-    return loadShellEnvironmentCandidates().firstOrNull().orEmpty().ifEmpty { System.getenv() }
-}
-
-private fun loadShellEnvironmentCandidates(): List<Map<String, String>> {
-    val systemEnvironment = System.getenv()
-    val operatingSystemName = System.getProperty("os.name").orEmpty()
-    if (operatingSystemName.contains("win", ignoreCase = true)) {
-        return listOf(systemEnvironment)
-    }
-    val shell = systemEnvironment["SHELL"].takeUnless { it.isNullOrBlank() } ?: "/bin/zsh"
-    val commands = listOf(
-        listOf(shell, "-lc", "env"),
-        listOf(shell, "-ilc", "env"),
-    )
-    return buildList {
-        add(systemEnvironment)
-        commands.forEach { command ->
-            loadShellEnvironmentCandidate(command)?.let(::add)
-        }
-    }.distinctBy { environment ->
-        buildString {
-            append(environment["PATH"].orEmpty())
-            append('\n')
-            append(environment["HOME"].orEmpty())
-            append('\n')
-            append(environment["SHELL"].orEmpty())
-        }
-    }
-}
-
-private fun loadShellEnvironmentCandidate(command: List<String>): Map<String, String>? {
-    val systemEnvironment = System.getenv()
-    val process = runCatching { ProcessBuilder(command).start() }.getOrNull() ?: return null
-    return try {
-        process.inputStream.bufferedReader().useLines { lines ->
-            lines.mapNotNull { line ->
-                val separator = line.indexOf('=')
-                if (separator <= 0) {
-                    null
-                } else {
-                    line.substring(0, separator) to line.substring(separator + 1)
-                }
-            }.toMap().ifEmpty { systemEnvironment }
-        }
-    } finally {
-        process.waitFor(2, TimeUnit.SECONDS)
-        if (process.isAlive) {
-            process.destroyForcibly()
-        }
-    }
 }

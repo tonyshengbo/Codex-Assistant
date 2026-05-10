@@ -1,5 +1,6 @@
 package com.auracode.assistant.provider.codex
 
+import com.auracode.assistant.provider.runtime.RuntimePackageManager
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.Locale
@@ -7,11 +8,15 @@ import java.util.Locale
 /** Represents the lifecycle state of Codex CLI version checks and upgrades. */
 internal enum class CodexCliVersionCheckStatus {
     IDLE,
+    NOT_INSTALLED,
     CHECKING,
     UP_TO_DATE,
     UPDATE_AVAILABLE,
     LOCAL_VERSION_UNAVAILABLE,
     REMOTE_CHECK_FAILED,
+    INSTALL_IN_PROGRESS,
+    INSTALL_SUCCEEDED,
+    INSTALL_FAILED,
     UPGRADE_IN_PROGRESS,
     UPGRADE_SUCCEEDED,
     UPGRADE_FAILED,
@@ -32,6 +37,13 @@ internal data class CodexCliUpgradeAction(
     val displayCommand: String,
     val command: List<String>,
     val isUpgradeSupported: Boolean,
+)
+
+/** Holds the command users can inspect, copy, or execute when installing Codex CLI. */
+internal data class CodexCliInstallAction(
+    val packageManager: RuntimePackageManager,
+    val displayCommand: String,
+    val command: List<String>,
 )
 
 /** Stores the latest known Codex CLI version state consumed by the settings UI. */
@@ -178,7 +190,11 @@ internal fun deriveCodexCliVersionStatus(
     }
     if (normalizedCurrent.isBlank()) {
         return if (lastCheckedAt > 0L) {
-            CodexCliVersionCheckStatus.LOCAL_VERSION_UNAVAILABLE
+            if (normalizedLatest.isNotBlank()) {
+                CodexCliVersionCheckStatus.NOT_INSTALLED
+            } else {
+                CodexCliVersionCheckStatus.LOCAL_VERSION_UNAVAILABLE
+            }
         } else {
             CodexCliVersionCheckStatus.IDLE
         }
@@ -203,14 +219,44 @@ internal fun deriveCodexCliVersionStatus(
 /** Returns the default status copy shown in the settings UI and notifications. */
 internal fun defaultCodexCliVersionMessage(status: CodexCliVersionCheckStatus): String = when (status) {
     CodexCliVersionCheckStatus.IDLE -> ""
+    CodexCliVersionCheckStatus.NOT_INSTALLED -> "Codex CLI is not installed."
     CodexCliVersionCheckStatus.CHECKING -> "Checking Codex CLI version..."
     CodexCliVersionCheckStatus.UP_TO_DATE -> "Codex CLI is up to date."
     CodexCliVersionCheckStatus.UPDATE_AVAILABLE -> "A newer Codex CLI version is available."
     CodexCliVersionCheckStatus.LOCAL_VERSION_UNAVAILABLE -> "Unable to read the installed Codex CLI version."
     CodexCliVersionCheckStatus.REMOTE_CHECK_FAILED -> "Unable to fetch the latest Codex CLI version."
+    CodexCliVersionCheckStatus.INSTALL_IN_PROGRESS -> "Installing Codex CLI..."
+    CodexCliVersionCheckStatus.INSTALL_SUCCEEDED -> "Codex CLI was installed successfully."
+    CodexCliVersionCheckStatus.INSTALL_FAILED -> "Codex CLI installation failed."
     CodexCliVersionCheckStatus.UPGRADE_IN_PROGRESS -> "Upgrading Codex CLI..."
     CodexCliVersionCheckStatus.UPGRADE_SUCCEEDED -> "Codex CLI was upgraded successfully."
     CodexCliVersionCheckStatus.UPGRADE_FAILED -> "Codex CLI upgrade failed."
+}
+
+/** Returns the user-facing install action for the provided package manager. */
+internal fun codexCliInstallActionFor(packageManager: RuntimePackageManager): CodexCliInstallAction {
+    return when (packageManager) {
+        RuntimePackageManager.NPM -> CodexCliInstallAction(
+            packageManager = packageManager,
+            displayCommand = "npm install -g @openai/codex@latest",
+            command = listOf("npm", "install", "-g", "@openai/codex@latest"),
+        )
+        RuntimePackageManager.PNPM -> CodexCliInstallAction(
+            packageManager = packageManager,
+            displayCommand = "pnpm add -g @openai/codex@latest",
+            command = listOf("pnpm", "add", "-g", "@openai/codex@latest"),
+        )
+        RuntimePackageManager.BUN -> CodexCliInstallAction(
+            packageManager = packageManager,
+            displayCommand = "bun add -g @openai/codex@latest",
+            command = listOf("bun", "add", "-g", "@openai/codex@latest"),
+        )
+        RuntimePackageManager.BREW -> CodexCliInstallAction(
+            packageManager = packageManager,
+            displayCommand = "brew install codex",
+            command = listOf("brew", "install", "codex"),
+        )
+    }
 }
 
 /** Returns the user-facing upgrade action for the provided installation source. */

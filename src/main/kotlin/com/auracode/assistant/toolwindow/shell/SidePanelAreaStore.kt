@@ -74,6 +74,8 @@ internal data class SidePanelAreaState(
     val claudeRuntimeCheckResult: RuntimeExecutableCheckResult? = null,
     val settingsSection: SettingsSection = SettingsSection.BASIC,
     val runtimeSettingsTab: RuntimeSettingsTab = RuntimeSettingsTab.CODEX,
+    val runtimeCliInstallDialogState: RuntimeCliInstallDialogState? = null,
+    val runtimeInstallFeedbackMessage: String? = null,
     val skillsSettingsTab: SkillsSettingsTab = SkillsSettingsTab.CODEX,
     val savedAgents: List<SavedAgentDefinition> = emptyList(),
     val agentSettingsPage: AgentSettingsPage = AgentSettingsPage.LIST,
@@ -165,6 +167,16 @@ internal class SidePanelAreaStore {
                         _state.value = _state.value.copy(
                             kind = SidePanelKind.SETTINGS,
                             settingsSection = event.intent.section,
+                            runtimeCliInstallDialogState = if (event.intent.section == SettingsSection.RUNTIME) {
+                                _state.value.runtimeCliInstallDialogState
+                            } else {
+                                null
+                            },
+                            runtimeInstallFeedbackMessage = if (event.intent.section == SettingsSection.RUNTIME) {
+                                _state.value.runtimeInstallFeedbackMessage
+                            } else {
+                                null
+                            },
                             tokenUsageRange = defaultTokenUsageRange,
                             tokenUsageLoading = if (event.intent.section == SettingsSection.TOKEN_USAGE) {
                                 _state.value.tokenUsageLoading
@@ -196,7 +208,11 @@ internal class SidePanelAreaStore {
                     }
 
                     is UiIntent.SelectRuntimeSettingsTab -> {
-                        _state.value = _state.value.copy(runtimeSettingsTab = event.intent.tab)
+                        _state.value = _state.value.copy(
+                            runtimeSettingsTab = event.intent.tab,
+                            runtimeCliInstallDialogState = null,
+                            runtimeInstallFeedbackMessage = null,
+                        )
                     }
 
                     is UiIntent.SelectSkillsSettingsTab -> {
@@ -231,6 +247,10 @@ internal class SidePanelAreaStore {
 
                     UiIntent.DismissSkillImportDialog -> {
                         _state.value = _state.value.copy(skillImportDialogState = null)
+                    }
+
+                    UiIntent.DismissRuntimeCliInstallDialog -> {
+                        _state.value = _state.value.copy(runtimeCliInstallDialogState = null)
                     }
 
                     UiIntent.CloseSidePanel -> {
@@ -480,6 +500,14 @@ internal class SidePanelAreaStore {
 
             is AppEvent.ClaudeCliVersionSnapshotUpdated -> {
                 _state.value = _state.value.copy(claudeCliVersionSnapshot = event.snapshot)
+            }
+
+            is AppEvent.RuntimeCliInstallDialogStateChanged -> {
+                _state.value = _state.value.copy(runtimeCliInstallDialogState = event.state)
+            }
+
+            is AppEvent.RuntimeCliInstallFeedbackChanged -> {
+                _state.value = _state.value.copy(runtimeInstallFeedbackMessage = event.message)
             }
 
             is AppEvent.ClaudeRuntimeExecutableCheckUpdated -> {
