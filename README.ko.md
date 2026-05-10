@@ -2,46 +2,62 @@
 
 [English](README.md) | [中文](README.zh.md) | [日本語](README.ja.md) | [한국어](README.ko.md)
 
-Aura Code는 로컬 Codex 런타임을 IDE 안으로 직접 가져오는 IntelliJ IDEA 플러그인입니다. 채팅, 계획, 승인, Diff 리뷰, 로컬 도구 오케스트레이션을 하나의 프로젝트 범위 워크플로로 통합해 터미널, 브라우저, 편집기 사이를 오가는 부담을 줄입니다.
+Aura Code는 Codex와 Claude를 하나의 네이티브 IDE 워크플로로 묶는 IntelliJ IDEA 플러그인입니다. 멀티 세션 대화, 계획, 승인, 파일 문맥 기반 실행, 런타임 관리, 로컬 도구 제어를 하나의 작업 공간에 모아 터미널, 브라우저, IDE 사이를 오가는 부담을 줄입니다.
 
 ![Aura Code Preview](docs/img.png)
 ![Aura Code Preview](docs/img_1.png)
 
-## 주요 기능
+## 제품 포지셔닝
 
-- IntelliJ IDEA 안에서 네이티브로 동작하는 `Aura Code` 도구 창
-- 프로젝트 단위 채팅 세션의 로컬 저장과 원격 대화 재개 지원
-- 백그라운드 실행을 인지하는 멀티탭 세션 워크플로
-- 스트리밍 응답, 수동 취소, 재개 가능한 기록 로딩
-- 컴포저에서 `@` 파일 멘션, 첨부, `#` 저장된 에이전트, `/` 슬래시 명령 지원
-- Plan 모드, Approval 모드, 도구 입력, 실행 중인 계획 피드백
-- 변경 파일 집계와 Diff 미리보기, 열기, 적용, 되돌리기 진입점 제공
-- 로컬 `stdio` 및 원격 streamable HTTP 서버용 MCP 관리
+Aura Code는 IntelliJ IDEA를 위한 듀얼 엔진 AI 어시스턴트입니다.
+
+- 같은 도구 창에서 Codex와 Claude를 함께 사용
+- 프로젝트 범위의 세션, 기록, 편집 파일을 IDE 안에 유지
+- 로컬 CLI 워크플로의 제어력을 유지하면서 승인, 문맥 제어, Diff 리뷰를 통합
+- 같은 작업 공간에서 런타임, Skills, MCP 서버, Token 사용량을 관리
+
+## 베타 배포
+
+`1.0.0-beta.3` 는 현재 GitHub prerelease ZIP으로 배포됩니다.
+
+- GitHub Release의 ZIP을 다운로드하거나 `./gradlew buildPlugin` 으로 로컬 빌드
+- `Settings -> Plugins -> Install Plugin from Disk...` 에서 설치
+- 현재 베타 배포 흐름에는 Marketplace 게시가 포함되지 않습니다
+
+## 핵심 기능
+
+- 네이티브 `Aura Code` 도구 창 안에서 Codex와 Claude 세션을 통합 관리
+- 로컬 저장, 원격 재개, 기록 내보내기를 지원하는 프로젝트 범위 멀티탭 대화
+- 스트리밍 응답, 백그라운드 실행 인지, 완료 알림
+- `@` 파일 멘션, 파일 / 이미지 첨부, `#` 저장된 에이전트, `/plan`, `/auto`, `/init`, `/new`, `/tab` 같은 슬래시 명령
+- 대화 흐름 안의 Plan 모드, 승인 프롬프트, 도구 입력, 실행 중 계획 피드백
+- 변경 파일 집계와 Diff 미리보기, 열기, 적용, 되돌리기
+- Codex CLI, Claude CLI, 필요 시 Node를 각각 관리하는 런타임 설정
+- CLI 버전 표시, 업데이트 확인, 업그레이드 진입점
 - 로컬 Skills 검색, 가져오기, 활성화 / 비활성화, Slash 노출, 제거
-- IntelliJ Problems 뷰의 `Ask Aura` 를 통한 빌드 오류 전달
-- 세션이 포커스를 벗어난 상태에서 끝나면 IDE 알림 제공
-- Markdown 대화 내보내기
-- 중국어 / 영어 / 일본어 / 한국어 UI 및 라이트 / 다크 / IDE 따르기 테마
+- `stdio` 및 streamable HTTP 전송을 위한 MCP 서버 관리
+- 엔진, 기간, 모델 기준의 Token 사용 기록 조회
+- IntelliJ Problems 의 `Ask Aura` 를 통한 빌드 오류 전달
+- 중국어, 영어, 일본어, 한국어 UI 및 테마 / UI 스케일 설정
 
-## 현재 제품 형태
+## 아키텍처 개요
 
-Aura Code는 현재 IntelliJ IDEA를 대상으로 하며 로컬 Codex 설치를 기반으로 실행됩니다. 플러그인은 Codex app-server 흐름을 중심으로 구성되어 자체 프로젝트 로컬 상태를 유지하며, 런타임이 지원하는 경우 원격 대화 기록의 페이지 단위 로딩과 재개도 지원합니다.
+현재 플러그인은 단일 런타임 브리지보다 듀얼 엔진 세션 파이프라인을 중심으로 구성됩니다.
 
-현재 코드베이스에는 이미 다음 기반이 포함되어 있습니다.
-
-- Compose 기반 도구 창 UI
-- SQLite 기반 프로젝트 로컬 세션 저장소
-- `codex` 와 `node` 에 대한 런타임 환경 감지
-- 계획, 승인, 도구 호출, 파일 변경, 사용자 입력을 위한 구조화 이벤트 파싱
-- 런타임, Saved Agents, Skills, MCP, 테마, 언어, 알림 설정 페이지
+- `provider/codex`, `provider/claude`, `provider/runtime` 이 엔진 실행, 프로토콜 파싱, 버전 확인, 환경 해석을 담당
+- `session/kernel`, `session/normalizer`, `session/projection` 이 Provider 이벤트를 안정적인 세션 상태와 UI 프로젝션으로 변환
+- `persistence/chat` 이 SQLite 기반의 프로젝트 로컬 대화 기록과 Token ledger 를 저장
+- `toolwindow/submission`, `toolwindow/conversation`, `toolwindow/execution`, `toolwindow/sessions`, `toolwindow/history`, `toolwindow/settings` 이 Compose 기반 네이티브 UI 를 구성
+- `settings/skills` 와 `settings/mcp` 가 로컬 Skills 와 MCP 서버 설정을 관리
+- `integration/build` 와 `integration/ide` 가 빌드 오류 전달과 IDE 문맥 연동을 제공
 
 ## 요구 사항
 
-- IntelliJ IDEA와 로컬 Codex 런타임을 실행할 수 있는 macOS / Linux / Windows
+- IntelliJ IDEA를 실행할 수 있는 macOS / Linux / Windows
 - JDK 17
 - 플러그인 `sinceBuild = 233` 와 호환되는 IntelliJ IDEA
-- `PATH` 에 있는 로컬 `codex` 실행 파일 또는 `Settings -> Aura Code` 에서의 수동 설정
-- Codex app-server 가 필요로 할 때 사용 가능한 로컬 `node` 실행 파일
+- `PATH` 에 있거나 `Settings -> Aura Code -> Runtime` 에 설정된 `codex` 및 / 또는 `claude`
+- 선택한 Codex 런타임 흐름에서 필요할 때 사용할 수 있는 `node`
 
 ## 로컬 설치
 
@@ -51,10 +67,10 @@ Aura Code는 현재 IntelliJ IDEA를 대상으로 하며 로컬 Codex 설치를 
 ./gradlew buildPlugin
 ```
 
-2. 산출물은 `build/distributions/` 에서 찾을 수 있습니다.
+2. 산출물은 `build/distributions/` 에 있습니다.
 3. IntelliJ IDEA에서 `Settings -> Plugins -> Install Plugin from Disk...` 를 엽니다.
 4. 생성된 ZIP을 선택합니다.
-5. `Settings -> Aura Code` 를 열고 `Codex Runtime Path` 와 필요 시 `Node Path` 를 확인합니다.
+5. `Settings -> Aura Code -> Runtime` 을 열고 Codex CLI, Claude CLI, 필요 시 Node 경로를 확인합니다.
 
 ## 개발 실행
 
@@ -64,7 +80,7 @@ Aura Code는 현재 IntelliJ IDEA를 대상으로 하며 로컬 Codex 설치를 
 ./gradlew runIde
 ```
 
-개발 중 유용한 명령:
+자주 쓰는 명령:
 
 ```bash
 ./gradlew test
@@ -72,84 +88,69 @@ Aura Code는 현재 IntelliJ IDEA를 대상으로 하며 로컬 Codex 설치를 
 ./gradlew verifyPlugin
 ```
 
-## 사용 방법
-
-1. `View -> Tool Windows -> Aura Code` 를 엽니다.
-2. 처음 실행 시 런타임 설정을 확인합니다.
-3. 컴포저에 작업을 입력하고 전송합니다.
-4. `@` 로 컨텍스트 파일을 추가하고, 파일 / 이미지를 첨부하고, `#` 로 저장된 에이전트를 고르고, `/plan`, `/auto`, `/new` 같은 슬래시 명령을 사용할 수 있습니다.
-5. 도구 창 안에서 타임라인 출력, 승인, 계획 프롬프트, 도구 입력 프롬프트, 편집 파일 Diff를 검토합니다.
-6. 필요할 때 History에서 이전 세션을 다시 열거나 대화를 Markdown으로 내보낼 수 있습니다.
-
 ## 핵심 워크플로
 
-### 채팅과 세션
+### 세션과 엔진
 
-- 세션은 프로젝트 단위로 분리되어 로컬 SQLite에 저장됩니다
-- 도구 창은 여러 세션 탭을 지원합니다
-- 탭을 바꿔도 백그라운드 세션은 계속 실행될 수 있습니다
-- 포커스를 벗어난 세션이 완료되면 IntelliJ 알림을 띄울 수 있습니다
+- 플러그인 안에서 Codex와 Claude를 전환하면서 프로젝트 범위 세션 상태를 유지
+- 여러 세션 탭을 열고 포커스를 바꿔도 백그라운드 실행을 계속 유지
+- 활성 엔진이 지원하면 로컬 기록과 원격 대화 식별자에서 이전 작업을 재개
 
-### 계획과 실행 제어
+### 계획과 실행
 
-- 컴포저에서 `Auto` 와 `Approval` 두 실행 모드를 모두 제공합니다
-- `Plan` 모드는 계획 생성, 수정 요청, 직접 실행을 지원합니다
-- 구조화된 도구 입력 프롬프트로 IDE 안에서 실행을 일시 중지하고 답변을 받을 수 있습니다
+- 컴포저에서 `Plan`, `Auto`, 승인 중심 흐름을 직접 사용
+- 실행 중 계획, 계획 수정 프롬프트, 구조화된 도구 입력을 같은 타임라인에서 확인
+- 원시 CLI 출력으로 돌아가지 않고 IDE 안에서 실행 결정을 유지
 
-### 컨텍스트와 파일 변경
+### 문맥, 파일, 기록
 
-- 자동 컨텍스트는 활성 편집기 파일과 선택 텍스트를 따릅니다
-- 수동 파일 컨텍스트, 파일 mention, 첨부를 지원합니다
-- 변경 파일은 채팅별로 집계되어 Diff / 열기 / 되돌리기 작업을 제공합니다
+- 활성 편집기 파일과 선택 텍스트를 자동으로 추적
+- 더 강한 제어가 필요하면 수동 파일 문맥, 첨부, 저장된 에이전트를 추가
+- 변경 파일, Diff, 메시지 복사, Markdown 내보내기를 하나의 흐름에서 처리
 
-### Skills 와 MCP
+### 런타임, Skills, MCP
 
-- 표준 로컬 폴더에서 로컬 Skills를 검색할 수 있습니다
-- Skills는 가져오기, 활성화, 비활성화, 열기, 위치 확인, 제거를 지원합니다
-- MCP 서버는 JSON 관리, 서버별 활성화, 새로고침, 인증, 테스트를 지원합니다
-- `stdio` 와 streamable HTTP 두 전송 방식을 모두 지원합니다
-
-### 빌드 오류 분석
-
-- IntelliJ Problems 뷰에 `Ask Aura` 작업이 제공됩니다
-- 선택한 빌드 / 컴파일 오류를 파일 및 위치 정보와 함께 Aura Code로 직접 보낼 수 있습니다
+- Runtime 설정 페이지에서 Codex CLI와 Claude CLI를 각각 관리
+- 버전 상태, 업데이트 확인, 지원되는 설치 원본의 업그레이드 동작을 확인
+- IntelliJ IDEA를 벗어나지 않고 로컬 Skills 와 MCP 서버를 관리
+- 엔진, 기간, 모델별 Token 사용 기록을 검토
 
 ## 프로젝트 구조
 
 ```text
 src/main/kotlin/com/auracode/assistant/
-  actions/         빠른 열기, 빌드 오류 전달 같은 IntelliJ 액션
-  provider/        Codex provider, app-server 브리지, 엔진 통합
-  service/         채팅 / 세션 오케스트레이션 및 런타임 서비스
-  persistence/     SQLite 기반 로컬 세션 저장소
-  toolwindow/      컴포저, 타임라인, 설정, 기록, 승인을 위한 Compose UI
-  settings/        영속 설정, Skills, MCP, 저장된 Agents
-  protocol/        통합 이벤트 모델과 파서 레이어
-  integration/     빌드 오류 캡처 같은 IDE 통합 흐름
+  actions/            빠른 열기와 빌드 오류 전달 같은 IntelliJ 진입점
+  provider/           Codex, Claude, runtime, provider-session 통합
+  session/            세션 커널, 이벤트 정규화, UI 프로젝션 계층
+  persistence/chat/   SQLite 기반 대화 기록과 Token 사용 저장
+  toolwindow/         입력, 대화, 실행, 기록, 세션 탭, 설정용 Compose UI
+  settings/           영구 설정과 Skills / MCP 지원
+  integration/        빌드 오류와 IDE 문맥 연동
+  protocol/           공용 Provider 프로토콜 모델
 src/test/kotlin/com/auracode/assistant/
-  ...              서비스, 프로토콜 파싱, UI 스토어, 핵심 흐름 단위 테스트
+  ...                 Provider, 서비스, Store, 워크플로 동작 테스트
 ```
 
-## 디버깅 메모
+## 디버깅 참고
 
-플러그인이 Codex와 통신하지 못하면:
+런타임을 시작할 수 없다면:
 
-- `codex` 가 실행 가능한지 확인
-- 설정한 경우 `node` 도 실행 가능한지 확인
-- `Settings -> Aura Code -> Test Environment` 사용
-- `Help -> Show Log in Finder/Explorer` 에서 IDE 로그 확인
+- `codex` 및 / 또는 `claude` 가 실행 가능한지 확인
+- 현재 Codex 흐름이 `node` 를 사용한다면 해당 실행 가능 여부도 확인
+- `Settings -> Aura Code -> Runtime` 에서 실행 경로 설정을 점검
+- `Help -> Show Log in Finder/Explorer` 에서 IDE 로그를 확인
 
 기록이나 재개가 올바르지 않다면:
 
-- 런타임이 플러그인 외부에서 인증되었는지 확인
-- 같은 세션을 재개하고 있는지 확인
-- 원격 대화 기록 로딩과 로컬 세션 저장을 각각 분리해서 점검
+- 현재 런타임이 플러그인 밖에서 인증되었는지 확인
+- 같은 엔진에서 세션을 재개하고 있는지 확인
+- 원격 기록 로딩과 로컬 영속화를 분리해서 확인
 
-## 오픈소스 상태
+## 오픈소스 현황
 
-- 현재 저장소는 IntelliJ IDEA 지원에 초점을 맞추고 있습니다
-- 로컬 ZIP 설치를 지원합니다
-- Marketplace 서명 및 게시 흐름은 아직 이 저장소에 연결되지 않았습니다
+- 현재 저장소는 IntelliJ IDEA 지원에 집중하고 있습니다
+- GitHub prerelease ZIP 배포와 로컬 ZIP 설치를 지원합니다
+- Marketplace 서명과 배포 흐름은 아직 이 저장소에 연결되어 있지 않습니다
 
 ## 라이선스
 

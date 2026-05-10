@@ -1,22 +1,22 @@
 <idea-plugin>
     <id>com.auracode.assistant</id>
-    <name>Aura Code - Codex AI Assistant</name>
+    <name>Aura Code - Codex and Claude AI Assistant</name>
     <vendor email ="tonyshengbo@foxmail.com">Aura Code</vendor>
 
     <resource-bundle>messages.AuraCodeBundle</resource-bundle>
     <description><![CDATA[
-        <p><b>Aura Code-Codex AI Assistant</b> is a Codex AI assistant for IntelliJ IDEA, built around local CLI workflows and integrated directly into the IDE.</p>
-        <p>It helps you plan, discuss, and execute coding tasks with the context of your local project, tools, and development environment.</p>
+        <p><b>Aura Code - Codex and Claude AI Assistant</b> brings Codex and Claude local runtimes into IntelliJ IDEA through one native workflow.</p>
+        <p>Use one IDE workspace for multi-session coding conversations, plan and approval flows, file-context orchestration, runtime management, and local execution control.</p>
         <p><b>Core capabilities</b></p>
         <ul>
-            <li>Native chat tool window for in-IDE collaboration</li>
-            <li>Local CLI based task planning and execution</li>
-            <li>Project-scoped multi-tab sessions with resumable history</li>
-            <li>Rich context input with file mentions and attachments</li>
-            <li>Built-in approval and diff review workflows</li>
-            <li>MCP-aware environment and server management</li>
+            <li>Unified Codex and Claude sessions inside one native tool window</li>
+            <li>Project-scoped multi-tab conversations with history resume and export</li>
+            <li>Plan mode, approval prompts, tool user input, and running-plan feedback</li>
+            <li>Rich context input with file mentions, attachments, saved agents, and slash commands</li>
+            <li>Edited-file aggregation with diff preview, open, accept, and revert entry points</li>
+            <li>Local runtime, Skills, MCP server, and token-usage management from inside the IDE</li>
         </ul>
-        <p><b>Outcome:</b> Use Codex AI inside IntelliJ IDEA while keeping the control, context, and execution model of your local CLI workflow.</p>
+        <p><b>Outcome:</b> Keep Codex and Claude inside IntelliJ IDEA without giving up the control, context, and local workflow guarantees of your existing CLI-based development environment.</p>
     ]]></description>
 
     <depends>com.intellij.modules.platform</depends>

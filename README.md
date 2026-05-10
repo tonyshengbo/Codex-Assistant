@@ -2,10 +2,19 @@
 
 [English](README.md) | [中文](README.zh.md) | [日本語](README.ja.md) | [한국어](README.ko.md)
 
-Aura Code is an IntelliJ IDEA plugin that brings the local Codex runtime into the IDE. It is designed for developers who want chat, planning, approvals, diff review, and local tool orchestration in one project-scoped workflow instead of bouncing between terminal, browser, and editor.
+Aura Code is an IntelliJ IDEA plugin that turns Codex and Claude into one native IDE workflow. It combines multi-session chat, planning, approvals, file-aware execution, runtime management, and local tooling control so you can stay inside the editor instead of splitting work across terminal, browser, and IDE panes.
 
 ![Aura Code Preview](docs/img.png)
 ![Aura Code Preview](docs/img_1.png)
+
+## Product Positioning
+
+Aura Code is a dual-engine AI assistant for IntelliJ IDEA:
+
+- Run Codex and Claude from one tool window
+- Keep project-scoped sessions, history, and edited files inside the IDE
+- Use local CLI-based workflows without losing approvals, context control, or diff review
+- Manage runtimes, Skills, MCP servers, and token usage from the same workspace
 
 ## Beta Release
 
@@ -13,43 +22,42 @@ Aura Code is an IntelliJ IDEA plugin that brings the local Codex runtime into th
 
 - Download the plugin ZIP from the GitHub Release assets, or build it locally with `./gradlew buildPlugin`
 - Install it from `Settings -> Plugins -> Install Plugin from Disk...`
-- Marketplace publishing is not part of this beta distribution flow yet
+- Marketplace publishing is not part of the current beta distribution flow
 
-## What It Does
+## Key Capabilities
 
-- Native `Aura Code` tool window inside IntelliJ IDEA
-- Project-scoped chat sessions with local persistence and remote conversation resume
-- Multi-tab session workflow with background execution awareness
-- Streaming responses, cancellation, and resumable history loading
-- Composer support for `@` file mentions, attachments, `#` saved agents, and `/` slash commands
-- Plan mode, approval mode, tool user input, and running-plan feedback
-- Edited-file aggregation with diff preview, open, accept, and revert entry points
-- MCP server management for local stdio and remote streamable HTTP servers
-- Local Skills discovery, import, enable/disable, slash exposure, and uninstall
-- Build error handoff from IntelliJ Problems view through `Ask Aura`
-- Background completion notifications when a session finishes out of focus
-- Conversation export to Markdown
-- Chinese/English/Japanese/Korean UI support and light/dark/follow-IDE theme modes
+- Unified Codex and Claude sessions inside one native `Aura Code` tool window
+- Project-scoped multi-tab conversations with local persistence, remote resume, and history export
+- Streaming responses, background execution awareness, and completion notifications
+- `@` file mentions, file or image attachments, `#` saved agents, and `/` slash commands such as `/plan`, `/auto`, `/init`, `/new`, and `/tab`
+- Plan mode, approval prompts, tool user input, and running-plan feedback in the conversation flow
+- Edited-file aggregation with diff preview, open, accept, and revert actions
+- Runtime setup for Codex CLI, Claude CLI, and optional Node support when required by the selected runtime
+- Built-in CLI version visibility, update checks, and upgrade entry points
+- Local Skills discovery, import, enable or disable, slash exposure, and uninstall
+- MCP server management for `stdio` and streamable HTTP transports
+- Historical token usage views by engine, range, and model
+- Build-error handoff from IntelliJ Problems via `Ask Aura`
+- Chinese, English, Japanese, and Korean UI support with theme and UI scaling controls
 
-## Current Product Shape
+## Architecture Overview
 
-Aura Code currently targets IntelliJ IDEA and runs against a local Codex installation. The plugin is built around the Codex app-server flow and keeps its own local project state, while also supporting remote conversation history pagination and resume when the runtime provides it.
+The current plugin is structured around a dual-engine session pipeline rather than a single-runtime bridge.
 
-The current codebase already includes:
-
-- A Compose-based tool window UI
-- A SQLite-backed project-local session repository
-- Codex runtime environment detection for both `codex` and `node`
-- Structured event parsing for plans, approvals, tool calls, file changes, and user-input prompts
-- Settings pages for runtime, saved agents, Skills, MCP, theme, language, and notification preferences
+- `provider/codex`, `provider/claude`, and `provider/runtime` handle engine-specific launches, protocol parsing, version checks, and environment resolution
+- `session/kernel`, `session/normalizer`, and `session/projection` turn provider events into stable session state and UI projections
+- `persistence/chat` stores project-local sessions, history, and token usage ledgers in SQLite
+- `toolwindow/submission`, `toolwindow/conversation`, `toolwindow/execution`, `toolwindow/sessions`, `toolwindow/history`, and `toolwindow/settings` render the native Compose workflow
+- `settings/skills` and `settings/mcp` manage local Skills and MCP server configuration
+- `integration/build` and `integration/ide` connect IDE actions such as build-error handoff and contextual file requests
 
 ## Requirements
 
-- macOS, Linux, or Windows capable of running IntelliJ IDEA and the local Codex runtime
+- macOS, Linux, or Windows capable of running IntelliJ IDEA
 - JDK 17
 - IntelliJ IDEA compatible with plugin `sinceBuild = 233`
-- Local `codex` executable available on `PATH`, or configured in `Settings -> Aura Code`
-- Local `node` executable available when the Codex app-server requires it
+- Local `codex` and/or `claude` executable available on `PATH`, or configured in `Settings -> Aura Code -> Runtime`
+- Local `node` executable when the selected Codex runtime flow requires it
 
 ## Install For Local Use
 
@@ -62,7 +70,7 @@ The current codebase already includes:
 2. Find the artifact in `build/distributions/`.
 3. In IntelliJ IDEA, open `Settings -> Plugins -> Install Plugin from Disk...`.
 4. Select the generated ZIP.
-5. Open `Settings -> Aura Code` and verify the `Codex Runtime Path` and optional `Node Path`.
+5. Open `Settings -> Aura Code -> Runtime` and verify the Codex CLI path, Claude CLI path, and optional Node path.
 
 ## Run In Development
 
@@ -72,7 +80,7 @@ Start a sandbox IDE with the plugin loaded:
 ./gradlew runIde
 ```
 
-Useful commands during development:
+Useful development commands:
 
 ```bash
 ./gradlew test
@@ -80,83 +88,68 @@ Useful commands during development:
 ./gradlew verifyPlugin
 ```
 
-## How To Use
+## Core Workflows
 
-1. Open `View -> Tool Windows -> Aura Code`.
-2. Check runtime settings if this is the first launch.
-3. Start a prompt in the composer.
-4. Add context with `@`, attach files/images, select saved agents with `#`, or use slash commands such as `/plan`, `/auto`, and `/new`.
-5. Review timeline output, approvals, plan prompts, tool-input prompts, and edited-file diffs inside the tool window.
-6. Reopen prior sessions from History or export a conversation as Markdown when needed.
+### Sessions And Engines
 
-## Key Workflows
+- Switch between Codex and Claude while keeping project-scoped session state inside the plugin
+- Open multiple session tabs and let background runs continue when you change focus
+- Resume previous work from local history and remote conversation identifiers when supported by the active engine
 
-### Chat And Sessions
+### Planning And Execution
 
-- Sessions are project-scoped and persisted locally in SQLite
-- The tool window supports multiple open session tabs
-- Background sessions can continue running while you switch tabs
-- Completed out-of-focus sessions can raise IntelliJ notifications
+- Use `Plan`, `Auto`, and approval-oriented flows directly from the composer
+- Review running-plan status, plan revision prompts, and structured tool user input inside the same session timeline
+- Keep execution decisions inside the IDE instead of dropping back to raw CLI output
 
-### Planning And Execution Control
+### Context, Files, And History
 
-- `Auto` and `Approval` execution modes are both exposed in the composer
-- `Plan` mode can generate a plan, request revision, or execute directly
-- Structured tool input prompts can pause a run and collect answers inside the IDE
+- Follow the active editor file or selected text automatically
+- Add manual file context, attachments, and saved-agent prompts when the task needs more control
+- Review changed files, open diffs, copy message content, and export conversations to Markdown
 
-### Context And File Changes
+### Runtime, Skills, And MCP
 
-- Auto-context can follow the active editor file and selected text‰
-- Manual file context, file mentions, and attachments are supported
-- Changed files are collected per chat and surfaced with diff/open/revert actions
-
-### Skills And MCP
-
-- Local Skills can be discovered from standard local folders
-- Skills can be imported, enabled, disabled, opened, revealed, and uninstalled
-- MCP servers can be managed as JSON, enabled per server, refreshed, authenticated, and tested
-- Both `stdio` transport and streamable HTTP transport are supported
-
-### Build Error Triage
-
-- IntelliJ Problems view exposes an `Ask Aura` action
-- Selected build/compiler errors can be sent directly into Aura Code with file and position context
+- Configure Codex CLI and Claude CLI independently from the Runtime settings page
+- Track version status, updates, and upgrade actions for supported installation sources
+- Manage local Skills and MCP servers without leaving IntelliJ IDEA
+- Review historical token usage by engine, time range, and model
 
 ## Project Structure
 
 ```text
 src/main/kotlin/com/auracode/assistant/
-  actions/         IntelliJ actions such as quick open and build-error handoff
-  provider/        Codex provider, app-server bridge, and engine integration
-  service/         Chat/session orchestration and runtime services
-  persistence/     SQLite-backed local session storage
-  toolwindow/      Compose UI for composer, timeline, settings, history, approvals
-  settings/        Persistent plugin settings, Skills, MCP, saved agents
-  protocol/        Unified event models and parser layer
-  integration/     IDE-integrated flows such as build error capture
+  actions/            IntelliJ entry points such as quick open and build-error handoff
+  provider/           Codex, Claude, runtime, and provider-session integration
+  session/            Session kernel, event normalization, and UI projection layers
+  persistence/chat/   SQLite-backed session history and token usage storage
+  toolwindow/         Compose UI for submission, conversation, execution, history, sessions, and settings
+  settings/           Persistent plugin settings plus Skills and MCP support
+  integration/        IDE-facing bridges for build problems and contextual file requests
+  protocol/           Shared provider protocol models
 src/test/kotlin/com/auracode/assistant/
-  ...              Unit tests for services, protocol parsing, UI stores, and flows
+  ...                 Unit tests for providers, services, stores, and workflow behavior
 ```
 
 ## Debugging Notes
 
-If the plugin cannot talk to Codex:
+If the plugin cannot launch a runtime:
 
-- Verify `codex` is executable
-- Verify `node` is executable when configured
-- Use `Settings -> Aura Code -> Test Environment`
+- Verify `codex` and/or `claude` is executable
+- Verify `node` is executable when configured for the selected Codex flow
+- Use `Settings -> Aura Code -> Runtime` to validate executable paths
 - Check IDE logs from `Help -> Show Log in Finder/Explorer`
 
 If history or resume looks wrong:
 
-- Confirm the runtime is authenticated outside the plugin
-- Verify the same session is being resumed
-- Check remote conversation loading and local session persistence separately
+- Confirm the active runtime is authenticated outside the plugin
+- Verify the session is being resumed on the same engine
+- Check remote history loading and local persistence separately
 
 ## Open Source Status
 
-- The repository is currently focused on IntelliJ IDEA support
-- GitHub Release ZIP distribution and local ZIP install are supported
+- The repository currently focuses on IntelliJ IDEA support
+- GitHub prerelease ZIP distribution and local ZIP install are supported
 - Marketplace signing and publishing are not yet wired into this repo
 
 ## License

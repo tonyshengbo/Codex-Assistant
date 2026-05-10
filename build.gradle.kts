@@ -49,11 +49,11 @@ intellijPlatform {
             sinceBuild = "233"
         }
         changeNotes = """
-            <p>Aura Code 1.0.0-beta.3 improves release readiness and everyday IDE workflows.</p>
+            <p>Aura Code 1.0.0-beta.3 presents Aura as a dual-engine Codex and Claude AI workspace for IntelliJ IDEA.</p>
             <ul>
-              <li>Adds Codex CLI version visibility, compatibility checks, and update notifications.</li>
-              <li>Improves timeline usability with copy actions, fixed-choice input tooltips, and smoother collapsible message transitions.</li>
-              <li>Introduces UI scaling support for better readability across different displays.</li>
+              <li>Unifies Codex and Claude local runtimes under one multi-session IDE workflow.</li>
+              <li>Highlights planning, approvals, tool input, slash commands, diff review, and session history resume.</li>
+              <li>Documents runtime management, MCP, Skills, token usage, and build-error handoff as first-class product capabilities.</li>
             </ul>
         """.trimIndent()
     }
