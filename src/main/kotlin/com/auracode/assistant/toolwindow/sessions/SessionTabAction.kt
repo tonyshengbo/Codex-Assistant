@@ -81,7 +81,11 @@ internal open class SessionTabAction(
         panel.putClientProperty("dot", statusDot)
         applyStyle(panel, titleLabel, closeButton, statusDot)
         panel.toolTipText = tab.tooltipTitle
-        installHandlers(panel, center, titleLabel, closeButton)
+        installHandlers(
+            panel = panel,
+            clickTargets = arrayOf(center, titleLabel),
+            hoverTargets = arrayOf(center, titleLabel, closeButton),
+        )
         customComponents += WeakReference(panel)
         return panel
     }
@@ -152,26 +156,36 @@ internal open class SessionTabAction(
     }
 
     /**
-     * Swing header actions do not bubble mouse clicks from child components back
-     * to the outer tab panel. Also installs hover tracking for close-button
-     * visibility and background tint.
+     * Installs tab selection only on non-close targets while keeping hover state
+     * tracking on the whole interactive surface.
      */
-    private fun installHandlers(panel: JPanel, vararg clickTargets: JComponent) {
+    private fun installHandlers(
+        panel: JPanel,
+        clickTargets: Array<out JComponent>,
+        hoverTargets: Array<out JComponent>,
+    ) {
         val hoverListener = object : MouseAdapter() {
             override fun mouseEntered(e: MouseEvent?) {
                 panel.putClientProperty("hovered", true)
                 updateCustomComponent(panel, templatePresentation)
             }
+
             override fun mouseExited(e: MouseEvent?) {
                 panel.putClientProperty("hovered", false)
                 updateCustomComponent(panel, templatePresentation)
             }
+        }
+
+        val clickListener = object : MouseAdapter() {
             override fun mouseClicked(e: MouseEvent?) {
                 onSelect(tab.sessionId)
             }
         }
+
         panel.addMouseListener(hoverListener)
-        clickTargets.forEach { it.addMouseListener(hoverListener) }
+        panel.addMouseListener(clickListener)
+        hoverTargets.forEach { it.addMouseListener(hoverListener) }
+        clickTargets.forEach { it.addMouseListener(clickListener) }
     }
 }
 
