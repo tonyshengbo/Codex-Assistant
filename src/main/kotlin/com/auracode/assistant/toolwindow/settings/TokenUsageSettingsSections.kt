@@ -3,7 +3,6 @@ package com.auracode.assistant.toolwindow.settings
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -197,7 +196,7 @@ private fun TokenUsageSectionCard(
     content: @Composable () -> Unit,
 ) {
     val t = assistantUiTokens()
-    Box(
+    Column(
         modifier = Modifier
             .fillMaxWidth()
             .background(p.topBarBg.copy(alpha = 0.72f), RoundedCornerShape(t.spacing.lg))
