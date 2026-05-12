@@ -916,68 +916,55 @@ internal class SettingsAndEnvironmentHandler(
             context.eventHub.publish(AppEvent.StatusTextUpdated(UiText.raw("Please fix the MCP config errors before saving.")))
             return
         }
-        val entries = normalized.parseServerEntries().getOrElse { error ->
+        val entry = normalized.parseSingleServerEntry().getOrElse { error ->
             context.eventHub.publish(
                 AppEvent.McpValidationErrorsUpdated(McpValidationErrors(json = error.message ?: "Invalid MCP JSON.")),
             )
             return
         }
+        val draft = McpServerDraft(
+            originalName = normalized.originalName,
+            name = entry.name,
+            configJson = McpServerDraft.entryConfigJson(entry.name, entry.config),
+        )
+        val savedName = draft.name.trim()
         updateMcpBusy { copy(saving = true) }
-        logMcpDiagnostic("MCP coroutine scheduled: label=saveMcpDraft(count=${entries.size}) | ${mcpContextSnapshot()}")
-        context.coroutineLauncher.launch("saveMcpDraft(count=${entries.size})") {
-            logMcpDiagnostic("MCP coroutine start: label=saveMcpDraft(count=${entries.size}) | ${mcpContextSnapshot()}")
+        logMcpDiagnostic("MCP coroutine scheduled: label=saveMcpDraft(name=$savedName) | ${mcpContextSnapshot()}")
+        context.coroutineLauncher.launch("saveMcpDraft(name=$savedName)") {
+            logMcpDiagnostic("MCP coroutine start: label=saveMcpDraft(name=$savedName) | ${mcpContextSnapshot()}")
             runCatching {
                 val adapter = mcpAdapter()
-                val drafts = entries.map { entry ->
-                    McpServerDraft(
-                        originalName = normalized.originalName,
-                        name = entry.name,
-                        configJson = McpServerDraft.entryConfigJson(entry.name, entry.config),
-                    )
-                }
-                val savedNames = drafts.map { it.name.trim() }
-                val isSingleServerEdit = normalized.originalName != null && drafts.size == 1
-                if (isSingleServerEdit) {
-                    val draft = drafts.single()
-                    logMcpDiagnostic(
-                        "MCP adapter call begin: label=saveMcpDraft(count=${entries.size}) step=saveServer name=${draft.name} | " +
-                            mcpContextSnapshot(requestedName = draft.originalName),
-                    )
-                    adapter.saveServer(draft)
-                    logMcpDiagnostic(
-                        "MCP adapter call success: label=saveMcpDraft(count=${entries.size}) step=saveServer name=${draft.name} | " +
-                            mcpContextSnapshot(requestedName = draft.originalName),
-                    )
-                } else {
-                    logMcpDiagnostic("MCP adapter call begin: label=saveMcpDraft(count=${entries.size}) step=saveServers names=${savedNames.joinToString(",")} | ${mcpContextSnapshot()}")
-                    adapter.saveServers(drafts)
-                    logMcpDiagnostic("MCP adapter call success: label=saveMcpDraft(count=${entries.size}) step=saveServers names=${savedNames.joinToString(",")} | ${mcpContextSnapshot()}")
-                }
+                logMcpDiagnostic(
+                    "MCP adapter call begin: label=saveMcpDraft(name=$savedName) step=saveServer name=${draft.name} | " +
+                        mcpContextSnapshot(requestedName = draft.originalName),
+                )
+                adapter.saveServer(draft)
+                logMcpDiagnostic(
+                    "MCP adapter call success: label=saveMcpDraft(name=$savedName) step=saveServer name=${draft.name} | " +
+                        mcpContextSnapshot(requestedName = draft.originalName),
+                )
                 context.eventHub.publish(
                     AppEvent.McpDraftLoaded(
                         normalized.copy(
                             originalName = null,
                             name = "",
-                            configJson = McpServerDraft.serversConfigJson(entries),
+                            configJson = McpServerDraft.entryConfigJson(entry.name, entry.config),
                         ),
                     ),
                 )
-                logMcpDiagnostic("MCP adapter call begin: label=saveMcpDraft(count=${entries.size}) step=listServers | ${mcpContextSnapshot()}")
+                logMcpDiagnostic("MCP adapter call begin: label=saveMcpDraft(name=$savedName) step=listServers | ${mcpContextSnapshot()}")
                 context.eventHub.publish(AppEvent.McpServersLoaded(adapter.listServers()))
-                logMcpDiagnostic("MCP adapter call success: label=saveMcpDraft(count=${entries.size}) step=listServers | ${mcpContextSnapshot()}")
-                logMcpDiagnostic("MCP adapter call begin: label=saveMcpDraft(count=${entries.size}) step=refreshStatuses | ${mcpContextSnapshot()}")
+                logMcpDiagnostic("MCP adapter call success: label=saveMcpDraft(name=$savedName) step=listServers | ${mcpContextSnapshot()}")
+                logMcpDiagnostic("MCP adapter call begin: label=saveMcpDraft(name=$savedName) step=refreshStatuses | ${mcpContextSnapshot()}")
                 context.eventHub.publish(AppEvent.McpStatusesUpdated(adapter.refreshStatuses()))
-                logMcpDiagnostic("MCP adapter call success: label=saveMcpDraft(count=${entries.size}) step=refreshStatuses | ${mcpContextSnapshot()}")
-                val feedbackMessage = when (savedNames.size) {
-                    1 -> "Saved MCP server '${savedNames.single()}'."
-                    else -> "Saved ${savedNames.size} MCP servers."
-                }
+                logMcpDiagnostic("MCP adapter call success: label=saveMcpDraft(name=$savedName) step=refreshStatuses | ${mcpContextSnapshot()}")
+                val feedbackMessage = "Saved MCP server '$savedName'."
                 context.eventHub.publish(AppEvent.StatusTextUpdated(UiText.raw(feedbackMessage)))
                 context.eventHub.publish(AppEvent.McpFeedbackUpdated(message = feedbackMessage, isError = false))
-                afterSave?.invoke(savedNames)
+                afterSave?.invoke(listOf(savedName))
             }.onFailure { error ->
                 logMcpDiagnostic(
-                    message = "MCP coroutine handled failure: label=saveMcpDraft(count=${entries.size}) | ${mcpContextSnapshot()}",
+                    message = "MCP coroutine handled failure: label=saveMcpDraft(name=$savedName) | ${mcpContextSnapshot()}",
                     error = error,
                 )
                 context.eventHub.publish(
@@ -988,7 +975,7 @@ internal class SettingsAndEnvironmentHandler(
                 )
             }
             updateMcpBusy { copy(saving = false) }
-            logMcpDiagnostic("MCP coroutine finish: label=saveMcpDraft(count=${entries.size}) | ${mcpContextSnapshot()}")
+            logMcpDiagnostic("MCP coroutine finish: label=saveMcpDraft(name=$savedName) | ${mcpContextSnapshot()}")
         }
     }
 

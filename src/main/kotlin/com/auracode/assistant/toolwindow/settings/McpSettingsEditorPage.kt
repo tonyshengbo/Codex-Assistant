@@ -9,7 +9,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.rememberScrollState
@@ -65,14 +64,6 @@ internal fun McpSettingsEditorPage(
                     maxLines = 24,
                 )
                 FieldErrorText(p = p, error = validation.json)
-                if (draft.usesLegacyConfigShape()) {
-                    Spacer(Modifier.height(t.spacing.sm))
-                    Text(
-                        text = AuraCodeBundle.message("settings.mcp.json.legacyHint"),
-                        color = p.textMuted,
-                        style = MaterialTheme.typography.caption,
-                    )
-                }
             }
 
             state.mcpFeedbackMessage?.takeIf { it.isNotBlank() }?.let { message ->

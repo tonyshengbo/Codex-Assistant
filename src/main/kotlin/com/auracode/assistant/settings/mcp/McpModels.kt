@@ -62,15 +62,18 @@ internal data class McpServerDraft(
             return Result.failure(IllegalArgumentException("JSON config is required."))
         }
         return runCatching {
-            when (val parsed = parsedEditorJson().getOrThrow()) {
-                is ParsedMcpEditorJson.Servers -> {
-                    if (parsed.entries.size != 1) {
-                        throw IllegalArgumentException("JSON must contain exactly one server for this action.")
-                    }
-                    normalizeConfigJson(parsed.entries.single().config)
+            val root = jsonParser.parseToJsonElement(raw).jsonObject
+            val wrappedServers = root["mcpServers"]
+            if (wrappedServers != null) {
+                val serversObject = wrappedServers as? JsonObject
+                    ?: throw IllegalArgumentException("\"mcpServers\" must be a JSON object.")
+                val entries = parseEntries(serversObject)
+                if (entries.size != 1) {
+                    throw IllegalArgumentException("JSON must contain exactly one MCP server.")
                 }
-                is ParsedMcpEditorJson.LegacyConfig -> normalizeConfigJson(parsed.config)
+                return@runCatching entries.single().config
             }
+            normalizeConfigJson(root)
         }.recoverCatching { cause ->
             throw IllegalArgumentException(cause.message ?: "JSON config must be a valid JSON object.")
         }
@@ -89,24 +92,6 @@ internal data class McpServerDraft(
     companion object {
         private val jsonParser = Json { ignoreUnknownKeys = true }
         private val prettyJson = Json { ignoreUnknownKeys = true; prettyPrint = true; prettyPrintIndent = "  " }
-        private val configKeys = setOf(
-            "mcpServers",
-            "enabled",
-            "command",
-            "args",
-            "env",
-            "cwd",
-            "startup_timeout_sec",
-            "tool_timeout_sec",
-            "enabled_tools",
-            "disabled_tools",
-            "url",
-            "bearer_token_env_var",
-            "http_headers",
-            "env_http_headers",
-            "transport",
-        )
-
         fun defaultConfigJson(): String = """
             {
               "mcpServers": {
@@ -168,59 +153,46 @@ internal data class McpServerDraft(
     }
 
     fun syncNameFromConfig(): McpServerDraft {
-        return when (val parsed = parsedEditorJson().getOrNull()) {
-            is ParsedMcpEditorJson.Servers -> {
-                val resolvedName = parsed.entries.singleOrNull()?.name?.trim().orEmpty()
-                copy(name = resolvedName)
-            }
-            is ParsedMcpEditorJson.LegacyConfig,
-            null,
-            -> this
-        }
+        val resolvedName = parsedEditorJson().getOrNull()?.entries?.singleOrNull()?.name?.trim().orEmpty()
+        return if (resolvedName.isBlank()) this else copy(name = resolvedName)
     }
 
-    fun usesLegacyConfigShape(): Boolean = parsedEditorJson().getOrNull() is ParsedMcpEditorJson.LegacyConfig
+    fun usesLegacyConfigShape(): Boolean = false
+
+    fun parseSingleServerEntry(): Result<NamedMcpServerConfig> {
+        val raw = configJson.trim()
+        if (raw.isBlank()) {
+            return Result.failure(IllegalArgumentException("JSON config is required."))
+        }
+        return parsedEditorJson().mapCatching { parsed ->
+            val entries = parsed.entries
+            when (entries.size) {
+                0 -> throw IllegalArgumentException("JSON must contain exactly one MCP server.")
+                1 -> entries.single()
+                else -> throw IllegalArgumentException("JSON must contain exactly one MCP server.")
+            }
+        }.recoverCatching { cause ->
+            throw IllegalArgumentException(cause.message ?: "JSON config must be a valid JSON object.")
+        }
+    }
 
     fun parseServerEntries(): Result<List<NamedMcpServerConfig>> {
-        return parsedEditorJson().mapCatching { parsed ->
-            when (parsed) {
-                is ParsedMcpEditorJson.Servers -> parsed.entries
-                is ParsedMcpEditorJson.LegacyConfig -> {
-                    val resolvedName = name.trim().ifBlank { originalName?.trim().orEmpty() }
-                    if (resolvedName.isBlank()) {
-                        throw IllegalArgumentException("New servers must use {\"mcpServers\": {...}} JSON.")
-                    }
-                    listOf(NamedMcpServerConfig(resolvedName, normalizeConfigJson(parsed.config)))
-                }
-            }
-        }
+        return parsedEditorJson().mapCatching { parsed -> parsed.entries }
     }
 
-    internal fun parsedEditorJson(): Result<ParsedMcpEditorJson> = runCatching {
+    internal fun parsedEditorJson(): Result<ParsedMcpEditorJson.Servers> = runCatching {
         val root = jsonParser.parseToJsonElement(configJson.trim()).jsonObject
         val wrappedServers = root["mcpServers"]
-        if (wrappedServers != null) {
-            val serversObject = wrappedServers as? JsonObject
-                ?: throw IllegalArgumentException("\"mcpServers\" must be a JSON object.")
-            return@runCatching ParsedMcpEditorJson.Servers(parseEntries(serversObject))
-        }
-        if (root.keys.any { it in configKeys - "mcpServers" }) {
-            return@runCatching ParsedMcpEditorJson.LegacyConfig(root)
-        }
-        ParsedMcpEditorJson.Servers(parseEntries(root))
+            ?: throw IllegalArgumentException("New servers must use {\"mcpServers\": {...}} JSON.")
+        val serversObject = wrappedServers as? JsonObject
+            ?: throw IllegalArgumentException("\"mcpServers\" must be a JSON object.")
+        ParsedMcpEditorJson.Servers(parseEntries(serversObject))
     }
 
     fun editorDisplayJson(): String {
-        val existingName = name.trim().ifBlank { originalName?.trim().orEmpty() }
-        return when (val parsed = parsedEditorJson().getOrNull()) {
-            is ParsedMcpEditorJson.Servers -> serversConfigJson(parsed.entries)
-            is ParsedMcpEditorJson.LegacyConfig -> {
-                if (existingName.isBlank()) configJson.trim()
-                else entryConfigJson(existingName, parsed.config)
-            }
-
-            null -> configJson.trim()
-        }
+        return parsedEditorJson()
+            .map { parsed -> serversConfigJson(parsed.entries) }
+            .getOrDefault(configJson.trim())
     }
 
     private fun parseEntries(root: JsonObject): List<NamedMcpServerConfig> {
@@ -327,29 +299,27 @@ internal fun McpTransportDraft.displayTarget(): String = when (this) {
 }
 
 internal fun McpServerDraft.validate(): McpValidationErrors {
-    val jsonError = parseServerEntries()
-        .mapCatching { entries ->
-            entries.forEach { entry ->
-                val resolvedName = entry.name.trim()
-                if (resolvedName.any { !it.isLetterOrDigit() && it != '-' && it != '_' }) {
-                    throw IllegalArgumentException("Server '$resolvedName': use only letters, numbers, '-' and '_'.")
-                }
-                val config = entry.config
-                when {
-                    config["command"]?.jsonPrimitive?.content.orEmpty().isNotBlank() -> {
-                        if (config["url"] != null) {
-                            throw IllegalArgumentException("Server '$resolvedName': stdio config cannot include url.")
-                        }
+    val jsonError = parseSingleServerEntry()
+        .mapCatching { entry ->
+            val resolvedName = entry.name.trim()
+            if (resolvedName.any { !it.isLetterOrDigit() && it != '-' && it != '_' }) {
+                throw IllegalArgumentException("Server '$resolvedName': use only letters, numbers, '-' and '_'.")
+            }
+            val config = entry.config
+            when {
+                config["command"]?.jsonPrimitive?.content.orEmpty().isNotBlank() -> {
+                    if (config["url"] != null) {
+                        throw IllegalArgumentException("Server '$resolvedName': stdio config cannot include url.")
                     }
-
-                    config["url"]?.jsonPrimitive?.content.orEmpty().isNotBlank() -> {
-                        if (config["command"] != null) {
-                            throw IllegalArgumentException("Server '$resolvedName': streamable_http config cannot include command.")
-                        }
-                    }
-
-                    else -> throw IllegalArgumentException("Server '$resolvedName': config must include either command or url.")
                 }
+
+                config["url"]?.jsonPrimitive?.content.orEmpty().isNotBlank() -> {
+                    if (config["command"] != null) {
+                        throw IllegalArgumentException("Server '$resolvedName': streamable_http config cannot include command.")
+                    }
+                }
+
+                else -> throw IllegalArgumentException("Server '$resolvedName': config must include either command or url.")
             }
         }
         .exceptionOrNull()
@@ -361,14 +331,10 @@ internal fun McpServerDraft.validate(): McpValidationErrors {
     )
 }
 
-internal sealed interface ParsedMcpEditorJson {
+internal object ParsedMcpEditorJson {
     data class Servers(
         val entries: List<NamedMcpServerConfig>,
-    ) : ParsedMcpEditorJson
-
-    data class LegacyConfig(
-        val config: JsonObject,
-    ) : ParsedMcpEditorJson
+    )
 }
 
 internal fun String.parseArgsText(): List<String> {

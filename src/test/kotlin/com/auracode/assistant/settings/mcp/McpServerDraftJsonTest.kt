@@ -3,8 +3,6 @@ package com.auracode.assistant.settings.mcp
 import kotlinx.serialization.json.jsonPrimitive
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertFalse
-import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class McpServerDraftJsonTest {
@@ -44,7 +42,7 @@ class McpServerDraftJsonTest {
     }
 
     @Test
-    fun `draft accepts direct top level server map`() {
+    fun `draft rejects direct top level server map`() {
         val draft = McpServerDraft(
             configJson = """
                 {
@@ -58,8 +56,31 @@ class McpServerDraftJsonTest {
             """.trimIndent(),
         )
 
+        assertEquals(
+            "New servers must use {\"mcpServers\": {...}} JSON.",
+            draft.validate().json,
+        )
+    }
+
+    @Test
+    fun `draft rejects multiple server entries for ui validation`() {
+        val draft = McpServerDraft(
+            configJson = """
+                {
+                  "mcpServers": {
+                    "docs": {
+                      "url": "https://example.com/mcp"
+                    },
+                    "figma": {
+                      "command": "npx"
+                    }
+                  }
+                }
+            """.trimIndent(),
+        )
+
         assertEquals(2, draft.parseServerEntries().getOrThrow().size)
-        assertNull(draft.validate().json)
+        assertEquals("JSON must contain exactly one MCP server.", draft.validate().json)
     }
 
     @Test
@@ -113,7 +134,7 @@ class McpServerDraftJsonTest {
     }
 
     @Test
-    fun `editor display json normalizes direct map into wrapper shape`() {
+    fun `editor display json leaves invalid direct map unchanged`() {
         val draft = McpServerDraft(
             configJson = """
                 {
@@ -125,8 +146,7 @@ class McpServerDraftJsonTest {
         )
 
         val display = draft.editorDisplayJson()
-        assertTrue(display.contains("\"mcpServers\""))
         assertTrue(display.contains("\"docs\""))
-        assertFalse(display.trimStart().startsWith("{\n  \"docs\""))
+        assertTrue(display.trimStart().startsWith("{\n  \"docs\""))
     }
 }

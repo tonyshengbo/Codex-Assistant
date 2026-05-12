@@ -132,7 +132,6 @@ internal data class SidePanelAreaState(
 
     val isMcpEditorDialogVisible: Boolean
         get() = settingsSection == SettingsSection.MCP &&
-            mcpSettingsTab == McpSettingsTab.CODEX &&
             mcpSettingsPage == McpSettingsPage.EDITOR
 }
 

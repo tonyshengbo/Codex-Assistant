@@ -2,19 +2,29 @@ package com.auracode.assistant.toolwindow.settings
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.DropdownMenu
+import androidx.compose.material.DropdownMenuItem
+import androidx.compose.material.Icon
+import androidx.compose.material.IconButton
 import androidx.compose.material.MaterialTheme
 import androidx.compose.material.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.auracode.assistant.i18n.AuraCodeBundle
@@ -23,6 +33,10 @@ import com.auracode.assistant.settings.mcp.McpServerSummary
 import com.auracode.assistant.settings.mcp.McpTransportType
 import com.auracode.assistant.toolwindow.eventing.UiIntent
 import com.auracode.assistant.toolwindow.shell.SidePanelAreaState
+import com.auracode.assistant.toolwindow.shared.AssistantDialogAction
+import com.auracode.assistant.toolwindow.shared.AssistantDialogStatePresentation
+import com.auracode.assistant.toolwindow.shared.AssistantDialogTone
+import com.auracode.assistant.toolwindow.shared.AssistantMessageDialog
 import com.auracode.assistant.toolwindow.shared.DesignPalette
 import com.auracode.assistant.toolwindow.shared.assistantUiTokens
 
@@ -33,6 +47,39 @@ internal fun McpSettingsListPage(
     onIntent: (UiIntent) -> Unit,
 ) {
     val t = assistantUiTokens()
+    var expandedMenuName by remember { mutableStateOf<String?>(null) }
+    var pendingDeleteServer by remember { mutableStateOf<McpServerSummary?>(null) }
+
+    pendingDeleteServer?.let { server ->
+        AssistantMessageDialog(
+            palette = p,
+            title = AuraCodeBundle.message("settings.mcp.delete.confirm.title"),
+            message = AuraCodeBundle.message("settings.mcp.delete.confirm.body", server.name),
+            presentation = AssistantDialogStatePresentation(
+                tone = AssistantDialogTone.DANGER,
+                showsProgressIndicator = false,
+                showsStatusBadge = true,
+                allowsDismiss = true,
+            ),
+            confirmAction = AssistantDialogAction(
+                label = AuraCodeBundle.message("common.delete"),
+                emphasized = true,
+                tone = AssistantDialogTone.DANGER,
+                onClick = {
+                    expandedMenuName = null
+                    pendingDeleteServer = null
+                    onIntent(UiIntent.DeleteMcpServer(server.name))
+                },
+            ),
+            dismissAction = AssistantDialogAction(
+                label = AuraCodeBundle.message("common.cancel"),
+                emphasized = false,
+                onClick = { pendingDeleteServer = null },
+            ),
+            onDismissRequest = { pendingDeleteServer = null },
+        )
+    }
+
     Column(
         modifier = Modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(t.spacing.md),
@@ -69,11 +116,17 @@ internal fun McpSettingsListPage(
                         isDeleting = state.mcpBusyState.deletingName == server.name,
                         isAuthenticating = state.mcpBusyState.authenticatingName == server.name,
                         authState = state.mcpStatusByName[server.name]?.authState ?: server.authState,
+                        menuExpanded = expandedMenuName == server.name,
+                        onMenuExpandedChange = { expanded ->
+                            expandedMenuName = if (expanded) server.name else null
+                        },
                         onOpen = { onIntent(UiIntent.SelectMcpServerForEdit(server.name)) },
                         onToggleEnabled = { enabled ->
+                            expandedMenuName = null
                             onIntent(UiIntent.ToggleMcpServerEnabled(server.name, enabled))
                         },
                         onAuthenticate = { login ->
+                            expandedMenuName = null
                             onIntent(
                                 if (login) {
                                     UiIntent.LoginMcpServer(server.name)
@@ -83,9 +136,13 @@ internal fun McpSettingsListPage(
                             )
                         },
                         onCancelAuthentication = {
+                            expandedMenuName = null
                             onIntent(UiIntent.CancelMcpLogin(server.name))
                         },
-                        onDelete = { onIntent(UiIntent.DeleteMcpServer(server.name)) },
+                        onDelete = {
+                            expandedMenuName = null
+                            pendingDeleteServer = server
+                        },
                     )
                 }
             }
@@ -101,6 +158,8 @@ private fun McpServerRow(
     isDeleting: Boolean,
     isAuthenticating: Boolean,
     authState: McpAuthState,
+    menuExpanded: Boolean,
+    onMenuExpandedChange: (Boolean) -> Unit,
     onOpen: () -> Unit,
     onToggleEnabled: (Boolean) -> Unit,
     onAuthenticate: (Boolean) -> Unit,
@@ -113,7 +172,6 @@ private fun McpServerRow(
             .fillMaxWidth()
             .background(p.topBarBg.copy(alpha = 0.72f), RoundedCornerShape(t.spacing.md))
             .border(1.dp, p.markdownDivider.copy(alpha = 0.42f), RoundedCornerShape(t.spacing.md))
-            .clickable(onClick = onOpen)
             .padding(horizontal = t.spacing.md, vertical = t.spacing.md),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(t.spacing.md),
@@ -160,13 +218,59 @@ private fun McpServerRow(
                 onAuthenticate = onAuthenticate,
                 onCancelAuthentication = onCancelAuthentication,
             )
-            SettingsActionButton(
+            McpServerActionsMenu(
                 p = p,
-                text = AuraCodeBundle.message("common.delete"),
-                emphasized = false,
                 enabled = !isDeleting && !isAuthenticating,
-                onClick = onDelete,
+                expanded = menuExpanded,
+                onExpandedChange = onMenuExpandedChange,
+                onOpen = onOpen,
+                onDelete = onDelete,
             )
+        }
+    }
+}
+
+@Composable
+private fun McpServerActionsMenu(
+    p: DesignPalette,
+    enabled: Boolean,
+    expanded: Boolean,
+    onExpandedChange: (Boolean) -> Unit,
+    onOpen: () -> Unit,
+    onDelete: () -> Unit,
+) {
+    Box(modifier = Modifier.wrapContentSize(Alignment.TopStart)) {
+        IconButton(
+            onClick = { onExpandedChange(true) },
+            enabled = enabled,
+        ) {
+            Icon(
+                painter = painterResource("/icons/more-vert.svg"),
+                contentDescription = AuraCodeBundle.message("common.more"),
+                tint = if (enabled) p.textSecondary else p.textMuted,
+                modifier = Modifier.size(18.dp),
+            )
+        }
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { onExpandedChange(false) },
+        ) {
+            DropdownMenuItem(
+                onClick = {
+                    onExpandedChange(false)
+                    onOpen()
+                },
+            ) {
+                Text(AuraCodeBundle.message("common.edit"))
+            }
+            DropdownMenuItem(
+                onClick = {
+                    onExpandedChange(false)
+                    onDelete()
+                },
+            ) {
+                Text(AuraCodeBundle.message("common.delete"))
+            }
         }
     }
 }
