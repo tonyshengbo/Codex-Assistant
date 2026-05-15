@@ -120,8 +120,10 @@ internal class DefaultClaudeCliLauncher(
     }
 
     private fun needsPermissionPromptTool(request: AgentRequest): Boolean {
-        return request.approvalMode == AgentApprovalMode.REQUIRE_CONFIRMATION ||
-            request.collaborationMode == AgentCollaborationMode.PLAN
+        // AUTO mode also requires stdio permission-prompt-tool, otherwise tools like WebSearch
+        // that require additional authorization cannot send control_request via stdio, causing permission requests to fail.
+        // In AUTO mode, ClaudeCliProvider auto-approves; in REQUIRE_CONFIRMATION mode, the UI prompts for confirmation.
+        return true
     }
 
     private fun usesStdinForImages(request: AgentRequest): Boolean {

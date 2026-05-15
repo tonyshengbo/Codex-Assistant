@@ -922,6 +922,7 @@ internal class CodexRuntimeProvider(
                 ?: item.string("query")
                 ?: item.objectValue("content")?.string("text")
                 ?: item.arrayValue("content")?.firstTextBlock()
+                ?: item.arrayValue("summary")?.joinedTextBlocks()
                 ?: ""
         }
 
@@ -1552,6 +1553,16 @@ internal class CodexRuntimeProvider(
                 val obj = element as? JsonObject ?: return@firstNotNullOfOrNull null
                 obj.string("text")
             }
+        }
+
+        private fun JsonArray.joinedTextBlocks(): String? {
+            return mapNotNull { element ->
+                when (element) {
+                    is JsonPrimitive -> element.contentOrNull
+                    is JsonObject -> element.string("text")
+                    else -> null
+                }?.takeIf { it.isNotBlank() }
+            }.joinToString("\n\n").takeIf { it.isNotBlank() }
         }
 
         private fun JsonObject.string(key: String): String? {

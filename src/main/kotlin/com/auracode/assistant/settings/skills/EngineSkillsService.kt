@@ -112,6 +112,18 @@ internal class EngineSkillsService(
     ): List<String> {
         return runtimeService.findDisabledSkillMentions(engineId = engineId, cwd = cwd, text = text)
     }
+
+    /**
+     * Extracts enabled skill tokens from prompt text, reads the corresponding SKILL.md body, and returns a list of contents.
+     * For engines that don't support native skill token parsing, this injects skill directives into system prompt before submission.
+     */
+    fun resolveSkillContents(
+        engineId: String,
+        cwd: String,
+        text: String,
+    ): List<String> {
+        return runtimeService.resolveSkillContents(engineId = engineId, cwd = cwd, text = text)
+    }
 }
 
 /** Maps one runtime skill entry into the shared UI representation. */

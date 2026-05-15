@@ -6,6 +6,7 @@ import com.auracode.assistant.protocol.ItemKind
 import com.auracode.assistant.protocol.ItemStatus
 import com.auracode.assistant.protocol.ProviderFileChange
 import com.auracode.assistant.protocol.ProviderItem
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 
 internal class CodexProviderItemTypeParsers {
@@ -13,13 +14,17 @@ internal class CodexProviderItemTypeParsers {
      * {"method":"item/started","params":{"item":{"type":"agentMessage","id":"msg_x","text":"","phase":"commentary"},"threadId":"x","turnId":"x"}}
      * {"method":"item/completed","params":{"item":{"type":"agentMessage","id":"msg_x","text":"hello","phase":"final_answer"},"threadId":"x","turnId":"x"}}
      */
-    fun parseAgentMessage(item: JsonObject, status: ItemStatus): ProviderItem {
+    fun parseAgentMessage(
+        item: JsonObject,
+        status: ItemStatus,
+        bufferedText: String = "",
+    ): ProviderItem {
         return ProviderItem(
             id = item.string("id") ?: "item-agentMessage",
             kind = ItemKind.NARRATIVE,
             status = status,
             name = "message",
-            text = extractText(item),
+            text = extractText(item).ifBlank { bufferedText },
         )
     }
 
@@ -27,13 +32,17 @@ internal class CodexProviderItemTypeParsers {
      * {"method":"item/started","params":{"item":{"type":"reasoning","id":"rs_x","summary":[],"content":[]},"threadId":"x","turnId":"x"}}
      * {"method":"item/completed","params":{"item":{"type":"reasoning","id":"rs_x","summary":[],"content":[]},"threadId":"x","turnId":"x"}}
      */
-    fun parseReasoning(item: JsonObject, status: ItemStatus): ProviderItem {
+    fun parseReasoning(
+        item: JsonObject,
+        status: ItemStatus,
+        bufferedText: String = "",
+    ): ProviderItem {
         return ProviderItem(
             id = item.string("id") ?: "item-reasoning",
             kind = ItemKind.NARRATIVE,
             status = status,
             name = "reasoning",
-            text = extractText(item),
+            text = extractText(item).ifBlank { bufferedText },
         )
     }
 
@@ -196,7 +205,20 @@ internal class CodexProviderItemTypeParsers {
             ?: item.string("query")
             ?: item.objectValue("content")?.string("text")
             ?: item.arrayValue("content")?.firstTextBlock()
+            ?: item.arrayValue("summary")?.textBlocks()
             ?: ""
+    }
+
+    /** Extracts Codex reasoning summary text from array payloads used by completed items. */
+    private fun JsonArray.textBlocks(): String? {
+        return mapNotNull { element ->
+            element.primitiveTextOrNull()
+                ?: (element as? JsonObject)?.string("text")
+        }
+            .map(String::trim)
+            .filter(String::isNotBlank)
+            .joinToString("\n\n")
+            .takeIf(String::isNotBlank)
     }
 
     private fun extractWebSearchText(item: JsonObject): String {

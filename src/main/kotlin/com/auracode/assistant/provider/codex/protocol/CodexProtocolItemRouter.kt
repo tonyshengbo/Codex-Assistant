@@ -20,8 +20,16 @@ internal class CodexProviderItemTypeRouter(
     ): ProviderItem {
         val itemId = item.string("id") ?: "item-${canonicalType.ifBlank { "unknown" }}"
         return when (canonicalType) {
-            CodexProviderItemTypeAliases.AGENT_MESSAGE -> typeParsers.parseAgentMessage(item = item, status = status)
-            CodexProviderItemTypeAliases.REASONING -> typeParsers.parseReasoning(item = item, status = status)
+            CodexProviderItemTypeAliases.AGENT_MESSAGE -> typeParsers.parseAgentMessage(
+                item = item,
+                status = status,
+                bufferedText = state.narrativeBuffers[itemId]?.toString().orEmpty(),
+            )
+            CodexProviderItemTypeAliases.REASONING -> typeParsers.parseReasoning(
+                item = item,
+                status = status,
+                bufferedText = state.narrativeBuffers[itemId]?.toString().orEmpty(),
+            )
             CodexProviderItemTypeAliases.COMMAND_EXECUTION -> typeParsers.parseCommandExecution(
                 item = item,
                 status = status,

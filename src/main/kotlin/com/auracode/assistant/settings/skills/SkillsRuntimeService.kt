@@ -1,6 +1,7 @@
 package com.auracode.assistant.settings.skills
 
 import java.util.concurrent.ConcurrentHashMap
+import java.nio.file.Path
 
 /**
  * Coordinates runtime skill discovery and toggles with an in-memory cache.
@@ -148,6 +149,32 @@ internal class SkillsRuntimeService(
             .mapNotNull { match ->
                 val name = match.groupValues[1]
                 knownSkills[name]?.takeIf { !it.enabled }?.name
+            }
+            .distinct()
+            .toList()
+    }
+
+    /**
+     * Extracts enabled skill tokens from prompt text, reads the corresponding SKILL.md body content, and returns it.
+     * For engines that don't support native skill token parsing (like Claude CLI), injects system prompt before submission.
+     */
+    fun resolveSkillContents(
+        engineId: String,
+        cwd: String,
+        text: String,
+    ): List<String> {
+        if (text.isBlank()) return emptyList()
+        val knownSkills = cache[SkillsRuntimeCacheKey(engineId = engineId, cwd = cwd)]
+            ?.skills
+            ?.associateBy { it.name }
+            .orEmpty()
+        return SKILL_TOKEN_REGEX
+            .findAll(text)
+            .mapNotNull { match ->
+                val name = match.groupValues[1]
+                val skill = knownSkills[name]?.takeIf { it.enabled } ?: return@mapNotNull null
+                val path = skill.path.trim().takeIf { it.isNotBlank() } ?: return@mapNotNull null
+                readSkillBody(Path.of(path))
             }
             .distinct()
             .toList()

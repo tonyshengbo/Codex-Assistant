@@ -22,6 +22,20 @@ internal fun parseSkillDescriptor(skillFile: Path): ParsedSkillDescriptor? {
     return ParsedSkillDescriptor(name = name, description = description)
 }
 
+/**
+ * Reads the body content after the front-matter closing marker in SKILL.md.
+ * Used to inject skill directives as system prompt for engines that don't support native skill token parsing (like Claude CLI).
+ */
+internal fun readSkillBody(skillFile: Path): String? {
+    val lines = runCatching { skillFile.readLines() }.getOrNull() ?: return null
+    if (lines.firstOrNull()?.trim() != "---") return null
+    // Skip the first line "---", find the position of the closing "---"
+    val closingIndex = lines.drop(1).indexOfFirst { it.trim() == "---" }
+    if (closingIndex < 0) return null
+    // front-matter takes 1 (opening ---) + closingIndex lines + 1 (closing ---) = closingIndex + 2 lines
+    return lines.drop(closingIndex + 2).joinToString("\n").trim().takeIf { it.isNotBlank() }
+}
+
 /** Recursively finds every `SKILL.md` under the supplied root. */
 internal fun discoverSkillFilesUnder(root: Path): List<Path> {
     if (!Files.isDirectory(root)) return emptyList()

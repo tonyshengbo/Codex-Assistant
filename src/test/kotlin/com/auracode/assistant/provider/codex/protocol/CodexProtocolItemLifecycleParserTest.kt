@@ -71,6 +71,40 @@ class CodexProviderItemLifecycleParserTest {
     }
 
     @Test
+    fun parsesReasoningCompletionSummaryText() {
+        val event = parser.parseItemCompleted(
+            params(
+                """{"item":{"type":"reasoning","id":"rs_1","summary":["**Inspecting relevant files**\n\nI need to focus on source files."],"content":[]},"threadId":"thread-1","turnId":"turn-1"}""",
+            ),
+            state = state,
+        )
+
+        val item = assertIs<ProviderEvent.ItemUpdated>(event).item
+        assertEquals(ItemKind.NARRATIVE, item.kind)
+        assertEquals(ItemStatus.SUCCESS, item.status)
+        assertEquals("reasoning", item.name)
+        assertTrue(item.text.orEmpty().contains("Inspecting relevant files"))
+    }
+
+    @Test
+    fun preservesReasoningDeltaTextWhenCompletedPayloadIsEmpty() {
+        state.narrativeBuffers["rs_1"] = StringBuilder("Thinking from summary delta")
+
+        val event = parser.parseItemCompleted(
+            params(
+                """{"item":{"type":"reasoning","id":"rs_1","summary":[],"content":[]},"threadId":"thread-1","turnId":"turn-1"}""",
+            ),
+            state = state,
+        )
+
+        val item = assertIs<ProviderEvent.ItemUpdated>(event).item
+        assertEquals(ItemKind.NARRATIVE, item.kind)
+        assertEquals(ItemStatus.SUCCESS, item.status)
+        assertEquals("reasoning", item.name)
+        assertEquals("Thinking from summary delta", item.text)
+    }
+
+    @Test
     fun parsesUserMessageAndUnknownFallback() {
         val userMessage = parser.parseItemCompleted(
             params(

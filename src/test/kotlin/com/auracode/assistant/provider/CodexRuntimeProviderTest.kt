@@ -225,6 +225,42 @@ class CodexRuntimeProviderTest {
     }
 
     @Test
+    fun `reasoning completion reads summary array as final text`() {
+        val parser = CodexRuntimeProvider.CodexRuntimeNotificationParser(
+            requestId = "req-1",
+            diagnosticLogger = {},
+        )
+
+        val events = parser.parseNotification(
+            method = "item/completed",
+            params = buildJsonObject {
+                put(
+                    "item",
+                    buildJsonObject {
+                        put("type", "reasoning")
+                        put("id", "rs_07d908")
+                        put(
+                            "summary",
+                            buildJsonArray {
+                                add(JsonPrimitive("**Inspecting relevant files**\n\nI need to focus on source files."))
+                            },
+                        )
+                        put("content", buildJsonArray {})
+                    },
+                )
+                put("threadId", "thread-1")
+                put("turnId", "turn-1")
+            },
+        )
+
+        val item = assertIs<ProviderEvent.ItemUpdated>(events.single()).item
+        assertEquals(ItemKind.NARRATIVE, item.kind)
+        assertEquals(ItemStatus.SUCCESS, item.status)
+        assertEquals("reasoning", item.name)
+        assertTrue(item.text.orEmpty().contains("Inspecting relevant files"))
+    }
+
+    @Test
     fun `file change parser reads nested payload changes`() {
         val events = parseAppServerNotificationForTest(
             requestId = "req-1",

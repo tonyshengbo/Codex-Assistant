@@ -27,7 +27,7 @@ import kotlinx.serialization.json.JsonArray
 import java.util.concurrent.ConcurrentHashMap
 
 /**
- * 负责驱动 Claude CLI 流式会话，并在关键边界输出诊断日志。
+ * Drives Claude CLI streaming sessions and outputs diagnostic logs at key boundaries.
  */
 internal class ClaudeCliProvider(
     private val settings: AgentSettingsService,
@@ -39,13 +39,13 @@ internal class ClaudeCliProvider(
     override val providerId: String = ClaudeProviderFactory.ENGINE_ID
     private val running = ConcurrentHashMap<String, ClaudeStreamJsonSession>()
 
-    /** requestId → (requestId → deferred) 的两级映射，支持同一 turn 内多个并发授权请求。 */
+    /** Two-level mapping of requestId → (requestId → deferred), supporting multiple concurrent authorization requests within a single turn. */
     private val pendingApprovals = ConcurrentHashMap<String, ConcurrentHashMap<String, CompletableDeferred<ApprovalAction>>>()
 
-    /** requestId → (controlRequestId → deferred) 的两级映射，支持 AskUserQuestion 的用户输入回传。 */
+    /** Two-level mapping of requestId → (controlRequestId → deferred), supporting user input feedback for AskUserQuestion. */
     private val pendingToolUserInputs = ConcurrentHashMap<String, ConcurrentHashMap<String, CompletableDeferred<Map<String, ProviderToolUserInputAnswerDraft>>>>()
 
-    /** 启动 Claude CLI 流式会话，并在 provider 边界内将统一事件折叠为 session domain events。 */
+    /** Starts Claude CLI streaming sessions and collapses unified events into session domain events at the provider boundary. */
     override fun stream(request: AgentRequest): Flow<SessionDomainEvent> = channelFlow {
         logStreamStart(request)
         val session = runCatching { launcher.start(request, settings) }
@@ -109,7 +109,22 @@ internal class ClaudeCliProvider(
                                 planModeExited = true
                                 session.cancel()
                             } else if (unified is ProviderEvent.ApprovalRequested) {
-                                // 注册 deferred，等待 UI 层调用 submitApprovalDecision。
+                                if (request.approvalMode == com.auracode.assistant.model.AgentApprovalMode.AUTO) {
+                                    // In AUTO mode, auto-approve without prompting the authorization UI
+                                    session.writeStdin(
+                                        buildControlResponse(
+                                            approvalRequestId = unified.request.requestId,
+                                            decision = ApprovalAction.ALLOW,
+                                            permissionSuggestions = unified.request.permissionSuggestions,
+                                            toolInputJson = unified.request.toolInputJson,
+                                        ),
+                                    )
+                                    diagnosticLogger(
+                                        "Claude CLI approval auto-allowed: requestId=${request.requestId} " +
+                                            "approvalId=${unified.request.requestId}",
+                                    )
+                                } else {
+                                // Register deferred to wait for UI layer to call submitApprovalDecision.
                                 val deferred = CompletableDeferred<ApprovalAction>()
                                 approvals[unified.request.requestId] = deferred
                                 emitDomainEvents(
@@ -132,8 +147,9 @@ internal class ClaudeCliProvider(
                                     "Claude CLI approval decision: requestId=${request.requestId} " +
                                         "approvalId=${unified.request.requestId} decision=$decision",
                                 )
+                                }
                             } else if (unified is ProviderEvent.ToolUserInputRequested) {
-                                // 注册 deferred，等待 UI 层调用 submitToolUserInput。
+                                // Register deferred to wait for UI layer to call submitToolUserInput.
                                 val deferred = CompletableDeferred<Map<String, ProviderToolUserInputAnswerDraft>>()
                                 toolInputs[unified.prompt.requestId] = deferred
                                 emitDomainEvents(
@@ -219,7 +235,7 @@ internal class ClaudeCliProvider(
         }
     }
 
-    /** 返回 Claude 引擎当前支持的会话能力。 */
+    /** Returns the session capabilities currently supported by the Claude engine. */
     override fun capabilities(): ConversationCapabilities = ConversationCapabilities(
         supportsStructuredHistory = true,
         supportsHistoryPagination = false,
@@ -232,7 +248,7 @@ internal class ClaudeCliProvider(
         supportsSubagents = true,
     )
 
-    /** 将 UI 层的授权决定写回 Claude CLI 的 stdin。 */
+    /** Writes the authorization decision from the UI layer back to Claude CLI's stdin. */
     override fun submitApprovalDecision(requestId: String, decision: ApprovalAction): Boolean {
         val pendingKeys = pendingApprovals.values.flatMap { it.keys }
         diagnosticLogger(
@@ -250,7 +266,7 @@ internal class ClaudeCliProvider(
         return false
     }
 
-    /** 将 UI 层收集的用户输入回答写回 Claude CLI 的 stdin。 */
+    /** Writes the user input answers collected by the UI layer back to Claude CLI's stdin. */
     override fun submitToolUserInput(
         requestId: String,
         answers: Map<String, ProviderToolUserInputAnswerDraft>,
@@ -270,14 +286,14 @@ internal class ClaudeCliProvider(
         return false
     }
 
-    /** 从 Claude CLI 本地 JSONL 文件中读取历史会话记录。 */
+    /** Reads historical session records from Claude CLI's local JSONL files. */
     override suspend fun loadInitialHistory(ref: ConversationRef, pageSize: Int): ConversationHistoryPage {
         return historyReader.readHistory(ref.remoteConversationId)
     }
 
     /**
-     * 枚举本地 Claude CLI 会话列表，通过扫描 ~/.claude/projects/<encoded-cwd>/ 下的 JSONL 文件实现。
-     * 支持按 cwd 过滤、关键词搜索和分页。
+     * Enumerates the local Claude CLI session list by scanning JSONL files under ~/.claude/projects/<encoded-cwd>/.
+     * Supports filtering by cwd, keyword search, and pagination.
      */
     override suspend fun listRemoteConversations(
         pageSize: Int,
@@ -293,7 +309,7 @@ internal class ClaudeCliProvider(
         )
     }
 
-    /** 取消指定请求对应的 Claude CLI 进程。 */
+    /** Cancels the Claude CLI process corresponding to the specified request. */
     override fun cancel(requestId: String) {
         pendingApprovals.remove(requestId)?.values?.forEach { it.complete(ApprovalAction.REJECT) }
         pendingToolUserInputs.remove(requestId)?.values?.forEach { it.complete(emptyMap()) }
@@ -301,9 +317,9 @@ internal class ClaudeCliProvider(
         diagnosticLogger("Claude CLI cancelled: requestId=$requestId")
     }
 
-    /** 构造发回 Claude CLI stdin 的 control_response JSON 行。
-     *  allow 时必须回传 updatedInput（原始工具输入），否则 CLI 端 zod 校验失败。
-     *  deny 时必须带 message 字段，否则 CLI 端 zod 校验失败。
+    /** Constructs control_response JSON lines sent back to Claude CLI stdin.
+     *  When allow, must return updatedInput (original tool input), otherwise CLI-side zod validation fails.
+     *  When deny, must include message field, otherwise CLI-side zod validation fails.
      */
     private fun buildControlResponse(
         approvalRequestId: String,
@@ -335,7 +351,7 @@ internal class ClaudeCliProvider(
         return json
     }
 
-    /** 构造 AskUserQuestion 的 control_response，包含用户选择的答案。 */
+    /** Constructs control_response for AskUserQuestion containing the user's selected answers. */
     internal fun buildToolUserInputResponse(
         controlRequestId: String,
         prompt: ProviderToolUserInputPrompt,
@@ -406,7 +422,7 @@ internal class ClaudeCliProvider(
         return json
     }
 
-    /** 记录会话启动元数据，便于确认 CLI 的执行上下文。 */
+    /** Records session startup metadata to confirm the CLI execution context. */
     private fun logStreamStart(request: AgentRequest) {
         diagnosticLogger(
             "Claude CLI start: requestId=${request.requestId} " +
@@ -421,7 +437,7 @@ internal class ClaudeCliProvider(
         )
     }
 
-    /** 处理 Claude CLI 的单行输出，并记录原始内容、解析结果和统一事件。 */
+    /** Processes single-line output from Claude CLI and logs raw content, parsing results, and unified events. */
     private suspend fun collectLine(
         request: AgentRequest,
         channel: String,
@@ -469,12 +485,12 @@ internal class ClaudeCliProvider(
         }
     }
 
-    /** 将原始输出裁剪成适合日志阅读的单行片段。 */
+    /** Trims raw output into single-line snippets suitable for log reading. */
     private fun String.toLogSnippet(): String {
         return replace("\n", "\\n").take(LOG_SNIPPET_LIMIT)
     }
 
-    /** 生成 Claude 原始事件的紧凑摘要。 */
+    /** Generates a compact summary of Claude raw events. */
     private fun ClaudeStreamEvent.toLogSummary(): String {
         return when (this) {
             is ClaudeStreamEvent.AssistantSnapshot -> {
@@ -544,7 +560,7 @@ internal class ClaudeCliProvider(
         }
     }
 
-    /** 生成语义层事件的紧凑摘要，便于比对聚合层是否漏掉真实过程。 */
+    /** Generates a compact summary of semantic-level events to verify if the aggregation layer missed any actual processes. */
     private fun ClaudeConversationEvent.toLogSummary(): String {
         return when (this) {
             is ClaudeConversationEvent.AssistantErrorCaptured -> {
@@ -601,7 +617,7 @@ internal class ClaudeCliProvider(
         }
     }
 
-    /** 生成统一事件的紧凑摘要，便于比对 UI 是否收到收尾事件。 */
+    /** Generates a compact summary of unified events to verify if the UI received closing events. */
     private fun ProviderEvent.toLogSummary(): String {
         return when (this) {
             is ProviderEvent.Error -> "error terminal=$terminal message=${message.toLogSnippet()}"
