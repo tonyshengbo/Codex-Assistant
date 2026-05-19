@@ -91,6 +91,7 @@ internal class ToolWindowCoordinator(
     private val readFileContent: (String) -> String? = { path -> readFileContentDefault(path) },
     private val openConversationFileChange: (ConversationFileChange) -> Unit = {},
     private val openConversationFilePath: (String) -> Unit = {},
+    private val refreshWorkspacePaths: (List<String>) -> Unit = {},
     private val revealPathInFileManager: (String) -> Boolean = { false },
     private val openSessionTabIds: () -> Set<String> = { emptySet() },
     private val activateSessionTab: (String) -> Unit = {},
@@ -192,6 +193,7 @@ internal class ToolWindowCoordinator(
         readFileContent = readFileContent,
         openConversationFileChange = openConversationFileChange,
         openConversationFilePath = openConversationFilePath,
+        refreshWorkspacePaths = refreshWorkspacePaths,
         revealPathInFileManager = revealPathInFileManager,
         openSessionTabIds = openSessionTabIds,
         activateSessionTab = activateSessionTab,
@@ -563,6 +565,7 @@ internal class ToolWindowCoordinator(
             .forEach { error ->
                 dispatchSessionEvent(sessionId, AppEvent.StatusTextUpdated(UiText.raw(error.message)))
             }
+        refreshWorkspacePathsFor(events)
         syncSessionUiProjection(sessionId)
         if (events.any { event ->
                 event is SessionDomainEvent.TurnCompleted &&
@@ -574,6 +577,25 @@ internal class ToolWindowCoordinator(
             }
         ) {
             conversationHandler.dispatchNextPendingSubmissionIfIdle(sessionId, allowTurnCompletedBypass = true)
+        }
+    }
+
+    /** Refreshes IDE-visible files after provider-reported workspace changes. */
+    private fun refreshWorkspacePathsFor(events: List<SessionDomainEvent>) {
+        val affectedPaths = linkedSetOf<String>()
+        events.filterIsInstance<SessionDomainEvent.FileChangesUpdated>()
+            .flatMap { it.changes }
+            .forEach { change ->
+                val path = change.path.trim()
+                if (path.isBlank()) return@forEach
+                affectedPaths += path
+                runCatching { Path.of(path).parent?.toString() }
+                    .getOrNull()
+                    ?.takeIf { it.isNotBlank() }
+                    ?.let(affectedPaths::add)
+            }
+        if (affectedPaths.isNotEmpty()) {
+            refreshWorkspacePaths(affectedPaths.toList())
         }
     }
 

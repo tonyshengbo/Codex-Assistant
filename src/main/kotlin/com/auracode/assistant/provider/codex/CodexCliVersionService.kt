@@ -54,6 +54,9 @@ internal class CodexCliVersionService(
         configuredCodexPathOverride: String? = null,
         configuredNodePathOverride: String? = null,
     ): CodexCliVersionSnapshot {
+        if (!force && cachedSnapshot.checkStatus.isTransientOperationInProgress()) {
+            return cachedSnapshot
+        }
         if (!shouldRefresh(force = force)) {
             val restored = restoreSnapshotFromCache(
                 action = detectUpgradeAction(
@@ -314,6 +317,11 @@ internal class CodexCliVersionService(
     companion object {
         private val AUTO_REFRESH_INTERVAL_MS: Long = TimeUnit.HOURS.toMillis(12)
     }
+}
+
+private fun CodexCliVersionCheckStatus.isTransientOperationInProgress(): Boolean {
+    return this == CodexCliVersionCheckStatus.UPGRADE_IN_PROGRESS ||
+        this == CodexCliVersionCheckStatus.INSTALL_IN_PROGRESS
 }
 
 internal fun runCodexCliCommand(

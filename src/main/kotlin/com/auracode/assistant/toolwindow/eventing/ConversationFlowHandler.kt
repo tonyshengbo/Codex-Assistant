@@ -10,7 +10,6 @@ import com.auracode.assistant.model.FileAttachment
 import com.auracode.assistant.model.ImageAttachment
 import com.auracode.assistant.persistence.chat.PersistedAttachmentKind
 import com.auracode.assistant.protocol.ItemStatus
-import com.auracode.assistant.provider.claude.ClaudeProviderFactory
 import com.auracode.assistant.session.kernel.SessionDomainEvent
 import com.auracode.assistant.session.kernel.SessionTurnOutcome
 import com.auracode.assistant.toolwindow.submission.SubmissionAreaState
@@ -164,18 +163,7 @@ internal class ConversationFlowHandler(
         }
         val prompt = submissionState.serializedPrompt()
         val systemInstructions = submissionState.serializedSystemInstructions()
-        // Claude CLI does not support native $skill-name parsing, need to inject skill body into system prompt before submission
-        val resolvedSystemInstructions = if (submissionState.selectedEngineId == ClaudeProviderFactory.ENGINE_ID) {
-            val skillContents = context.engineSkillsService.resolveSkillContents(
-                engineId = submissionState.selectedEngineId,
-                cwd = context.chatService.currentWorkingDirectory(),
-                text = submissionState.inputText,
-            )
-            skillContents + systemInstructions
-        } else {
-            systemInstructions
-        }
-        if (prompt.isBlank() && resolvedSystemInstructions.isEmpty()) return null
+        if (prompt.isBlank() && systemInstructions.isEmpty()) return null
         val stagedAttachments = workspaceHandler.stageAttachments(
             sessionId = context.chatService.getCurrentSessionId(),
             attachments = submissionState.attachments,
@@ -184,7 +172,7 @@ internal class ConversationFlowHandler(
             id = ToolWindowCoordinatorIds.newPendingSubmissionId(submissionState),
             engineId = submissionState.selectedEngineId,
             prompt = prompt,
-            systemInstructions = resolvedSystemInstructions,
+            systemInstructions = systemInstructions,
             contextFiles = workspaceHandler.buildContextFiles(
                 contextEntries = submissionState.contextEntries,
                 attachments = stagedAttachments,

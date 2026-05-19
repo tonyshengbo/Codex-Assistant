@@ -66,6 +66,9 @@ internal class ClaudeCliVersionService(
 
     /** Refreshes local and remote version metadata and updates the cached snapshot. */
     fun refresh(force: Boolean = false): ClaudeCliVersionSnapshot {
+        if (!force && cachedSnapshot.checkStatus.isTransientOperationInProgress()) {
+            return cachedSnapshot
+        }
         if (!shouldRefresh(force = force)) {
             val restored = restoreSnapshotFromCache(action = cachedUpgradeAction)
             cachedSnapshot = restored
@@ -300,6 +303,11 @@ internal class ClaudeCliVersionService(
     companion object {
         private val AUTO_REFRESH_INTERVAL_MS: Long = TimeUnit.HOURS.toMillis(12)
     }
+}
+
+private fun ClaudeCliVersionCheckStatus.isTransientOperationInProgress(): Boolean {
+    return this == ClaudeCliVersionCheckStatus.UPGRADE_IN_PROGRESS ||
+        this == ClaudeCliVersionCheckStatus.INSTALL_IN_PROGRESS
 }
 
 private fun runClaudeCliCommand(

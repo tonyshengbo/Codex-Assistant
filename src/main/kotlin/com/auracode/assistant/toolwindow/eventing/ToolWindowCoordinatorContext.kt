@@ -57,6 +57,7 @@ internal class ToolWindowCoordinatorContext(
     val readFileContent: (String) -> String?,
     val openConversationFileChange: (ConversationFileChange) -> Unit,
     val openConversationFilePath: (String) -> Unit,
+    val refreshWorkspacePaths: (List<String>) -> Unit,
     val revealPathInFileManager: (String) -> Boolean,
     val openSessionTabIds: () -> Set<String>,
     val activateSessionTab: (String) -> Unit,

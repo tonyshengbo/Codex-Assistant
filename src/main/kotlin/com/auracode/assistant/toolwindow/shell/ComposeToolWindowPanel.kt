@@ -65,6 +65,8 @@ import com.intellij.diff.DiffManager
 import com.intellij.diff.requests.SimpleDiffRequest
 import java.awt.BorderLayout
 import java.awt.KeyboardFocusManager
+import java.io.File
+import java.nio.file.Path
 import javax.swing.JPanel
 
 class ComposeToolWindowPanel(
@@ -193,6 +195,9 @@ class ComposeToolWindowPanel(
         },
         openConversationFilePath = { path ->
             openConversationFilePath(project, path)
+        },
+        refreshWorkspacePaths = { paths ->
+            refreshWorkspacePaths(paths)
         },
         revealPathInFileManager = { path ->
             revealPathInFileManager(path)
@@ -429,7 +434,6 @@ class ComposeToolWindowPanel(
             action.run()
         } else {
             app.invokeLater(action)
-            }
         }
     }
 
@@ -442,3 +446,29 @@ class ComposeToolWindowPanel(
             true
         }.getOrDefault(false)
     }
+
+    private fun refreshWorkspacePaths(paths: List<String>) {
+        if (paths.isEmpty()) return
+        val app = ApplicationManager.getApplication()
+        val action = Runnable {
+            val ioFiles = paths.asSequence()
+                .map(String::trim)
+                .filter(String::isNotBlank)
+                .map(::File)
+                .distinctBy { it.path }
+                .toList()
+            if (ioFiles.isEmpty()) return@Runnable
+            LocalFileSystem.getInstance().refreshIoFiles(ioFiles, true, true, null)
+            ioFiles.forEach { file ->
+                runCatching { Path.of(file.path) }
+                    .getOrNull()
+                    ?.let { LocalFileSystem.getInstance().refreshAndFindFileByNioFile(it) }
+            }
+        }
+        if (app.isDispatchThread) {
+            action.run()
+        } else {
+            app.invokeLater(action)
+        }
+    }
+}

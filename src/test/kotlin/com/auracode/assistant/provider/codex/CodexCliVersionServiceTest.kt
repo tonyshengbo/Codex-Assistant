@@ -6,6 +6,7 @@ import kotlin.io.path.createTempDirectory
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertSame
 import kotlin.test.assertTrue
 
 class CodexCliVersionServiceTest {
@@ -170,6 +171,52 @@ class CodexCliVersionServiceTest {
 
         assertEquals(CodexCliVersionCheckStatus.UP_TO_DATE, snapshot.checkStatus)
         assertEquals("0.130.0", snapshot.currentVersion)
+    }
+
+    @Test
+    fun `refresh keeps upgrade in progress snapshot during non forced refresh`() {
+        val codexPath = createExecutablePath("codex")
+        val settings = AgentSettingsService().apply {
+            loadState(
+                AgentSettingsService.State(
+                    codexCliPath = codexPath,
+                    engineExecutablePaths = mutableMapOf("codex" to codexPath),
+                    codexCliLastKnownCurrentVersion = "0.118.0",
+                    codexCliLastKnownLatestVersion = "0.120.0",
+                    codexCliLastCheckAt = 42L,
+                ),
+            )
+        }
+        var installedVersion = "codex-cli 0.118.0"
+        var executedUpgradeCommand = false
+        lateinit var service: CodexCliVersionService
+        service = CodexCliVersionService(
+            settingsService = settings,
+            environmentDetector = testEnvironmentDetector(codexPath),
+            sourceDetector = npmSourceDetector(),
+            commandRunner = { command, _ ->
+                when {
+                    command.lastOrNull() == "--version" -> CodexCliCommandResult(0, installedVersion, "")
+                    isNpmCommand(command.firstOrNull()) -> {
+                        executedUpgradeCommand = true
+                        val interimSnapshot = service.refresh(force = false)
+                        assertEquals(CodexCliVersionCheckStatus.UPGRADE_IN_PROGRESS, interimSnapshot.checkStatus)
+                        assertEquals("Upgrading Codex CLI...", interimSnapshot.message)
+                        assertSame(interimSnapshot, service.snapshot())
+                        installedVersion = "codex-cli 0.120.0"
+                        CodexCliCommandResult(0, "", "")
+                    }
+                    else -> CodexCliCommandResult(1, "", "unexpected command")
+                }
+            },
+            latestVersionFetcher = { "0.120.0" },
+        )
+
+        val snapshot = service.upgrade()
+
+        assertTrue(executedUpgradeCommand)
+        assertEquals(CodexCliVersionCheckStatus.UPGRADE_SUCCEEDED, snapshot.checkStatus)
+        assertEquals("0.120.0", snapshot.currentVersion)
     }
 
     private fun createExecutablePath(name: String): String {

@@ -8,6 +8,7 @@ import kotlin.io.path.createTempDirectory
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertSame
 import kotlin.test.assertTrue
 
 /** Verifies Claude CLI version upgrades resolve the package manager from the configured runtime environment. */
@@ -108,6 +109,58 @@ class ClaudeCliVersionServiceTest {
         assertEquals(ClaudeCliVersionCheckStatus.UP_TO_DATE, snapshot.checkStatus)
         assertEquals("2.1.119", snapshot.currentVersion)
         assertFalse(snapshot.message.contains("not installed", ignoreCase = true))
+    }
+
+    @Test
+    fun `refresh keeps upgrade in progress snapshot during non forced refresh`() {
+        val runtimeDirectory = createTempDirectory(prefix = "claude-version-refresh-in-progress")
+        val claudePath = createExecutablePath(runtimeDirectory, "claude")
+        val settings = AgentSettingsService().apply {
+            loadState(
+                AgentSettingsService.State(
+                    engineExecutablePaths = mutableMapOf("claude" to claudePath),
+                    claudeCliLastKnownCurrentVersion = "2.1.74",
+                    claudeCliLastKnownLatestVersion = "2.1.119",
+                    claudeCliLastCheckAt = 42L,
+                ),
+            )
+        }
+        var installedVersion = "2.1.74 (Claude Code)"
+        var executedUpgradeCommand = false
+        lateinit var service: ClaudeCliVersionService
+        service = ClaudeCliVersionService(
+            settingsService = settings,
+            sourceDetector = npmSourceDetector(),
+            executableResolver = CodexExecutableResolver(commonSearchPaths = emptyList()),
+            shellEnvironmentLoader = { emptyMap() },
+            runtimeLaunchResolver = DefaultRuntimeLaunchResolver(
+                executableResolver = CodexExecutableResolver(commonSearchPaths = emptyList()),
+                shellEnvironmentLoader = { emptyMap() },
+                shellEnvironmentCandidatesLoader = { emptyList() },
+            ),
+            commandRunner = { command, _ ->
+                when {
+                    command.lastOrNull() == "--version" -> ClaudeCliCommandResult(0, installedVersion, "")
+                    command.drop(1) == listOf("install", "-g", "@anthropic-ai/claude-code@latest") -> {
+                        executedUpgradeCommand = true
+                        val interimSnapshot = service.refresh(force = false)
+                        assertEquals(ClaudeCliVersionCheckStatus.UPGRADE_IN_PROGRESS, interimSnapshot.checkStatus)
+                        assertEquals("Upgrading Claude CLI...", interimSnapshot.message)
+                        assertSame(interimSnapshot, service.snapshot())
+                        installedVersion = "2.1.119 (Claude Code)"
+                        ClaudeCliCommandResult(0, "", "")
+                    }
+                    else -> ClaudeCliCommandResult(1, "", "unexpected command")
+                }
+            },
+            latestVersionFetcher = { "2.1.119" },
+        )
+
+        val snapshot = service.upgrade()
+
+        assertTrue(executedUpgradeCommand)
+        assertEquals(ClaudeCliVersionCheckStatus.UPGRADE_SUCCEEDED, snapshot.checkStatus)
+        assertEquals("2.1.119", snapshot.currentVersion)
     }
 
     /** Creates one executable file used by the temporary runtime fixture. */
